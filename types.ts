@@ -166,11 +166,13 @@ export interface TradeStageData {
     updatedBy: string;
     
     // Specific fields for Allocation Queue
-    queueDate?: string; // YYYY/MM/DD
-    hasFinancialProvision?: boolean; // Tike Tamin Mali
+    queueDate?: string; // YYYY/MM/DD - تاریخ ورود به صف
+    currencyRate?: number; // نرخ ارز مبادله‌ای/نیمایی برای گزارش
     
     // Specific for Allocation Approved
-    allocationDate?: string; // Date approved to freeze timer
+    allocationDate?: string; // تاریخ تخصیص
+    allocationExpiry?: string; // مهلت انقضای تخصیص
+    allocationCode?: string; // کد تخصیص (فیش)
 }
 
 export interface TradeItem {
