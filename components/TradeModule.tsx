@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { User, TradeRecord, TradeStage, TradeStageData, TradeItem, SystemSettings, InsuranceEndorsement, CurrencyPayment, CurrencyPurchaseData, TradeTransaction, CurrencyTranche } from '../types';
 import { getTradeRecords, saveTradeRecord, updateTradeRecord, deleteTradeRecord, uploadFile, getSettings } from '../services/storageService';
 import { generateUUID, formatCurrency, formatNumberString, deformatNumberString, getCurrentShamsiDate, parsePersianDate, normalizeInputNumber } from '../constants';
-import { Container, Plus, Search, CheckCircle2, Circle, Paperclip, Save, Loader2, Trash2, X, Package, ArrowRight, TrendingDown, TrendingUp, History, Calendar, Banknote, Coins, Filter, RefreshCw, Wallet, CheckSquare, Square, FileSpreadsheet, FileDown, Shield, LayoutDashboard, Plane, Ship, Truck, Layers } from 'lucide-react';
+import { Container, Plus, Search, CheckCircle2, Circle, Paperclip, Save, Loader2, Trash2, X, Package, ArrowRight, TrendingDown, TrendingUp, History, Calendar, Banknote, Coins, Filter, RefreshCw, Wallet, CheckSquare, Square, FileSpreadsheet, FileDown, Shield, LayoutDashboard, Plane, Ship, Truck, Layers, PieChart as PieIcon } from 'lucide-react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts';
 
 interface TradeModuleProps {
@@ -30,9 +30,9 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
     const [availableCompanies, setAvailableCompanies] = useState<string[]>([]);
 
     const [viewMode, setViewMode] = useState<'dashboard' | 'details' | 'insurance_report' | 'currency_report'>('dashboard');
-    const [reportTab, setReportTab] = useState<'delivery' | 'queue' | 'allocated' | 'expired' | 'cheques'>('delivery');
-    const [sidebarCompanyFilter, setSidebarCompanyFilter] = useState('');
-    const [sidebarCommodityFilter, setSidebarCommodityFilter] = useState('');
+    const [searchTerm, setSearchTerm] = useState('');
+    
+    // Modal & Form States
     const [showNewModal, setShowNewModal] = useState(false);
     const [newFileNumber, setNewFileNumber] = useState('');
     const [newGoodsName, setNewGoodsName] = useState('');
@@ -50,29 +50,13 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
     // License Transactions State
     const [newLicenseTx, setNewLicenseTx] = useState<Partial<TradeTransaction>>({ amount: 0, bank: '', date: '', description: 'هزینه ثبت سفارش' });
 
-    // Currency Purchase
+    // Currency Purchase State
     const [currencyForm, setCurrencyForm] = useState<CurrencyPurchaseData>({
         payments: [], purchasedAmount: 0, purchasedCurrencyType: '', purchaseDate: '', brokerName: '', exchangeName: '', deliveredAmount: 0, deliveredCurrencyType: '', deliveryDate: '', recipientName: '', remittedAmount: 0, isDelivered: false, tranches: []
     });
-    const [newRialPayment, setNewRialPayment] = useState<Partial<CurrencyPayment>>({ type: 'PAYMENT', amount: 0, date: '', bank: '', description: '' });
-    const [guaranteeCheque, setGuaranteeCheque] = useState<{ chequeNumber: string, amount: number, dueDate: string, bank: string, isReturned?: boolean, returnDate?: string }>({ chequeNumber: '', amount: 0, dueDate: '', bank: '', isReturned: false, returnDate: '' });
     
     // Currency Tranche State
     const [newCurrencyTranche, setNewCurrencyTranche] = useState<Partial<CurrencyTranche>>({ amount: 0, currencyType: 'EUR', date: '', exchangeName: '', brokerName: '', isDelivered: false, deliveryDate: '' });
-
-    const [reportInsuranceCompany, setReportInsuranceCompany] = useState('');
-    const [reportCurrencyFilter, setReportCurrencyFilter] = useState(''); 
-    const [reportChequeStatus, setReportChequeStatus] = useState<'all' | 'bank' | 'returned'>('all');
-    const [reportDeliveryStatus, setReportDeliveryStatus] = useState<'all' | 'delivered' | 'pending'>('all');
-    const [crossRates, setCrossRates] = useState({ EUR: 1.08, AED: 0.272, CNY: 0.14, TRY: 0.03 });
-    const [nimaRate, setNimaRate] = useState<number>(0);
-    const [isEditingMetadata, setIsEditingMetadata] = useState(false);
-    const [editMetadataForm, setEditMetadataForm] = useState({ fileNumber: '', goodsName: '', sellerName: '', commodityGroup: '', company: '', mainCurrency: '' });
-    const [editingStage, setEditingStage] = useState<TradeStage | null>(null);
-    const [stageData, setStageData] = useState<Partial<TradeStageData>>({});
-    const [uploading, setUploading] = useState(false);
-    const fileInputRef = useRef<HTMLInputElement>(null);
-    const [exchangeRate, setExchangeRate] = useState<number>(0);
 
     useEffect(() => {
         loadRecords();
@@ -86,37 +70,25 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
 
     useEffect(() => {
         if (selectedRecord) {
+            // Insurance Sync
             if (selectedRecord.insuranceData) {
                 setInsuranceForm(selectedRecord.insuranceData);
             } else {
                 setInsuranceForm({ policyNumber: '', company: '', cost: 0, bank: '', endorsements: [] });
             }
-            if (selectedRecord.currencyPurchaseData) {
-                setCurrencyForm({
-                    ...selectedRecord.currencyPurchaseData,
-                    purchasedCurrencyType: selectedRecord.currencyPurchaseData.purchasedCurrencyType || selectedRecord.mainCurrency || 'EUR',
-                    deliveredCurrencyType: selectedRecord.currencyPurchaseData.deliveredCurrencyType || selectedRecord.mainCurrency || 'EUR',
-                    tranches: selectedRecord.currencyPurchaseData.tranches || [],
-                    purchaseDate: selectedRecord.currencyPurchaseData.purchaseDate || '',
-                    deliveryDate: selectedRecord.currencyPurchaseData.deliveryDate || '',
-                    recipientName: selectedRecord.currencyPurchaseData.recipientName || '',
-                });
-                if (selectedRecord.currencyPurchaseData.guaranteeCheque) {
-                    setGuaranteeCheque(selectedRecord.currencyPurchaseData.guaranteeCheque);
-                } else {
-                    setGuaranteeCheque({ chequeNumber: '', amount: 0, dueDate: '', bank: '', isReturned: false, returnDate: '' });
-                }
-            } else {
-                setCurrencyForm({ 
-                    payments: [], purchasedAmount: 0, purchasedCurrencyType: selectedRecord.mainCurrency || 'EUR', purchaseDate: '', brokerName: '', exchangeName: '', deliveredAmount: 0, deliveredCurrencyType: selectedRecord.mainCurrency || 'EUR', deliveryDate: '', recipientName: '', remittedAmount: 0, isDelivered: false, tranches: []
-                });
-                setGuaranteeCheque({ chequeNumber: '', amount: 0, dueDate: '', bank: '', isReturned: false, returnDate: '' });
-            }
+            
+            // Currency Sync
+            const curData = selectedRecord.currencyPurchaseData || { 
+                payments: [], purchasedAmount: 0, purchasedCurrencyType: selectedRecord.mainCurrency || 'EUR', purchaseDate: '', brokerName: '', exchangeName: '', deliveredAmount: 0, deliveredCurrencyType: selectedRecord.mainCurrency || 'EUR', deliveryDate: '', recipientName: '', remittedAmount: 0, isDelivered: false, tranches: []
+            };
+            
+            // Ensure tranches exist (migration for old data)
+            if (!curData.tranches) curData.tranches = [];
+            
+            setCurrencyForm(curData);
             
             setNewLicenseTx({ amount: 0, bank: '', date: '', description: 'هزینه ثبت سفارش' });
             setNewCurrencyTranche({ amount: 0, currencyType: selectedRecord.mainCurrency || 'EUR', date: '', exchangeName: '', brokerName: '', isDelivered: false, deliveryDate: '' });
-
-            setExchangeRate(selectedRecord.exchangeRate || 0);
         }
     }, [selectedRecord]);
 
@@ -134,47 +106,26 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
 
     const handleCreateRecord = async () => { if (!newFileNumber || !newGoodsName) return; const newRecord: TradeRecord = { id: generateUUID(), company: newRecordCompany, fileNumber: newFileNumber, orderNumber: newFileNumber, goodsName: newGoodsName, sellerName: newSellerName, commodityGroup: newCommodityGroup, mainCurrency: newMainCurrency, items: [], freightCost: 0, startDate: new Date().toISOString(), status: 'Active', stages: {}, createdAt: Date.now(), createdBy: currentUser.fullName, licenseData: { transactions: [] } }; STAGES.forEach(stage => { newRecord.stages[stage] = { stage, isCompleted: false, description: '', costRial: 0, costCurrency: 0, currencyType: newMainCurrency, attachments: [], updatedAt: Date.now(), updatedBy: '' }; }); await saveTradeRecord(newRecord); await loadRecords(); setShowNewModal(false); setNewFileNumber(''); setNewGoodsName(''); setNewSellerName(''); setNewCommodityGroup(''); setNewMainCurrency('EUR'); setSelectedRecord(newRecord); setActiveTab('proforma'); setViewMode('details'); };
     const handleDeleteRecord = async (id: string) => { if (confirm("آیا از حذف این پرونده بازرگانی اطمینان دارید؟")) { await deleteTradeRecord(id); if (selectedRecord?.id === id) setSelectedRecord(null); loadRecords(); } };
-    const handleSaveMetadata = async () => { if (!selectedRecord) return; const updated = { ...selectedRecord, ...editMetadataForm }; await updateTradeRecord(updated); setSelectedRecord(updated); setRecords(prev => prev.map(r => r.id === updated.id ? updated : r)); setIsEditingMetadata(false); };
-    const handleAddItem = () => { if (!newItem.name || !selectedRecord) return; const item: TradeItem = { id: generateUUID(), name: newItem.name, weight: Number(newItem.weight) || 0, unitPrice: Number(newItem.unitPrice) || 0, totalPrice: 0 }; item.totalPrice = item.weight > 0 ? item.weight * item.unitPrice : item.unitPrice; const updatedRecord = { ...selectedRecord, items: [...(selectedRecord.items || []), item] }; updateTradeRecord(updatedRecord); setSelectedRecord(updatedRecord); setNewItem({ name: '', weight: 0, unitPrice: 0 }); };
-    const handleRemoveItem = (itemId: string) => { if (!selectedRecord) return; const updatedRecord = { ...selectedRecord, items: selectedRecord.items.filter(i => i.id !== itemId) }; updateTradeRecord(updatedRecord); setSelectedRecord(updatedRecord); };
-    const handleUpdateProforma = (field: keyof TradeRecord, value: string | number) => { if (!selectedRecord) return; const updatedRecord = { ...selectedRecord, [field]: value }; updateTradeRecord(updatedRecord); setSelectedRecord(updatedRecord); };
     
-    const handleAddLicenseTx = async () => {
-        if (!selectedRecord || !newLicenseTx.amount) return;
-        const tx: TradeTransaction = { id: generateUUID(), date: newLicenseTx.date || '', amount: Number(newLicenseTx.amount), bank: newLicenseTx.bank || '', description: newLicenseTx.description || '' };
-        const currentLicenseData = selectedRecord.licenseData || { transactions: [] };
-        const updatedTransactions = [...(currentLicenseData.transactions || []), tx];
-        const updatedRecord = { ...selectedRecord, licenseData: { ...currentLicenseData, transactions: updatedTransactions } };
-        const totalCost = updatedTransactions.reduce((acc, t) => acc + t.amount, 0);
-        if (!updatedRecord.stages[TradeStage.LICENSES]) updatedRecord.stages[TradeStage.LICENSES] = getStage(updatedRecord, TradeStage.LICENSES);
-        updatedRecord.stages[TradeStage.LICENSES].costRial = totalCost;
-        updatedRecord.stages[TradeStage.LICENSES].isCompleted = totalCost > 0;
-        await updateTradeRecord(updatedRecord);
-        setSelectedRecord(updatedRecord);
-        setNewLicenseTx({ amount: 0, bank: '', date: '', description: 'هزینه ثبت سفارش' });
-    };
+    // --- Proforma Handlers ---
+    const handleUpdateProforma = (field: keyof TradeRecord, value: string | number) => { if (!selectedRecord) return; const updatedRecord = { ...selectedRecord, [field]: value }; updateTradeRecord(updatedRecord); setSelectedRecord(updatedRecord); };
+    const handleAddLicenseTx = async () => { if (!selectedRecord || !newLicenseTx.amount) return; const tx: TradeTransaction = { id: generateUUID(), date: newLicenseTx.date || '', amount: Number(newLicenseTx.amount), bank: newLicenseTx.bank || '', description: newLicenseTx.description || '' }; const currentLicenseData = selectedRecord.licenseData || { transactions: [] }; const updatedTransactions = [...(currentLicenseData.transactions || []), tx]; const updatedRecord = { ...selectedRecord, licenseData: { ...currentLicenseData, transactions: updatedTransactions } }; const totalCost = updatedTransactions.reduce((acc, t) => acc + t.amount, 0); if (!updatedRecord.stages[TradeStage.LICENSES]) updatedRecord.stages[TradeStage.LICENSES] = getStage(updatedRecord, TradeStage.LICENSES); updatedRecord.stages[TradeStage.LICENSES].costRial = totalCost; updatedRecord.stages[TradeStage.LICENSES].isCompleted = totalCost > 0; await updateTradeRecord(updatedRecord); setSelectedRecord(updatedRecord); setNewLicenseTx({ amount: 0, bank: '', date: '', description: 'هزینه ثبت سفارش' }); };
+    const handleRemoveLicenseTx = async (id: string) => { if (!selectedRecord) return; const currentLicenseData = selectedRecord.licenseData || { transactions: [] }; const updatedTransactions = (currentLicenseData.transactions || []).filter(t => t.id !== id); const updatedRecord = { ...selectedRecord, licenseData: { ...currentLicenseData, transactions: updatedTransactions } }; const totalCost = updatedTransactions.reduce((acc, t) => acc + t.amount, 0); if (!updatedRecord.stages[TradeStage.LICENSES]) updatedRecord.stages[TradeStage.LICENSES] = getStage(updatedRecord, TradeStage.LICENSES); updatedRecord.stages[TradeStage.LICENSES].costRial = totalCost; await updateTradeRecord(updatedRecord); setSelectedRecord(updatedRecord); };
 
-    const handleRemoveLicenseTx = async (id: string) => {
-        if (!selectedRecord) return;
-        const currentLicenseData = selectedRecord.licenseData || { transactions: [] };
-        const updatedTransactions = (currentLicenseData.transactions || []).filter(t => t.id !== id);
-        const updatedRecord = { ...selectedRecord, licenseData: { ...currentLicenseData, transactions: updatedTransactions } };
-        const totalCost = updatedTransactions.reduce((acc, t) => acc + t.amount, 0);
-        if (!updatedRecord.stages[TradeStage.LICENSES]) updatedRecord.stages[TradeStage.LICENSES] = getStage(updatedRecord, TradeStage.LICENSES);
-        updatedRecord.stages[TradeStage.LICENSES].costRial = totalCost;
-        await updateTradeRecord(updatedRecord);
-        setSelectedRecord(updatedRecord);
-    };
+    // --- Insurance Handlers ---
+    const handleSaveInsurance = async () => { if (!selectedRecord) return; const updatedRecord = { ...selectedRecord, insuranceData: insuranceForm }; const totalCost = (Number(insuranceForm.cost) || 0) + (insuranceForm.endorsements || []).reduce((acc, e) => acc + e.amount, 0); if (!updatedRecord.stages[TradeStage.INSURANCE]) updatedRecord.stages[TradeStage.INSURANCE] = getStage(updatedRecord, TradeStage.INSURANCE); updatedRecord.stages[TradeStage.INSURANCE].costRial = totalCost; updatedRecord.stages[TradeStage.INSURANCE].isCompleted = !!insuranceForm.policyNumber; await updateTradeRecord(updatedRecord); setSelectedRecord(updatedRecord); alert("اطلاعات بیمه ذخیره شد."); };
+    const handleAddEndorsement = () => { if (!newEndorsement.amount) return; const endorsement: InsuranceEndorsement = { id: generateUUID(), date: newEndorsement.date || '', amount: Number(newEndorsement.amount), description: newEndorsement.description || '' }; const updatedEndorsements = [...(insuranceForm.endorsements || []), endorsement]; setInsuranceForm({ ...insuranceForm, endorsements: updatedEndorsements }); setNewEndorsement({ amount: 0, description: '', date: '' }); };
+    const handleDeleteEndorsement = (id: string) => { setInsuranceForm({ ...insuranceForm, endorsements: insuranceForm.endorsements?.filter(e => e.id !== id) }); };
+    const calculateInsuranceTotal = () => { const base = Number(insuranceForm.cost) || 0; const endorsed = (insuranceForm.endorsements || []).reduce((acc, e) => acc + e.amount, 0); return base + endorsed; };
 
+    // --- Currency Handlers ---
     const handleAddCurrencyTranche = async () => {
         if (!selectedRecord || !newCurrencyTranche.amount) return;
         const tranche: CurrencyTranche = { id: generateUUID(), date: newCurrencyTranche.date || '', amount: Number(newCurrencyTranche.amount), currencyType: newCurrencyTranche.currencyType || selectedRecord.mainCurrency || 'EUR', brokerName: newCurrencyTranche.brokerName || '', exchangeName: newCurrencyTranche.exchangeName || '', rate: Number(newCurrencyTranche.rate) || 0, isDelivered: newCurrencyTranche.isDelivered, deliveryDate: newCurrencyTranche.deliveryDate };
         const currentTranches = currencyForm.tranches || [];
         const updatedTranches = [...currentTranches, tranche];
         const totalPurchased = updatedTranches.reduce((acc, t) => acc + t.amount, 0);
-        
         const totalDelivered = updatedTranches.filter(t => t.isDelivered).reduce((acc, t) => acc + t.amount, 0);
-
         const updatedForm = { ...currencyForm, tranches: updatedTranches, purchasedAmount: totalPurchased, deliveredAmount: totalDelivered };
         setCurrencyForm(updatedForm);
         const updatedRecord = { ...selectedRecord, currencyPurchaseData: updatedForm };
@@ -185,13 +136,9 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
 
     const handleUpdateTrancheDelivery = async (id: string, isDelivered: boolean, deliveryDate?: string) => {
         if (!selectedRecord) return;
-        const updatedTranches = (currencyForm.tranches || []).map(t => {
-            if (t.id === id) return { ...t, isDelivered, deliveryDate };
-            return t;
-        });
+        const updatedTranches = (currencyForm.tranches || []).map(t => { if (t.id === id) return { ...t, isDelivered, deliveryDate }; return t; });
         const totalPurchased = updatedTranches.reduce((acc, t) => acc + t.amount, 0);
         const totalDelivered = updatedTranches.filter(t => t.isDelivered).reduce((acc, t) => acc + t.amount, 0);
-
         const updatedForm = { ...currencyForm, tranches: updatedTranches, purchasedAmount: totalPurchased, deliveredAmount: totalDelivered };
         setCurrencyForm(updatedForm);
         const updatedRecord = { ...selectedRecord, currencyPurchaseData: updatedForm };
@@ -199,65 +146,73 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
         setSelectedRecord(updatedRecord);
     };
 
-    const handleSaveInsurance = async () => {
+    const handleRemoveTranche = async (id: string) => {
         if (!selectedRecord) return;
-        const updatedRecord = { ...selectedRecord, insuranceData: insuranceForm };
-        // Update stage data as well
-        const totalCost = (Number(insuranceForm.cost) || 0) + (insuranceForm.endorsements || []).reduce((acc, e) => acc + e.amount, 0);
-        if (!updatedRecord.stages[TradeStage.INSURANCE]) updatedRecord.stages[TradeStage.INSURANCE] = getStage(updatedRecord, TradeStage.INSURANCE);
-        updatedRecord.stages[TradeStage.INSURANCE].costRial = totalCost;
-        updatedRecord.stages[TradeStage.INSURANCE].isCompleted = !!insuranceForm.policyNumber;
-        
+        if (!confirm('آیا از حذف این پارت خرید ارز مطمئن هستید؟')) return;
+        const updatedTranches = (currencyForm.tranches || []).filter(t => t.id !== id);
+        const totalPurchased = updatedTranches.reduce((acc, t) => acc + t.amount, 0);
+        const totalDelivered = updatedTranches.filter(t => t.isDelivered).reduce((acc, t) => acc + t.amount, 0);
+        const updatedForm = { ...currencyForm, tranches: updatedTranches, purchasedAmount: totalPurchased, deliveredAmount: totalDelivered };
+        setCurrencyForm(updatedForm);
+        const updatedRecord = { ...selectedRecord, currencyPurchaseData: updatedForm };
         await updateTradeRecord(updatedRecord);
         setSelectedRecord(updatedRecord);
-        alert("اطلاعات بیمه ذخیره شد.");
-    };
+    }
 
-    const handleAddEndorsement = () => {
-        if (!newEndorsement.amount) return;
-        const endorsement: InsuranceEndorsement = { id: generateUUID(), date: newEndorsement.date || '', amount: Number(newEndorsement.amount), description: newEndorsement.description || '' };
-        const updatedEndorsements = [...(insuranceForm.endorsements || []), endorsement];
-        setInsuranceForm({ ...insuranceForm, endorsements: updatedEndorsements });
-        setNewEndorsement({ amount: 0, description: '', date: '' });
-    };
+    // --- Search Logic ---
+    const filteredRecords = records.filter(r => {
+        const term = searchTerm.toLowerCase();
+        return (
+            r.fileNumber.toLowerCase().includes(term) ||
+            (r.registrationNumber || '').toLowerCase().includes(term) ||
+            r.sellerName.toLowerCase().includes(term) ||
+            r.goodsName?.toLowerCase().includes(term) ||
+            r.company?.toLowerCase().includes(term)
+        );
+    });
 
-    const handleDeleteEndorsement = (id: string) => {
-        setInsuranceForm({ ...insuranceForm, endorsements: insuranceForm.endorsements?.filter(e => e.id !== id) });
-    };
-
-    const calculateInsuranceTotal = () => {
-        const base = Number(insuranceForm.cost) || 0;
-        const endorsed = (insuranceForm.endorsements || []).reduce((acc, e) => acc + e.amount, 0);
-        return base + endorsed;
+    // --- Stats Calculation ---
+    const stats = {
+        totalActive: filteredRecords.filter(r => r.status === 'Active').length,
+        totalCurrency: filteredRecords.reduce((acc, r) => acc + (r.currencyPurchaseData?.purchasedAmount || 0), 0),
+        pendingInsurance: filteredRecords.filter(r => !r.stages[TradeStage.INSURANCE]?.isCompleted).length,
+        allocationQueue: filteredRecords.filter(r => r.stages[TradeStage.ALLOCATION_QUEUE]?.isCompleted === false && r.stages[TradeStage.INSURANCE]?.isCompleted === true).length
     };
 
     // --- Render ---
 
     if (viewMode === 'currency_report') {
-        const filteredRecords = records.filter(r => 
-            (!reportCurrencyFilter || r.mainCurrency === reportCurrencyFilter) &&
-            (!sidebarCompanyFilter || r.company === sidebarCompanyFilter)
-        );
-
         return (
-             <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
-                <div className="flex justify-between items-center mb-6"><h2 className="text-xl font-bold text-gray-800">گزارش جامع خرید ارز</h2><button onClick={() => setViewMode('dashboard')} className="text-gray-500 hover:text-gray-700">بازگشت به داشبورد</button></div>
-                <div className="overflow-x-auto">
+             <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 animate-fade-in">
+                <div className="flex justify-between items-center mb-6">
+                    <div className="flex items-center gap-4">
+                        <div className="bg-green-100 p-2 rounded-lg text-green-700"><Coins size={24}/></div>
+                        <div><h2 className="text-xl font-bold text-gray-800">گزارش جامع خرید ارز</h2><p className="text-xs text-gray-500 mt-1">تفکیک بر اساس سفارش و پارت‌های ارزی</p></div>
+                    </div>
+                    <button onClick={() => setViewMode('dashboard')} className="text-gray-500 hover:text-gray-700 flex items-center gap-1"><ArrowRight size={16}/> بازگشت</button>
+                </div>
+                
+                {/* Global Search inside Report */}
+                <div className="mb-6 bg-gray-50 p-3 rounded-xl border flex items-center gap-2 max-w-md">
+                     <Search size={20} className="text-gray-400" />
+                     <input type="text" placeholder="جستجو (شماره پرونده، ثبت سفارش، فروشنده...)" className="bg-transparent outline-none w-full text-sm" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
+                </div>
+
+                <div className="overflow-x-auto border rounded-xl">
                     <table className="w-full text-sm text-right border-collapse">
-                        <thead className="bg-gray-100 text-gray-700 font-bold">
+                        <thead className="bg-slate-800 text-white font-bold text-xs">
                             <tr>
-                                <th className="p-3 border">شماره پرونده / ثبت سفارش</th>
-                                <th className="p-3 border">فروشنده</th>
-                                <th className="p-3 border">مبلغ پارت</th>
-                                <th className="p-3 border">ارز</th>
-                                <th className="p-3 border">نرخ (ریال)</th>
-                                <th className="p-3 border">تاریخ خرید</th>
-                                <th className="p-3 border">صرافی / کارگزار</th>
-                                <th className="p-3 border text-center">وضعیت تحویل</th>
-                                <th className="p-3 border text-center">تاریخ تحویل</th>
+                                <th className="p-3 border-l border-slate-700 w-64">مشخصات سفارش / پرونده</th>
+                                <th className="p-3 border-l border-slate-700 w-32 text-center">مبلغ پارت</th>
+                                <th className="p-3 border-l border-slate-700 w-16 text-center">ارز</th>
+                                <th className="p-3 border-l border-slate-700 w-24 text-center">نرخ (ریال)</th>
+                                <th className="p-3 border-l border-slate-700 w-32">تاریخ خرید</th>
+                                <th className="p-3 border-l border-slate-700">صرافی / کارگزار</th>
+                                <th className="p-3 border-l border-slate-700 w-24 text-center">وضعیت تحویل</th>
+                                <th className="p-3 text-center w-24">تاریخ تحویل</th>
                             </tr>
                         </thead>
-                        <tbody>
+                        <tbody className="divide-y divide-gray-200">
                             {filteredRecords.map(r => {
                                 const tranches = r.currencyPurchaseData?.tranches || [];
                                 const rowCount = Math.max(tranches.length, 1);
@@ -266,32 +221,40 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
                                         {Array.from({length: rowCount}).map((_, idx) => {
                                             const tranche = tranches[idx];
                                             return (
-                                                <tr key={`${r.id}-${idx}`} className="hover:bg-gray-50 border-b">
+                                                <tr key={`${r.id}-${idx}`} className="hover:bg-blue-50/30 transition-colors">
                                                     {idx === 0 && (
-                                                        <>
-                                                            <td className="p-3 border font-medium align-top" rowSpan={rowCount}>
-                                                                <div>{r.fileNumber}</div>
-                                                                <div className="text-xs text-gray-500 mt-1">{r.registrationNumber || '-'}</div>
-                                                            </td>
-                                                            <td className="p-3 border align-top" rowSpan={rowCount}>{r.sellerName}</td>
-                                                        </>
+                                                        <td className="p-3 border-l align-top bg-white" rowSpan={rowCount}>
+                                                            <div className="font-bold text-gray-800">{r.fileNumber}</div>
+                                                            <div className="text-xs text-gray-500 mt-1 flex items-center gap-1"><FileSpreadsheet size={10}/> ثبت سفارش: {r.registrationNumber || '-'}</div>
+                                                            <div className="text-xs text-gray-500 mt-1 flex items-center gap-1"><Package size={10}/> کالا: {r.goodsName}</div>
+                                                            <div className="text-xs text-gray-500 mt-1 flex items-center gap-1"><Wallet size={10}/> فروشنده: {r.sellerName}</div>
+                                                            <div className="mt-2 inline-block px-2 py-0.5 bg-gray-100 text-gray-600 rounded text-[10px]">{r.company}</div>
+                                                        </td>
                                                     )}
                                                     {tranche ? (
                                                         <>
-                                                            <td className="p-3 border font-mono dir-ltr">{formatNumberString(tranche.amount.toString())}</td>
-                                                            <td className="p-3 border">{tranche.currencyType}</td>
-                                                            <td className="p-3 border font-mono dir-ltr">{formatCurrency(tranche.rate || 0)}</td>
-                                                            <td className="p-3 border">{tranche.date}</td>
-                                                            <td className="p-3 border">{tranche.exchangeName} {tranche.brokerName ? `(${tranche.brokerName})` : ''}</td>
-                                                            <td className="p-3 border text-center">{tranche.isDelivered ? <span className="text-green-600 font-bold">تحویل شده</span> : <span className="text-gray-400">نامشخص</span>}</td>
-                                                            <td className="p-3 border text-center">{tranche.deliveryDate || '-'}</td>
+                                                            <td className="p-3 border-l text-center font-mono font-bold text-blue-600 dir-ltr">{formatNumberString(tranche.amount.toString())}</td>
+                                                            <td className="p-3 border-l text-center">{tranche.currencyType}</td>
+                                                            <td className="p-3 border-l text-center font-mono text-gray-500 dir-ltr">{formatCurrency(tranche.rate || 0)}</td>
+                                                            <td className="p-3 border-l text-gray-600">{tranche.date}</td>
+                                                            <td className="p-3 border-l text-gray-600">{tranche.exchangeName} {tranche.brokerName ? `(${tranche.brokerName})` : ''}</td>
+                                                            <td className="p-3 border-l text-center">{tranche.isDelivered ? <span className="inline-flex items-center gap-1 text-green-600 font-bold text-xs bg-green-50 px-2 py-1 rounded-full"><CheckCircle2 size={12}/> تحویل شده</span> : <span className="text-gray-400 text-xs">-</span>}</td>
+                                                            <td className="p-3 text-center text-xs">{tranche.deliveryDate || '-'}</td>
                                                         </>
                                                     ) : (
-                                                        <td colSpan={7} className="p-3 border text-center text-gray-400">بدون خرید ارز</td>
+                                                        <td colSpan={7} className="p-4 text-center text-gray-300 italic">بدون سابقه خرید ارز</td>
                                                     )}
                                                 </tr>
                                             );
                                         })}
+                                        {tranches.length > 0 && (
+                                           <tr className="bg-gray-50 border-b-2 border-gray-300">
+                                               <td colSpan={1} className="p-2 border-l text-left text-xs font-bold text-gray-500">مجموع این سفارش:</td>
+                                               <td colSpan={7} className="p-2 font-mono text-xs font-bold text-gray-700 dir-ltr text-right px-4">
+                                                   {formatNumberString(tranches.reduce((acc, t) => acc + t.amount, 0).toString())} {r.mainCurrency}
+                                               </td>
+                                           </tr>
+                                        )}
                                     </React.Fragment>
                                 );
                             })}
@@ -304,11 +267,14 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
 
     if (viewMode === 'details' && selectedRecord) {
         return (
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden flex flex-col h-[calc(100vh-100px)]">
+            <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden flex flex-col h-[calc(100vh-100px)] animate-fade-in">
                 <div className="bg-slate-800 text-white p-4 flex justify-between items-center shadow-md z-10">
                     <div className="flex items-center gap-4">
                         <button onClick={() => { setSelectedRecord(null); setViewMode('dashboard'); }} className="bg-slate-700 hover:bg-slate-600 p-2 rounded-lg transition-colors"><ArrowRight size={20} /></button>
                         <div><h2 className="font-bold text-lg flex items-center gap-2"><FileSpreadsheet size={20} className="text-blue-400"/> پرونده: {selectedRecord.fileNumber}</h2><div className="text-xs text-slate-400 flex gap-3 mt-1"><span>{selectedRecord.goodsName}</span><span>|</span><span>{selectedRecord.sellerName}</span><span>|</span><span>{selectedRecord.company}</span></div></div>
+                    </div>
+                    <div className="flex gap-2">
+                        <button onClick={() => handleDeleteRecord(selectedRecord.id)} className="bg-red-500/20 hover:bg-red-500 text-red-100 p-2 rounded-lg transition-colors"><Trash2 size={18} /></button>
                     </div>
                 </div>
                 
@@ -322,7 +288,21 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
 
                     <div className="flex-1 overflow-y-auto p-6 bg-white">
                         {activeTab === 'timeline' && (
-                             <div className="text-center text-gray-500 py-10">نمای کلی پرونده (تایم‌لاین)</div>
+                             <div className="flex flex-col items-center justify-center h-full text-gray-500 gap-4">
+                                <LayoutDashboard size={48} className="opacity-20"/>
+                                <p>نمای کلی پرونده و وضعیت مراحل در حال تکمیل است...</p>
+                                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 w-full max-w-4xl mt-8">
+                                    {STAGES.map((s, idx) => {
+                                        const isDone = selectedRecord.stages[s]?.isCompleted;
+                                        return (
+                                            <div key={idx} className={`p-4 rounded-xl border flex items-center gap-3 ${isDone ? 'bg-green-50 border-green-200 text-green-700' : 'bg-gray-50 border-gray-200 text-gray-400'}`}>
+                                                {isDone ? <CheckCircle2 size={20} /> : <Circle size={20} />}
+                                                <span className="text-sm font-bold">{s}</span>
+                                            </div>
+                                        )
+                                    })}
+                                </div>
+                             </div>
                         )}
 
                         {activeTab === 'proforma' && (
@@ -417,6 +397,7 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
                                                 <th className="p-3 border-b">تاریخ خرید</th>
                                                 <th className="p-3 border-b text-center w-24">وضعیت تحویل</th>
                                                 <th className="p-3 border-b w-32">تاریخ تحویل</th>
+                                                <th className="p-3 border-b w-10"></th>
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y">
@@ -439,16 +420,17 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
                                                             onChange={e => handleUpdateTrancheDelivery(t.id, true, e.target.value)}
                                                         />
                                                     </td>
+                                                    <td className="p-3 text-center"><button onClick={() => handleRemoveTranche(t.id)} className="text-gray-400 hover:text-red-500"><Trash2 size={16}/></button></td>
                                                 </tr>
                                             ))}
                                             {(!currencyForm.tranches || currencyForm.tranches.length === 0) && (
-                                                <tr><td colSpan={7} className="p-4 text-center text-gray-400">هیچ پارت ارزی ثبت نشده است.</td></tr>
+                                                <tr><td colSpan={8} className="p-4 text-center text-gray-400">هیچ پارت ارزی ثبت نشده است.</td></tr>
                                             )}
                                         </tbody>
                                         <tfoot className="bg-gray-50 font-bold">
                                             <tr>
                                                 <td className="p-3 border-t">جمع کل:</td>
-                                                <td className="p-3 border-t font-mono dir-ltr text-blue-600" colSpan={6}>{formatNumberString(currencyForm.purchasedAmount.toString())} {selectedRecord.mainCurrency}</td>
+                                                <td className="p-3 border-t font-mono dir-ltr text-blue-600" colSpan={7}>{formatNumberString(currencyForm.purchasedAmount.toString())} {selectedRecord.mainCurrency}</td>
                                             </tr>
                                         </tfoot>
                                     </table>
@@ -462,8 +444,6 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
     }
 
     // --- Dashboard View (Default) ---
-    const filteredRecords = records.filter(r => (!sidebarCompanyFilter || r.company === sidebarCompanyFilter) && (!sidebarCommodityFilter || r.commodityGroup === sidebarCommodityFilter));
-
     return (
         <div className="space-y-6 animate-fade-in pb-10">
             {showNewModal && (
@@ -482,32 +462,89 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
                 </div>
             )}
             
-            <div className="flex justify-between items-center bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
-                 <div className="flex items-center gap-4">
-                     <h2 className="text-xl font-bold text-gray-800">داشبورد بازرگانی</h2>
-                     <button onClick={() => setShowNewModal(true)} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 text-sm transition-colors"><Plus size={16} /> پرونده جدید</button>
+            {/* Top Toolbar */}
+            <div className="flex flex-col md:flex-row justify-between items-center bg-white p-4 rounded-xl border border-gray-200 shadow-sm gap-4">
+                 <div className="flex items-center gap-4 w-full md:w-auto">
+                     <h2 className="text-xl font-bold text-gray-800 whitespace-nowrap">داشبورد بازرگانی</h2>
+                     <button onClick={() => setShowNewModal(true)} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 text-sm transition-colors whitespace-nowrap"><Plus size={16} /> پرونده جدید</button>
                  </div>
-                 <div className="flex gap-2">
-                     <button onClick={() => setViewMode('currency_report')} className="bg-green-50 text-green-700 px-3 py-2 rounded-lg text-sm border border-green-200 hover:bg-green-100 transition-colors">گزارش خرید ارز</button>
+                 
+                 <div className="flex-1 w-full md:max-w-xl mx-4 relative">
+                     <Search className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+                     <input 
+                        type="text" 
+                        placeholder="جستجو در پرونده‌ها (شماره پرونده، ثبت سفارش، فروشنده...)" 
+                        className="w-full pl-4 pr-10 py-2.5 border rounded-xl text-sm outline-none bg-gray-50 focus:bg-white focus:border-blue-500 transition-colors"
+                        value={searchTerm}
+                        onChange={e => setSearchTerm(e.target.value)}
+                     />
+                 </div>
+
+                 <div className="flex gap-2 w-full md:w-auto justify-end">
+                     <button onClick={() => setViewMode('currency_report')} className="bg-green-50 text-green-700 px-3 py-2 rounded-lg text-sm border border-green-200 hover:bg-green-100 transition-colors flex items-center gap-2"><Coins size={16}/> گزارش ارز</button>
                  </div>
             </div>
 
+            {/* Statistics Cards */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+                <div className="bg-white p-4 rounded-xl border shadow-sm flex items-center justify-between">
+                    <div>
+                        <p className="text-gray-500 text-xs font-bold mb-1">پرونده‌های فعال</p>
+                        <p className="text-2xl font-bold text-gray-800">{stats.totalActive}</p>
+                    </div>
+                    <div className="p-3 bg-blue-50 text-blue-600 rounded-lg"><Package size={24} /></div>
+                </div>
+                <div className="bg-white p-4 rounded-xl border shadow-sm flex items-center justify-between">
+                    <div>
+                        <p className="text-gray-500 text-xs font-bold mb-1">مجموع ارز خریداری شده</p>
+                        <p className="text-lg font-bold text-gray-800 dir-ltr font-mono">{formatNumberString(stats.totalCurrency.toString())}</p>
+                    </div>
+                    <div className="p-3 bg-green-50 text-green-600 rounded-lg"><Coins size={24} /></div>
+                </div>
+                <div className="bg-white p-4 rounded-xl border shadow-sm flex items-center justify-between">
+                    <div>
+                        <p className="text-gray-500 text-xs font-bold mb-1">در انتظار بیمه</p>
+                        <p className="text-2xl font-bold text-amber-600">{stats.pendingInsurance}</p>
+                    </div>
+                    <div className="p-3 bg-amber-50 text-amber-600 rounded-lg"><Shield size={24} /></div>
+                </div>
+                <div className="bg-white p-4 rounded-xl border shadow-sm flex items-center justify-between">
+                    <div>
+                        <p className="text-gray-500 text-xs font-bold mb-1">در صف تخصیص</p>
+                        <p className="text-2xl font-bold text-purple-600">{stats.allocationQueue}</p>
+                    </div>
+                    <div className="p-3 bg-purple-50 text-purple-600 rounded-lg"><History size={24} /></div>
+                </div>
+            </div>
+
+            {/* Records Grid */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                 {filteredRecords.map(record => (
-                    <div key={record.id} onClick={() => { setSelectedRecord(record); setViewMode('details'); setActiveTab('timeline'); }} className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm hover:shadow-md transition-all cursor-pointer group relative overflow-hidden">
+                    <div key={record.id} onClick={() => { setSelectedRecord(record); setViewMode('details'); setActiveTab('timeline'); }} className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm hover:shadow-md transition-all cursor-pointer group relative overflow-hidden flex flex-col justify-between h-[180px]">
                         <div className="absolute top-0 right-0 w-1 h-full bg-blue-500 group-hover:w-2 transition-all"></div>
-                        <div className="flex justify-between items-start mb-3">
-                            <h3 className="font-bold text-gray-800">{record.fileNumber}</h3>
-                            <span className="text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded">{record.mainCurrency}</span>
+                        <div>
+                            <div className="flex justify-between items-start mb-2">
+                                <h3 className="font-bold text-gray-800 text-lg">{record.fileNumber}</h3>
+                                <span className="text-[10px] font-bold bg-blue-50 text-blue-700 px-2 py-1 rounded border border-blue-100">{record.mainCurrency}</span>
+                            </div>
+                            <div className="space-y-1">
+                                <p className="text-sm font-medium text-gray-700 truncate" title={record.goodsName}>{record.goodsName}</p>
+                                <p className="text-xs text-gray-500 truncate" title={record.sellerName}>{record.sellerName}</p>
+                                {record.registrationNumber && <p className="text-xs text-gray-400 font-mono">ثبت سفارش: {record.registrationNumber}</p>}
+                            </div>
                         </div>
-                        <p className="text-sm text-gray-600 mb-1 truncate">{record.goodsName}</p>
-                        <p className="text-xs text-gray-400 mb-3 truncate">{record.sellerName}</p>
-                        <div className="flex justify-between items-center text-xs text-gray-500 border-t pt-3">
-                            <span>{record.company}</span>
-                            <span>{new Date(record.createdAt).toLocaleDateString('fa-IR')}</span>
+                        <div className="flex justify-between items-end border-t pt-3 mt-2">
+                            <span className="text-[10px] bg-gray-100 text-gray-600 px-2 py-0.5 rounded">{record.company}</span>
+                            <span className="text-[10px] text-gray-400">{new Date(record.createdAt).toLocaleDateString('fa-IR')}</span>
                         </div>
                     </div>
                 ))}
+                {filteredRecords.length === 0 && (
+                    <div className="col-span-full flex flex-col items-center justify-center py-12 text-gray-400 bg-gray-50 rounded-xl border border-dashed border-gray-300">
+                        <Search size={48} className="mb-4 opacity-20" />
+                        <p>هیچ پرونده‌ای یافت نشد.</p>
+                    </div>
+                )}
             </div>
         </div>
     );
