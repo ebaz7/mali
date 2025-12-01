@@ -214,6 +214,10 @@ export interface CurrencyTranche {
     rate?: number; // Rial rate per unit (optional)
     brokerName?: string;
     exchangeName?: string;
+    
+    // New fields for per-tranche delivery tracking
+    isDelivered?: boolean;
+    deliveryDate?: string;
 }
 
 export interface CurrencyPurchaseData {
@@ -244,7 +248,7 @@ export interface CurrencyPurchaseData {
     
     remittedAmount: number; // ارز حواله شده
     
-    isDelivered: boolean; // تیک تحویل نهایی
+    isDelivered: boolean; // تیک تحویل نهایی (کلی)
 }
 
 export interface TradeRecord {
@@ -256,6 +260,10 @@ export interface TradeRecord {
     sellerName: string; // فروشنده
     mainCurrency?: string; // ارز پایه (USD, EUR, etc.)
     
+    // New fields for Registration details
+    registrationDate?: string; // تاریخ صدور ثبت سفارش
+    registrationExpiry?: string; // مهلت ثبت سفارش
+
     // Items
     items: TradeItem[];
     freightCost: number; // هزینه حمل

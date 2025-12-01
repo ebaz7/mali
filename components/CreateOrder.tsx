@@ -58,7 +58,6 @@ const CreateOrder: React.FC<CreateOrderProps> = ({ onSuccess, currentUser }) => 
       try {
           const currentSettings = await getSettings();
           const updatedBanks = [...(currentSettings.bankNames || []), newBank.trim()];
-          // Remove duplicates
           const uniqueBanks = Array.from(new Set(updatedBanks));
           
           await saveSettings({ ...currentSettings, bankNames: uniqueBanks });
