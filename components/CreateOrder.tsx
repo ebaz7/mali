@@ -1,10 +1,10 @@
 
 import React, { useState, useEffect } from 'react';
 import { PaymentMethod, OrderStatus, PaymentOrder, User, PaymentDetail, SystemSettings } from '../types';
-import { saveOrder, getNextTrackingNumber, uploadFile, getSettings } from '../services/storageService';
+import { saveOrder, getNextTrackingNumber, uploadFile, getSettings, saveSettings } from '../services/storageService';
 import { enhanceDescription } from '../services/geminiService';
 import { jalaliToGregorian, getCurrentShamsiDate, formatCurrency, generateUUID, normalizeInputNumber, formatNumberString, deformatNumberString } from '../constants';
-import { Wand2, Save, Loader2, CheckCircle2, Calendar, Plus, Trash2, Paperclip, X } from 'lucide-react';
+import { Wand2, Save, Loader2, CheckCircle2, Calendar, Plus, Trash2, Paperclip, X, Hash } from 'lucide-react';
 
 interface CreateOrderProps {
   onSuccess: () => void;
@@ -17,6 +17,7 @@ const CreateOrder: React.FC<CreateOrderProps> = ({ onSuccess, currentUser }) => 
   const currentShamsi = getCurrentShamsiDate();
   const [shamsiDate, setShamsiDate] = useState({ year: currentShamsi.year, month: currentShamsi.month, day: currentShamsi.day });
   const [formData, setFormData] = useState({ payee: '', description: '', });
+  const [trackingNumber, setTrackingNumber] = useState<string>('');
   const [payingCompany, setPayingCompany] = useState('');
   const [availableCompanies, setAvailableCompanies] = useState<string[]>([]);
   const [availableBanks, setAvailableBanks] = useState<string[]>([]);
@@ -33,6 +34,7 @@ const CreateOrder: React.FC<CreateOrderProps> = ({ onSuccess, currentUser }) => 
           setPayingCompany(settings.defaultCompany || '');
           setAvailableBanks(settings.bankNames || []);
       });
+      getNextTrackingNumber().then(num => setTrackingNumber(num.toString()));
   }, []);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
@@ -50,6 +52,23 @@ const CreateOrder: React.FC<CreateOrderProps> = ({ onSuccess, currentUser }) => 
     try { const date = jalaliToGregorian(shamsiDate.year, shamsiDate.month, shamsiDate.day); const y = date.getFullYear(); const m = String(date.getMonth() + 1).padStart(2, '0'); const d = String(date.getDate()).padStart(2, '0'); return `${y}-${m}-${d}`; } catch (e) { const now = new Date(); return `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`; }
   };
 
+  const handleAddBank = async () => {
+      const newBank = window.prompt("نام بانک جدید را وارد کنید:");
+      if (!newBank || !newBank.trim()) return;
+      try {
+          const currentSettings = await getSettings();
+          const updatedBanks = [...(currentSettings.bankNames || []), newBank.trim()];
+          // Remove duplicates
+          const uniqueBanks = Array.from(new Set(updatedBanks));
+          
+          await saveSettings({ ...currentSettings, bankNames: uniqueBanks });
+          setAvailableBanks(uniqueBanks);
+          setNewLine(prev => ({ ...prev, bankName: newBank.trim() }));
+      } catch (e) {
+          alert("خطا در ذخیره بانک جدید");
+      }
+  };
+
   const handleEnhance = async () => { if (!formData.description) return; setIsEnhancing(true); const improved = await enhanceDescription(formData.description); setFormData(prev => ({ ...prev, description: improved })); setIsEnhancing(false); };
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => { const file = e.target.files?.[0]; if (!file) return; if (file.size > 150 * 1024 * 1024) { alert("حجم فایل نباید بیشتر از 150 مگابایت باشد."); return; } setUploading(true); const reader = new FileReader(); reader.onload = async (ev) => { const base64 = ev.target?.result as string; try { const result = await uploadFile(file.name, base64); setAttachments([...attachments, { fileName: result.fileName, data: result.url }]); } catch (error) { alert('خطا در آپلود فایل'); } finally { setUploading(false); } }; reader.readAsDataURL(file); e.target.value = ''; };
   const removeAttachment = (index: number) => { setAttachments(attachments.filter((_, i) => i !== index)); };
@@ -60,8 +79,18 @@ const CreateOrder: React.FC<CreateOrderProps> = ({ onSuccess, currentUser }) => 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (paymentLines.length === 0) { alert("لطفا حداقل یک روش پرداخت اضافه کنید."); return; }
+    if (!trackingNumber) { alert("شماره دستور پرداخت الزامی است."); return; }
+    
     setIsSubmitting(true);
-    try { const nextTrackingNumber = await getNextTrackingNumber(); const newOrder: PaymentOrder = { id: generateUUID(), trackingNumber: nextTrackingNumber, date: getIsoDate(), payee: formData.payee, totalAmount: sumPaymentLines, description: formData.description, status: OrderStatus.PENDING, requester: currentUser.fullName, createdAt: Date.now(), paymentDetails: paymentLines, attachments: attachments, payingCompany: payingCompany }; await saveOrder(newOrder); onSuccess(); } catch (error) { alert('خطا در ثبت سفارش'); } finally { setIsSubmitting(false); }
+    try { 
+        const newOrder: PaymentOrder = { id: generateUUID(), trackingNumber: Number(trackingNumber), date: getIsoDate(), payee: formData.payee, totalAmount: sumPaymentLines, description: formData.description, status: OrderStatus.PENDING, requester: currentUser.fullName, createdAt: Date.now(), paymentDetails: paymentLines, attachments: attachments, payingCompany: payingCompany }; 
+        await saveOrder(newOrder); 
+        onSuccess(); 
+    } catch (error) { 
+        alert('خطا در ثبت سفارش'); 
+    } finally { 
+        setIsSubmitting(false); 
+    }
   };
 
   const years = Array.from({ length: 11 }, (_, i) => 1400 + i);
@@ -72,6 +101,7 @@ const CreateOrder: React.FC<CreateOrderProps> = ({ onSuccess, currentUser }) => 
       <div className="flex items-center gap-4 mb-8 border-b pb-4"><div className="w-12 h-12 rounded-full bg-blue-50 flex items-center justify-center text-blue-600"><Save size={24} /></div><div><h2 className="text-2xl font-bold text-gray-800">ثبت دستور پرداخت جدید</h2><p className="text-gray-500 text-sm mt-1">اطلاعات گیرنده و روش‌های پرداخت را وارد نمایید</p></div></div>
       <form onSubmit={handleSubmit} className="space-y-6">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="space-y-2"><label className="text-sm font-medium text-gray-700 flex items-center gap-2"><Hash size={16}/> شماره دستور پرداخت</label><input required type="number" onKeyDown={handleKeyDown} className="w-full border rounded-xl px-4 py-3 bg-white font-mono font-bold text-blue-600 dir-ltr text-left" value={trackingNumber} onChange={e => setTrackingNumber(e.target.value)} /></div>
           <div className="space-y-2"><label className="text-sm font-medium text-gray-700">گیرنده وجه (شخص/شرکت)</label><input required type="text" onKeyDown={handleKeyDown} className="w-full border rounded-xl px-4 py-3 bg-gray-50" value={formData.payee} onChange={e => setFormData({ ...formData, payee: e.target.value })} /></div>
           <div className="space-y-2"><label className="text-sm font-medium text-gray-700">مبلغ کل (محاسبه خودکار)</label><input readOnly disabled type="text" className="w-full border rounded-xl px-4 py-3 bg-gray-100 text-gray-600 text-left dir-ltr font-mono font-bold" value={formatCurrency(sumPaymentLines)} /></div>
           <div className="space-y-2"><label className="text-sm font-medium text-gray-700">شرکت پرداخت کننده</label><select className="w-full border rounded-xl px-4 py-3 bg-gray-50" value={payingCompany} onChange={e => setPayingCompany(e.target.value)} onKeyDown={handleKeyDown}><option value="">-- انتخاب کنید --</option>{availableCompanies.map(c => <option key={c} value={c}>{c}</option>)}</select></div>
@@ -82,7 +112,7 @@ const CreateOrder: React.FC<CreateOrderProps> = ({ onSuccess, currentUser }) => 
             <div className="grid grid-cols-1 md:grid-cols-4 gap-3 items-end mb-4 border-b border-gray-200 pb-4">
                 <div className="space-y-1"><label className="text-xs text-gray-500">نوع</label><select className="w-full border rounded-lg p-2 text-sm" value={newLine.method} onChange={e => setNewLine({ ...newLine, method: e.target.value as PaymentMethod })} onKeyDown={handleKeyDown}>{Object.values(PaymentMethod).map(m => <option key={m} value={m}>{m}</option>)}</select></div>
                 <div className="space-y-1"><label className="text-xs text-gray-500">مبلغ (ریال)</label><input type="text" inputMode="numeric" className="w-full border rounded-lg p-2 text-sm dir-ltr text-left" placeholder="0" value={formatNumberString(newLine.amount)} onChange={e => setNewLine({ ...newLine, amount: normalizeInputNumber(e.target.value).replace(/[^0-9]/g, '') })} onKeyDown={handleKeyDown}/></div>
-                {(newLine.method === PaymentMethod.CHEQUE || newLine.method === PaymentMethod.TRANSFER) ? (<>{newLine.method === PaymentMethod.CHEQUE && <div className="space-y-1"><label className="text-xs text-gray-500">شماره چک</label><input type="text" inputMode="numeric" className="w-full border rounded-lg p-2 text-sm" value={newLine.chequeNumber} onChange={e => setNewLine({ ...newLine, chequeNumber: normalizeInputNumber(e.target.value).replace(/[^0-9]/g, '') })} onKeyDown={handleKeyDown}/></div>}<div className="space-y-1"><label className="text-xs text-gray-500">نام بانک</label><select className="w-full border rounded-lg p-2 text-sm" value={newLine.bankName} onChange={e => setNewLine({ ...newLine, bankName: e.target.value })} onKeyDown={handleKeyDown}><option value="">-- انتخاب بانک --</option>{availableBanks.map(b => <option key={b} value={b}>{b}</option>)}</select></div></>) : <div className="md:block hidden"></div>}
+                {(newLine.method === PaymentMethod.CHEQUE || newLine.method === PaymentMethod.TRANSFER) ? (<>{newLine.method === PaymentMethod.CHEQUE && <div className="space-y-1"><label className="text-xs text-gray-500">شماره چک</label><input type="text" inputMode="numeric" className="w-full border rounded-lg p-2 text-sm" value={newLine.chequeNumber} onChange={e => setNewLine({ ...newLine, chequeNumber: normalizeInputNumber(e.target.value).replace(/[^0-9]/g, '') })} onKeyDown={handleKeyDown}/></div>}<div className="space-y-1"><label className="text-xs text-gray-500">نام بانک</label><div className="flex gap-1"><select className="w-full border rounded-lg p-2 text-sm" value={newLine.bankName} onChange={e => setNewLine({ ...newLine, bankName: e.target.value })} onKeyDown={handleKeyDown}><option value="">-- انتخاب بانک --</option>{availableBanks.map(b => <option key={b} value={b}>{b}</option>)}</select><button type="button" onClick={handleAddBank} className="bg-blue-100 text-blue-600 px-2 rounded-lg hover:bg-blue-200" title="افزودن بانک جدید"><Plus size={16}/></button></div></div></>) : <div className="md:block hidden"></div>}
                 <button type="button" onClick={addPaymentLine} disabled={!newLine.amount} className="bg-blue-600 text-white p-2 rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center justify-center gap-1 text-sm"><Plus size={16} /> افزودن</button>
             </div>
             <div className="space-y-2">{paymentLines.map((line) => (<div key={line.id} className="flex items-center justify-between bg-white p-3 rounded border border-gray-100 shadow-sm"><div className="flex gap-3 text-sm"><span className="font-bold text-gray-800">{line.method}</span><span className="text-gray-600 dir-ltr">{formatCurrency(line.amount)}</span>{line.chequeNumber && <span className="text-gray-500 text-xs bg-yellow-50 px-2 py-0.5 rounded">چک: {line.chequeNumber}</span>}{line.bankName && <span className="text-blue-500 text-xs bg-blue-50 px-2 py-0.5 rounded">{line.bankName}</span>}</div><button type="button" onClick={() => removePaymentLine(line.id)} className="text-red-500 hover:text-red-700"><Trash2 size={16} /></button></div>))}</div>

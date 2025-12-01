@@ -4,7 +4,7 @@ import { PaymentMethod, PaymentOrder, PaymentDetail, SystemSettings } from '../t
 import { editOrder, uploadFile, getSettings } from '../services/storageService';
 import { enhanceDescription } from '../services/geminiService';
 import { jalaliToGregorian, getShamsiDateFromIso, formatCurrency, generateUUID, normalizeInputNumber, formatNumberString, deformatNumberString } from '../constants';
-import { Wand2, Save, Loader2, X, Calendar, Plus, Trash2, Paperclip } from 'lucide-react';
+import { Wand2, Save, Loader2, X, Calendar, Plus, Trash2, Paperclip, Hash } from 'lucide-react';
 
 interface EditOrderModalProps {
   order: PaymentOrder;
@@ -17,7 +17,7 @@ const MONTHS = [ 'فروردین', 'اردیبهشت', 'خرداد', 'تیر', '
 const EditOrderModal: React.FC<EditOrderModalProps> = ({ order, onClose, onSave }) => {
   const initialShamsi = getShamsiDateFromIso(order.date);
   const [shamsiDate, setShamsiDate] = useState({ year: initialShamsi.year, month: initialShamsi.month, day: initialShamsi.day });
-  const [formData, setFormData] = useState({ payee: order.payee, totalAmount: order.totalAmount.toString(), description: order.description, });
+  const [formData, setFormData] = useState({ payee: order.payee, totalAmount: order.totalAmount.toString(), description: order.description, trackingNumber: order.trackingNumber.toString() });
   const [payingCompany, setPayingCompany] = useState(order.payingCompany || '');
   const [availableCompanies, setAvailableCompanies] = useState<string[]>([]);
   const [availableBanks, setAvailableBanks] = useState<string[]>([]);
@@ -43,8 +43,10 @@ const EditOrderModal: React.FC<EditOrderModalProps> = ({ order, onClose, onSave 
     e.preventDefault();
     if (paymentLines.length === 0) { alert("لطفا حداقل یک روش پرداخت اضافه کنید."); return; }
     if (sumPaymentLines !== totalRequired) { alert("جمع اقلام پرداخت با مبلغ کل سفارش برابر نیست!"); return; }
+    if (!formData.trackingNumber) { alert("شماره دستور پرداخت الزامی است."); return; }
+    
     setIsSubmitting(true);
-    const updatedOrder: PaymentOrder = { ...order, date: getIsoDate(), payee: formData.payee, totalAmount: totalRequired, description: formData.description, paymentDetails: paymentLines, attachments: attachments, payingCompany: payingCompany };
+    const updatedOrder: PaymentOrder = { ...order, trackingNumber: Number(formData.trackingNumber), date: getIsoDate(), payee: formData.payee, totalAmount: totalRequired, description: formData.description, paymentDetails: paymentLines, attachments: attachments, payingCompany: payingCompany };
     try { await editOrder(updatedOrder); onSave(); onClose(); } catch (error) { alert("خطا در ذخیره تغییرات"); } finally { setIsSubmitting(false); }
   };
 
@@ -57,6 +59,7 @@ const EditOrderModal: React.FC<EditOrderModalProps> = ({ order, onClose, onSave 
             <div className="flex items-center justify-between p-6 border-b sticky top-0 bg-white z-10"><div className="flex items-center gap-3"><div className="bg-blue-50 p-2 rounded-lg text-blue-600"><Save size={20} /></div><h2 className="text-xl font-bold text-gray-800">ویرایش دستور پرداخت</h2></div><button onClick={onClose} className="text-gray-400 hover:text-red-500 transition-colors"><X size={24} /></button></div>
             <form onSubmit={handleSubmit} className="p-6 space-y-6">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="space-y-2"><label className="text-sm font-medium text-gray-700 flex items-center gap-2"><Hash size={16}/> شماره دستور پرداخت</label><input required type="number" className="w-full border rounded-xl px-4 py-3 bg-white font-mono font-bold text-blue-600 dir-ltr text-left" value={formData.trackingNumber} onChange={e => setFormData({ ...formData, trackingNumber: e.target.value })} /></div>
                 <div className="space-y-2"><label className="text-sm font-medium text-gray-700">گیرنده وجه</label><input required type="text" className="w-full border rounded-xl px-4 py-3 bg-gray-50" value={formData.payee} onChange={e => setFormData({ ...formData, payee: e.target.value })} /></div>
                 <div className="space-y-2"><label className="text-sm font-medium text-gray-700">مبلغ کل (ریال)</label><input required type="text" inputMode="numeric" className="w-full border rounded-xl px-4 py-3 bg-gray-50 text-left dir-ltr font-mono" value={formatNumberString(formData.totalAmount)} onChange={e => setFormData({ ...formData, totalAmount: normalizeInputNumber(e.target.value).replace(/[^0-9]/g, '') })} /></div>
                 <div className="space-y-2"><label className="text-sm font-medium text-gray-700">شرکت پرداخت کننده</label><select className="w-full border rounded-xl px-4 py-3 bg-gray-50" value={payingCompany} onChange={e => setPayingCompany(e.target.value)}><option value="">-- انتخاب کنید --</option>{availableCompanies.map(c => <option key={c} value={c}>{c}</option>)}</select></div>

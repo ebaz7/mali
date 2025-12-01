@@ -88,13 +88,15 @@ const performAutoBackup = () => {
                 const filesToDelete = sortedFiles.slice(48);
                 filesToDelete.forEach(f => fs.unlinkSync(path.join(BACKUPS_DIR, f.file)));
             }
+            console.log(`[Backup] Auto backup created: ${backupFile}`);
         }
     } catch (error) {
-        console.error('[Auto Backup] Error:', error);
+        console.error('[Backup] Error:', error);
     }
 };
 
-setInterval(performAutoBackup, 3600000);
+// Backup every 30 minutes (1800000 ms)
+setInterval(performAutoBackup, 1800000);
 performAutoBackup();
 
 app.post('/api/login', (req, res) => {
