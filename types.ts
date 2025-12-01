@@ -1,0 +1,297 @@
+
+export enum PaymentMethod {
+  CASH = 'نقد',
+  CHEQUE = 'چک',
+  TRANSFER = 'حواله بانکی',
+  POS = 'کارتخوان'
+}
+
+export enum OrderStatus {
+  PENDING = 'در انتظار بررسی مالی', // Waiting for Financial Manager
+  APPROVED_FINANCE = 'تایید مالی / در انتظار مدیریت', // Financial done, waiting for Manager
+  APPROVED_MANAGER = 'تایید مدیریت / در انتظار مدیرعامل', // Manager done, waiting for CEO
+  APPROVED_CEO = 'تایید نهایی', // Done
+  REJECTED = 'رد شده'
+}
+
+export enum UserRole {
+  ADMIN = 'admin',        // Can do everything (superuser)
+  CEO = 'ceo',            // Final approver (مدیر عامل)
+  MANAGER = 'manager',    // Middle approver (مدیریت)
+  FINANCIAL = 'financial',// First approver (مدیر مالی)
+  USER = 'user'           // Requester
+}
+
+export interface User {
+  id: string;
+  username: string;
+  password: string;
+  fullName: string;
+  role: UserRole;
+  canManageTrade?: boolean; // Specific permission override
+}
+
+export interface PaymentDetail {
+  id: string;
+  amount: number;
+  method: PaymentMethod;
+  chequeNumber?: string;
+  bankName?: string;
+}
+
+export interface PaymentOrder {
+  id: string;
+  trackingNumber: number;
+  date: string; // ISO String YYYY-MM-DD
+  payee: string; 
+  totalAmount: number; // Sum of all payment details
+  description: string;
+  status: OrderStatus;
+  payingCompany?: string; // New: The company paying the order
+  
+  // Payment Details (Array for multiple methods)
+  paymentDetails: PaymentDetail[];
+
+  // People
+  requester: string;
+  approverFinancial?: string;
+  approverManager?: string;
+  approverCeo?: string;
+  
+  // Rejection Logic
+  rejectionReason?: string;
+
+  // Attachments
+  attachments?: {
+      fileName: string;
+      data: string; // URL if on server, Base64 if offline
+  }[];
+
+  createdAt: number;
+}
+
+export interface RolePermissions {
+    canViewAll: boolean;
+    canApproveFinancial: boolean;
+    canApproveManager: boolean;
+    canApproveCeo: boolean;
+    canEditOwn: boolean;
+    canEditAll: boolean;
+    canDeleteOwn: boolean;
+    canDeleteAll: boolean;
+    canManageTrade: boolean; // Default Role-based permission
+}
+
+export interface SystemSettings {
+  currentTrackingNumber: number;
+  companyNames: string[]; // List of available companies
+  defaultCompany: string; // Default selection
+  bankNames: string[]; // List of available banks
+  commodityGroups: string[]; // Trade: Commodity Groups
+  rolePermissions: Record<string, RolePermissions>; // Dynamic permissions
+}
+
+export interface DashboardStats {
+  totalPending: number;
+  totalApproved: number;
+  totalAmount: number;
+}
+
+export interface ChatMessage {
+    id: string;
+    sender: string;
+    senderUsername: string; 
+    recipient?: string; 
+    groupId?: string; 
+    role: UserRole;
+    message: string;
+    timestamp: number;
+    attachment?: {
+        fileName: string;
+        url: string;
+    };
+}
+
+export interface ChatGroup {
+    id: string;
+    name: string;
+    members: string[]; 
+    createdBy: string;
+}
+
+export interface GroupTask {
+    id: string;
+    groupId: string;
+    title: string;
+    assignee?: string; 
+    isCompleted: boolean;
+    createdBy: string;
+    createdAt: number;
+}
+
+export interface AppNotification {
+    id: string;
+    title: string;
+    message: string;
+    timestamp: number;
+    read: boolean;
+}
+
+// --- TRADE MODULE TYPES ---
+
+export enum TradeStage {
+    LICENSES = 'مجوزها و پروفرما',
+    INSURANCE = 'بیمه',
+    ALLOCATION_QUEUE = 'در صف تخصیص ارز',
+    ALLOCATION_APPROVED = 'تخصیص یافته',
+    CURRENCY_PURCHASE = 'خرید ارز',
+    SHIPPING_DOCS = 'اسناد حمل',
+    INSPECTION = 'گواهی بازرسی',
+    CLEARANCE_DOCS = 'ترخیصیه و قبض انبار',
+    GREEN_LEAF = 'برگ سبز',
+    INTERNAL_SHIPPING = 'حمل داخلی',
+    AGENT_FEES = 'هزینه‌های ترخیص',
+    FINAL_COST = 'قیمت تمام شده'
+}
+
+export interface TradeStageData {
+    stage: TradeStage;
+    isCompleted: boolean;
+    description: string;
+    costRial: number;
+    costCurrency: number;
+    currencyType: string; // USD, EUR, AED, etc.
+    attachments: { fileName: string; url: string }[];
+    updatedAt: number;
+    updatedBy: string;
+    
+    // Specific fields for Allocation Queue
+    queueDate?: string; // YYYY/MM/DD
+    hasFinancialProvision?: boolean; // Tike Tamin Mali
+    
+    // Specific for Allocation Approved
+    allocationDate?: string; // Date approved to freeze timer
+}
+
+export interface TradeItem {
+    id: string;
+    name: string;
+    weight: number; // KG
+    unitPrice: number;
+    totalPrice: number;
+}
+
+export interface InsuranceEndorsement {
+    id: string;
+    date: string;
+    amount: number; // Positive = Cost Increase, Negative = Refund/Credit
+    description: string;
+}
+
+export interface CurrencyPayment {
+    id: string;
+    date: string;
+    amount: number;
+    bank: string;
+    type: 'PAYMENT' | 'REFUND'; // واریز | عودت
+    description?: string;
+}
+
+// New Generic Transaction for License Costs etc.
+export interface TradeTransaction {
+    id: string;
+    date: string;
+    amount: number;
+    bank?: string;
+    description: string;
+}
+
+export interface CurrencyTranche {
+    id: string;
+    date: string;
+    amount: number; // Amount of foreign currency
+    currencyType: string;
+    rate?: number; // Rial rate per unit (optional)
+    brokerName?: string;
+    exchangeName?: string;
+}
+
+export interface CurrencyPurchaseData {
+    guaranteeCheque?: {
+        chequeNumber: string;
+        amount: number;
+        dueDate: string;
+        bank: string;
+        isReturned?: boolean; 
+        returnDate?: string; 
+    };
+    payments: CurrencyPayment[]; // Rial flow
+    
+    // Finalization - Now supports multiple tranches
+    tranches?: CurrencyTranche[];
+
+    // Legacy single fields (kept for backward compatibility if needed, but we will rely on tranches)
+    purchasedAmount: number; 
+    purchasedCurrencyType?: string; 
+    purchaseDate?: string; 
+    brokerName?: string; 
+    exchangeName?: string; 
+    
+    deliveredAmount: number; // ارز تحویل شده (Total)
+    deliveredCurrencyType?: string; 
+    deliveryDate?: string; 
+    recipientName?: string; 
+    
+    remittedAmount: number; // ارز حواله شده
+    
+    isDelivered: boolean; // تیک تحویل نهایی
+}
+
+export interface TradeRecord {
+    id: string;
+    company?: string; // Company owning this record
+    fileNumber: string; // شماره پرونده (داخلی)
+    registrationNumber?: string; // شماره ثبت سفارش
+    commodityGroup?: string; // گروه کالایی
+    sellerName: string; // فروشنده
+    mainCurrency?: string; // ارز پایه (USD, EUR, etc.)
+    
+    // Items
+    items: TradeItem[];
+    freightCost: number; // هزینه حمل
+    exchangeRate?: number; // نرخ ارز محاسباتی
+    operatingBank?: string; // بانک عامل
+
+    // License/Proforma Costs - Now supports history
+    licenseData?: {
+        transactions: TradeTransaction[]; // List of payments (Renewal, registration, etc.)
+        // Legacy fields
+        registrationCost?: number;
+        bankName?: string;
+        paymentDate?: string;
+    };
+
+    // Insurance Details
+    insuranceData?: {
+        policyNumber: string;
+        company: string;
+        cost: number; // Initial cost
+        bank: string;
+        endorsements?: InsuranceEndorsement[]; // الحاقیه ها
+    };
+    
+    // Currency Purchase Details
+    currencyPurchaseData?: CurrencyPurchaseData;
+
+    startDate: string; // ISO Date
+    status: 'Active' | 'Completed' | 'Cancelled';
+    
+    stages: Record<string, TradeStageData>; // Map of Stage Enum to Data
+
+    createdAt: number;
+    createdBy: string;
+    
+    // Legacy support for migration
+    goodsName?: string; 
+    orderNumber?: string;
+}
