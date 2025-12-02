@@ -37,6 +37,7 @@ export interface PaymentDetail {
   method: PaymentMethod;
   chequeNumber?: string;
   bankName?: string;
+  description?: string; // New optional description field
 }
 
 export interface PaymentOrder {

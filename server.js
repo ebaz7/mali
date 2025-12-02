@@ -237,10 +237,26 @@ app.get('/api/orders', (req, res) => { res.json(getDb().orders); });
 app.post('/api/orders', (req, res) => {
     const db = getDb();
     const newOrder = req.body;
-    db.orders.unshift(newOrder);
-    if (newOrder.trackingNumber > db.settings.currentTrackingNumber) {
-        db.settings.currentTrackingNumber = newOrder.trackingNumber;
+    
+    // Concurrency Check: If tracking number exists, increment it
+    let assignedTrackingNumber = newOrder.trackingNumber;
+    const existing = db.orders.find(o => o.trackingNumber === assignedTrackingNumber);
+    
+    if (existing) {
+        // Find the absolute max tracking number in the system
+        const maxOrderNum = db.orders.reduce((max, o) => o.trackingNumber > max ? o.trackingNumber : max, 0);
+        const maxSettingNum = db.settings.currentTrackingNumber;
+        assignedTrackingNumber = Math.max(maxOrderNum, maxSettingNum) + 1;
+        newOrder.trackingNumber = assignedTrackingNumber;
     }
+
+    db.orders.unshift(newOrder);
+    
+    // Always update the setting if we moved past it
+    if (assignedTrackingNumber > db.settings.currentTrackingNumber) {
+        db.settings.currentTrackingNumber = assignedTrackingNumber;
+    }
+    
     saveDb(db);
     res.json(db.orders);
 });

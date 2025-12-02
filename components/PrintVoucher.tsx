@@ -175,21 +175,25 @@ const PrintVoucher: React.FC<PrintVoucherProps> = ({ order, onClose }) => {
                     <table className="w-full text-sm text-right">
                         <thead className="bg-gray-100 border-b border-gray-300 print:bg-gray-200">
                             <tr>
-                                <th className="p-2 font-bold text-gray-600">ردیف</th>
+                                <th className="p-2 font-bold text-gray-600 w-10">ردیف</th>
                                 <th className="p-2 font-bold text-gray-600">نوع پرداخت</th>
                                 <th className="p-2 font-bold text-gray-600">مبلغ</th>
-                                <th className="p-2 font-bold text-gray-600">اطلاعات تکمیلی (چک/بانک)</th>
+                                <th className="p-2 font-bold text-gray-600">اطلاعات تکمیلی</th>
+                                <th className="p-2 font-bold text-gray-600">توضیحات</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-200">
                             {order.paymentDetails.map((detail, idx) => (
                                 <tr key={detail.id}>
-                                    <td className="p-2 w-10 text-center">{idx + 1}</td>
+                                    <td className="p-2 text-center">{idx + 1}</td>
                                     <td className="p-2 font-bold">{detail.method}</td>
                                     <td className="p-2 font-mono">{formatCurrency(detail.amount)}</td>
                                     <td className="p-2">
                                         {detail.method === PaymentMethod.CHEQUE ? `شماره چک: ${detail.chequeNumber}` :
                                          detail.method === PaymentMethod.TRANSFER ? `بانک: ${detail.bankName}` : '-'}
+                                    </td>
+                                    <td className="p-2 text-xs text-gray-600">
+                                        {detail.description || '-'}
                                     </td>
                                 </tr>
                             ))}

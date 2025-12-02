@@ -23,7 +23,7 @@ const EditOrderModal: React.FC<EditOrderModalProps> = ({ order, onClose, onSave 
   const [availableBanks, setAvailableBanks] = useState<string[]>([]);
   const [paymentLines, setPaymentLines] = useState<PaymentDetail[]>(order.paymentDetails || []);
   const [attachments, setAttachments] = useState<{ fileName: string, data: string }[]>(order.attachments || []);
-  const [newLine, setNewLine] = useState<{ method: PaymentMethod; amount: string; chequeNumber: string; bankName: string; }>({ method: PaymentMethod.TRANSFER, amount: '', chequeNumber: '', bankName: '' });
+  const [newLine, setNewLine] = useState<{ method: PaymentMethod; amount: string; chequeNumber: string; bankName: string; description: string; }>({ method: PaymentMethod.TRANSFER, amount: '', chequeNumber: '', bankName: '', description: '' });
   const [isEnhancing, setIsEnhancing] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -39,10 +39,53 @@ const EditOrderModal: React.FC<EditOrderModalProps> = ({ order, onClose, onSave 
   const handleEnhance = async () => { if (!formData.description) return; setIsEnhancing(true); const improved = await enhanceDescription(formData.description); setFormData(prev => ({ ...prev, description: improved })); setIsEnhancing(false); };
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => { const file = e.target.files?.[0]; if (!file) return; if (file.size > 150 * 1024 * 1024) { alert("حجم فایل بالا"); return; } setUploading(true); const reader = new FileReader(); reader.onload = async (ev) => { const base64 = ev.target?.result as string; try { const result = await uploadFile(file.name, base64); setAttachments([...attachments, { fileName: result.fileName, data: result.url }]); } catch (error) { alert('خطا در آپلود فایل'); } finally { setUploading(false); } }; reader.readAsDataURL(file); e.target.value = ''; };
   const removeAttachment = (index: number) => { setAttachments(attachments.filter((_, i) => i !== index)); };
-  const addPaymentLine = () => { const amt = deformatNumberString(newLine.amount); if (!amt || amt <= 0) return; const detail: PaymentDetail = { id: generateUUID(), method: newLine.method, amount: amt, chequeNumber: newLine.method === PaymentMethod.CHEQUE ? normalizeInputNumber(newLine.chequeNumber) : undefined, bankName: (newLine.method === PaymentMethod.TRANSFER || newLine.method === PaymentMethod.CHEQUE) ? newLine.bankName : undefined }; setPaymentLines([...paymentLines, detail]); setNewLine({ method: PaymentMethod.TRANSFER, amount: '', chequeNumber: '', bankName: '' }); };
-  const removePaymentLine = (id: string) => { setPaymentLines(paymentLines.filter(p => p.id !== id)); };
+  
+  const addPaymentLine = () => { 
+      const amt = deformatNumberString(newLine.amount); 
+      if (!amt || amt <= 0) return; 
+      
+      const detail: PaymentDetail = { 
+          id: generateUUID(), 
+          method: newLine.method, 
+          amount: amt, 
+          chequeNumber: newLine.method === PaymentMethod.CHEQUE ? normalizeInputNumber(newLine.chequeNumber) : undefined, 
+          bankName: (newLine.method === PaymentMethod.TRANSFER || newLine.method === PaymentMethod.CHEQUE) ? newLine.bankName : undefined,
+          description: newLine.description
+      };
+      
+      const updatedLines = [...paymentLines, detail];
+      setPaymentLines(updatedLines); 
+      
+      // Auto-update total amount
+      const newTotal = updatedLines.reduce((acc, curr) => acc + curr.amount, 0);
+      
+      // Auto-append description
+      let newDescription = formData.description;
+      if (newLine.description) {
+          newDescription = newDescription ? `${newDescription} - ${newLine.description}` : newLine.description;
+      }
+
+      setFormData(prev => ({ 
+          ...prev, 
+          totalAmount: newTotal.toString(),
+          description: newDescription
+      }));
+
+      setNewLine({ method: PaymentMethod.TRANSFER, amount: '', chequeNumber: '', bankName: '', description: '' }); 
+  };
+  
+  const removePaymentLine = (id: string) => { 
+      const updatedLines = paymentLines.filter(p => p.id !== id);
+      setPaymentLines(updatedLines);
+      
+      // Auto-update total amount
+      const newTotal = updatedLines.reduce((acc, curr) => acc + curr.amount, 0);
+      setFormData(prev => ({ ...prev, totalAmount: newTotal.toString() }));
+  };
+  
   const sumPaymentLines = paymentLines.reduce((acc, curr) => acc + curr.amount, 0);
   const totalRequired = deformatNumberString(formData.totalAmount) || 0;
+  // Note: Since we auto-update totalAmount now, remaining should typically be 0 unless user manually edits totalAmount field
   const remaining = totalRequired - sumPaymentLines;
 
   const handleAddBank = async () => {
@@ -63,7 +106,7 @@ const EditOrderModal: React.FC<EditOrderModalProps> = ({ order, onClose, onSave 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (paymentLines.length === 0) { alert("لطفا حداقل یک روش پرداخت اضافه کنید."); return; }
-    if (sumPaymentLines !== totalRequired) { alert("جمع اقلام پرداخت با مبلغ کل سفارش برابر نیست!"); return; }
+    if (remaining !== 0) { alert("جمع اقلام پرداخت با مبلغ کل سفارش برابر نیست!"); return; }
     if (!formData.trackingNumber) { alert("شماره دستور پرداخت الزامی است."); return; }
     
     setIsSubmitting(true);
@@ -92,9 +135,10 @@ const EditOrderModal: React.FC<EditOrderModalProps> = ({ order, onClose, onSave 
                         <div className="space-y-1"><label className="text-xs text-gray-500">نوع</label><select className="w-full border rounded-lg p-2 text-sm" value={newLine.method} onChange={e => setNewLine({ ...newLine, method: e.target.value as PaymentMethod })}>{Object.values(PaymentMethod).map(m => <option key={m} value={m}>{m}</option>)}</select></div>
                         <div className="space-y-1"><label className="text-xs text-gray-500">مبلغ</label><input type="text" inputMode="numeric" className="w-full border rounded-lg p-2 text-sm dir-ltr text-left" placeholder="0" value={formatNumberString(newLine.amount)} onChange={e => setNewLine({ ...newLine, amount: normalizeInputNumber(e.target.value).replace(/[^0-9]/g, '') })}/></div>
                         {(newLine.method === PaymentMethod.CHEQUE || newLine.method === PaymentMethod.TRANSFER) ? (<>{newLine.method === PaymentMethod.CHEQUE && <div className="space-y-1"><label className="text-xs text-gray-500">شماره چک</label><input type="text" inputMode="numeric" className="w-full border rounded-lg p-2 text-sm" value={newLine.chequeNumber} onChange={e => setNewLine({ ...newLine, chequeNumber: normalizeInputNumber(e.target.value).replace(/[^0-9]/g, '') })}/></div>}<div className="space-y-1"><label className="text-xs text-gray-500">نام بانک</label><div className="flex gap-1"><select className="w-full border rounded-lg p-2 text-sm" value={newLine.bankName} onChange={e => setNewLine({ ...newLine, bankName: e.target.value })}><option value="">-- انتخاب بانک --</option>{availableBanks.map(b => <option key={b} value={b}>{b}</option>)}</select><button type="button" onClick={handleAddBank} className="bg-blue-100 text-blue-600 px-2 rounded-lg hover:bg-blue-200" title="افزودن بانک جدید"><Plus size={16}/></button></div></div></>) : <div className="md:block hidden"></div>}
-                        <button type="button" onClick={addPaymentLine} disabled={!newLine.amount} className="bg-blue-600 text-white p-2 rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center justify-center gap-1 text-sm"><Plus size={16} /> افزودن</button>
+                        <div className="space-y-1 md:col-span-3"><label className="text-xs text-gray-500">شرح (اختیاری)</label><input type="text" className="w-full border rounded-lg p-2 text-sm" placeholder="توضیحات این بخش..." value={newLine.description} onChange={e => setNewLine({ ...newLine, description: e.target.value })}/></div>
+                        <div className="md:col-span-1"><button type="button" onClick={addPaymentLine} disabled={!newLine.amount} className="w-full bg-blue-600 text-white p-2 rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center justify-center gap-1 text-sm"><Plus size={16} /> افزودن</button></div>
                     </div>
-                    <div className="space-y-2">{paymentLines.map((line) => (<div key={line.id} className="flex items-center justify-between bg-white p-3 rounded border border-gray-100 shadow-sm"><div className="flex gap-3 text-sm"><span className="font-bold text-gray-800">{line.method}</span><span className="text-gray-600">{formatCurrency(line.amount)}</span>{line.chequeNumber && <span className="text-gray-500 text-xs bg-yellow-50 px-2 py-0.5 rounded">چک: {line.chequeNumber}</span>}{line.bankName && <span className="text-blue-500 text-xs bg-blue-50 px-2 py-0.5 rounded">{line.bankName}</span>}</div><button type="button" onClick={() => removePaymentLine(line.id)} className="text-red-500 hover:text-red-700"><Trash2 size={16} /></button></div>))}</div>
+                    <div className="space-y-2">{paymentLines.map((line) => (<div key={line.id} className="flex items-center justify-between bg-white p-3 rounded border border-gray-100 shadow-sm"><div className="flex gap-3 text-sm flex-wrap items-center"><span className="font-bold text-gray-800">{line.method}</span><span className="text-gray-600">{formatCurrency(line.amount)}</span>{line.chequeNumber && <span className="text-gray-500 text-xs bg-yellow-50 px-2 py-0.5 rounded">چک: {line.chequeNumber}</span>}{line.bankName && <span className="text-blue-500 text-xs bg-blue-50 px-2 py-0.5 rounded">{line.bankName}</span>}{line.description && <span className="text-gray-500 text-xs italic border-r pr-2 mr-1">{line.description}</span>}</div><button type="button" onClick={() => removePaymentLine(line.id)} className="text-red-500 hover:text-red-700"><Trash2 size={16} /></button></div>))}</div>
                 </div>
                  <div className="bg-gray-50 p-4 rounded-xl border border-gray-200"><label className="text-sm font-medium text-gray-700 mb-2 block flex items-center gap-2"><Paperclip size={16} />مدیریت ضمیمه‌ها</label><div className="flex items-center gap-4"><input type="file" id="attachment-edit" className="hidden" accept="image/*,application/pdf" onChange={handleFileChange} /><label htmlFor="attachment-edit" className={`bg-white border text-gray-700 px-4 py-2 rounded-lg cursor-pointer hover:bg-gray-100 text-sm ${uploading ? 'opacity-50 cursor-wait' : ''}`}>{uploading ? 'در حال آپلود...' : 'افزودن فایل جدید'}</label></div>{attachments.length > 0 && <div className="mt-3 space-y-2">{attachments.map((file, idx) => (<div key={idx} className="flex items-center justify-between bg-white p-2 rounded border border-gray-200 text-sm"><span className="text-blue-600 truncate max-w-[200px]">{file.fileName}</span><button type="button" onClick={() => removeAttachment(idx)} className="text-red-500 hover:text-red-700"><X size={16} /></button></div>))}</div>}</div>
                 <div className="space-y-2"><div className="flex justify-between items-center"><label className="text-sm font-medium text-gray-700">شرح پرداخت</label><button type="button" onClick={handleEnhance} disabled={isEnhancing || !formData.description} className="text-xs flex items-center gap-1.5 text-purple-600 bg-purple-50 px-3 py-1.5 rounded-lg disabled:opacity-50">{isEnhancing ? <Loader2 size={14} className="animate-spin" /> : <Wand2 size={14} />}هوش مصنوعی</button></div><textarea required rows={4} className="w-full border rounded-xl px-4 py-3 bg-gray-50 resize-none" value={formData.description} onChange={e => setFormData({ ...formData, description: e.target.value })} /></div>
