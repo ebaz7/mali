@@ -1,7 +1,7 @@
 
 
 import React, { useState, useEffect, useRef } from 'react';
-import { LayoutDashboard, PlusCircle, ListChecks, FileText, Users, LogOut, User as UserIcon, Settings, Bell, BellOff, MessageSquare, X, Check, Container, KeyRound, Save, Upload, Camera } from 'lucide-react';
+import { LayoutDashboard, PlusCircle, ListChecks, FileText, Users, LogOut, User as UserIcon, Settings, Bell, BellOff, MessageSquare, X, Check, Container, KeyRound, Save, Upload, Camera, Download, Share } from 'lucide-react';
 import { User, UserRole, AppNotification, SystemSettings } from '../types';
 import { logout, hasPermission, getRolePermissions, updateUser } from '../services/authService';
 import { requestNotificationPermission, setNotificationPreference, isNotificationEnabledInApp } from '../services/notificationService';
@@ -24,6 +24,9 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab, curr
   const isSecure = window.isSecureContext;
   const notifRef = useRef<HTMLDivElement>(null);
   const mobileNotifRef = useRef<HTMLDivElement>(null);
+  
+  // PWA Install Prompt State
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
 
   // Profile/Password Modal State
   const [showProfileModal, setShowProfileModal] = useState(false);
@@ -36,7 +39,6 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab, curr
     getSettings().then(data => {
         setSettings(data);
         if (data.pwaIcon) {
-            // Try to update apple-touch-icon dynamically if possible
             const link = document.querySelector("link[rel*='apple-touch-icon']") as HTMLLinkElement;
             if (link) link.href = data.pwaIcon;
         }
@@ -47,13 +49,41 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab, curr
         if (mobileNotifRef.current && !mobileNotifRef.current.contains(event.target as Node)) setShowNotifDropdown(false);
     };
     document.addEventListener("mousedown", handleClickOutside);
+    
+    // Capture PWA Install Prompt
+    window.addEventListener('beforeinstallprompt', (e) => {
+        e.preventDefault();
+        setDeferredPrompt(e);
+    });
+
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
   const handleLogout = () => { logout(); onLogout(); };
   const handleToggleNotif = async () => {
     if (!isSecure) { alert("⚠️ مرورگرها اجازه فعال‌سازی نوتیفیکیشن در شبکه غیرامن (HTTP) را نمی‌دهند.\n\nبرای رفع این مشکل به بخش «تنظیمات» نرم‌افزار مراجعه کنید."); return; }
-    if (notifEnabled) { setNotifEnabled(false); setNotificationPreference(false); } else { const granted = await requestNotificationPermission(); if (granted) { setNotifEnabled(true); setNotificationPreference(true); new Notification("سیستم دستور پرداخت", { body: "نوتیفیکیشن‌ها فعال شدند.", dir: 'rtl' }); } }
+    if (notifEnabled) { 
+        setNotifEnabled(false); 
+        setNotificationPreference(false); 
+    } else { 
+        const granted = await requestNotificationPermission(); 
+        if (granted) { 
+            setNotifEnabled(true); 
+            setNotificationPreference(true); 
+            new Notification("سیستم دستور پرداخت", { body: "نوتیفیکیشن‌ها فعال شدند.", dir: 'rtl' }); 
+        } 
+    }
+  };
+
+  const handleInstallClick = () => {
+      if (deferredPrompt) {
+          deferredPrompt.prompt();
+          deferredPrompt.userChoice.then((choiceResult: any) => {
+              if (choiceResult.outcome === 'accepted') {
+                  setDeferredPrompt(null);
+              }
+          });
+      }
   };
 
   const handleUpdateProfile = async (e: React.FormEvent) => {
@@ -83,7 +113,6 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab, curr
   const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
       if (!file) return;
-      // Increased limit to 10MB to support high-res phone photos
       if (file.size > 10 * 1024 * 1024) { alert('حجم تصویر نباید بیشتر از 10 مگابایت باشد.'); return; }
       
       setUploadingAvatar(true);
@@ -120,22 +149,36 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab, curr
 
   // Notification Dropdown Component
   const NotificationDropdown = () => (
-      <div className="absolute top-12 left-2 right-2 md:bottom-12 md:top-auto bg-white rounded-xl shadow-2xl border border-gray-200 text-gray-800 z-50 overflow-hidden w-64 md:origin-bottom-left origin-top-left animate-fade-in">
-          <div className="bg-gray-100 p-3 flex justify-between items-center border-b">
-              <span className="text-xs font-bold text-gray-600">اعلان‌های اخیر</span>
-              <div className="flex gap-2">
-                  <button onClick={handleToggleNotif} className={!isSecure ? "text-amber-500 animate-pulse" : ""}>
-                      {notifEnabled ? <Bell size={14} className="text-green-600"/> : <BellOff size={14} className={!isSecure ? "text-amber-500" : "text-gray-400"}/>}
-                  </button>
-                  {notifications.length > 0 && (<button onClick={clearNotifications} className="text-gray-400 hover:text-red-500"><X size={14} /></button>)}
+      <div className="absolute top-12 left-2 right-2 md:bottom-12 md:top-auto md:left-0 md:right-auto md:w-80 bg-white rounded-xl shadow-2xl border border-gray-200 text-gray-800 z-50 overflow-hidden origin-top md:origin-bottom-left animate-fade-in">
+          
+          {/* Explicit Notification Toggle Row */}
+          <div className="bg-blue-50 p-3 flex justify-between items-center border-b border-blue-100">
+              <div className="flex items-center gap-2">
+                 {notifEnabled ? <Bell size={16} className="text-blue-600"/> : <BellOff size={16} className="text-gray-500"/>}
+                 <span className="text-xs font-bold text-blue-800">وضعیت اعلان‌ها:</span>
               </div>
+              <button 
+                onClick={handleToggleNotif} 
+                className={`px-3 py-1 rounded-md text-xs font-bold transition-colors ${notifEnabled ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700 hover:bg-red-200 animate-pulse'}`}
+              >
+                  {notifEnabled ? 'فعال است' : 'فعال‌سازی'}
+              </button>
           </div>
+
+          <div className="bg-gray-50 p-2 flex justify-between items-center border-b">
+              <span className="text-xs font-bold text-gray-600">پیام‌های سیستم</span>
+              {notifications.length > 0 && (<button onClick={clearNotifications} className="text-gray-400 hover:text-red-500 flex items-center gap-1 text-[10px]"><X size={12} /> پاک کردن همه</button>)}
+          </div>
+          
           <div className="max-h-60 overflow-y-auto">
               {notifications.length === 0 ? (
-                  <div className="p-4 text-center text-xs text-gray-400">هیچ پیامی نیست</div>
+                  <div className="p-6 text-center text-xs text-gray-400 flex flex-col items-center">
+                      <BellOff size={24} className="mb-2 opacity-20"/>
+                      هیچ پیامی نیست
+                  </div>
               ) : (
                   notifications.map(n => (
-                      <div key={n.id} className="p-3 border-b hover:bg-gray-50 text-right">
+                      <div key={n.id} className="p-3 border-b hover:bg-gray-50 text-right last:border-0">
                           <div className="text-xs font-bold text-gray-800 mb-1">{n.title}</div>
                           <div className="text-xs text-gray-600 leading-tight">{n.message}</div>
                           <div className="text-[10px] text-gray-400 mt-1 text-left">{new Date(n.timestamp).toLocaleTimeString('fa-IR')}</div>
@@ -188,7 +231,7 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab, curr
       )}
 
       {/* Desktop Sidebar */}
-      <aside className="w-64 bg-slate-800 text-white flex-shrink-0 hidden md:flex flex-col no-print shadow-xl relative">
+      <aside className="w-64 bg-slate-800 text-white flex-shrink-0 hidden md:flex flex-col no-print shadow-xl relative h-screen sticky top-0">
         <div className="p-6 border-b border-slate-700 flex items-center gap-3"><div className="bg-blue-500 p-2 rounded-lg"><FileText className="w-6 h-6 text-white" /></div><div><h1 className="text-lg font-bold tracking-wide">سیستم مالی</h1><span className="text-xs text-slate-400">پنل کاربری</span></div></div>
         
         {/* Clickable User Info Section */}
@@ -206,6 +249,14 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab, curr
 
         <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
           {navItems.map((item) => { const Icon = item.icon; return (<button key={item.id} onClick={() => setActiveTab(item.id)} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 ${activeTab === item.id ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/20' : 'text-slate-300 hover:bg-slate-700 hover:text-white'}`}><Icon size={20} /><span className="font-medium">{item.label}</span></button>); })}
+          
+          {deferredPrompt && (
+              <button onClick={handleInstallClick} className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-teal-300 hover:bg-slate-700 hover:text-white transition-colors">
+                  <Download size={20} />
+                  <span className="font-medium">نصب برنامه (PWA)</span>
+              </button>
+          )}
+
           <div className="pt-4 mt-2 border-t border-slate-700 relative" ref={notifRef}>
              <button onClick={() => setShowNotifDropdown(!showNotifDropdown)} className={`w-full flex items-center gap-3 px-4 py-2 rounded-lg transition-colors text-sm relative ${unreadCount > 0 ? 'text-white bg-slate-700' : 'text-slate-400 hover:bg-slate-700'}`}><div className="relative"><Bell size={18} />{unreadCount > 0 && (<span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] w-4 h-4 rounded-full flex items-center justify-center animate-pulse">{unreadCount}</span>)}</div><span>مرکز اعلان‌ها</span></button>
              {showNotifDropdown && <NotificationDropdown />}
@@ -220,7 +271,7 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab, curr
         <button onClick={handleLogout} className="p-2 rounded-lg flex flex-col items-center text-xs text-red-500 min-w-[60px]"><LogOut size={22} /><span className="mt-1 text-[10px]">خروج</span></button>
       </div>
 
-      <main className="flex-1 flex flex-col h-screen overflow-hidden relative">
+      <main className="flex-1 flex flex-col h-[100dvh] overflow-hidden relative min-w-0">
           {/* Mobile Header */}
           <header className="bg-white shadow-sm p-4 md:hidden no-print flex items-center justify-between shrink-0 relative z-40">
               <div className="flex items-center gap-2" onClick={() => setShowProfileModal(true)}>
@@ -232,17 +283,25 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab, curr
                      <div className="text-[10px] text-gray-500">{currentUser.fullName}</div>
                  </div>
               </div>
-              <div className="relative" ref={mobileNotifRef}>
-                  <button onClick={() => setShowNotifDropdown(!showNotifDropdown)} className="relative p-2 rounded-full hover:bg-gray-100">
-                      <Bell size={20} className="text-gray-600" />
-                      {unreadCount > 0 && <span className="absolute top-1 right-1 w-2.5 h-2.5 bg-red-500 rounded-full border border-white"></span>}
-                  </button>
-                  {showNotifDropdown && <NotificationDropdown />}
+              <div className="flex items-center gap-2">
+                  {deferredPrompt && (
+                      <button onClick={handleInstallClick} className="p-2 bg-teal-50 text-teal-600 rounded-lg text-xs font-bold flex items-center gap-1">
+                          <Download size={16} />
+                          <span className="hidden xs:inline">نصب</span>
+                      </button>
+                  )}
+                  <div className="relative" ref={mobileNotifRef}>
+                      <button onClick={() => setShowNotifDropdown(!showNotifDropdown)} className="relative p-2 rounded-full hover:bg-gray-100">
+                          <Bell size={20} className="text-gray-600" />
+                          {unreadCount > 0 && <span className="absolute top-1 right-1 w-2.5 h-2.5 bg-red-500 rounded-full border border-white"></span>}
+                      </button>
+                      {showNotifDropdown && <NotificationDropdown />}
+                  </div>
               </div>
           </header>
           
-          <div className="flex-1 overflow-auto bg-gray-50 pb-20 md:pb-0">
-             <div className="p-4 md:p-8 max-w-7xl mx-auto min-h-full">
+          <div className="flex-1 overflow-auto bg-gray-50 pb-20 md:pb-0 min-w-0">
+             <div className="p-4 md:p-8 max-w-7xl mx-auto min-h-full min-w-0">
                  {children}
              </div>
           </div>
