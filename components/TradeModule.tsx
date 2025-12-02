@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { User, TradeRecord, TradeStage, TradeItem, SystemSettings, InsuranceEndorsement, CurrencyPurchaseData, TradeTransaction, CurrencyTranche, TradeStageData, ShippingDocument, ShippingDocType, DocStatus, InvoiceItem, InspectionData, InspectionPayment } from '../types';
+import { User, TradeRecord, TradeStage, TradeItem, SystemSettings, InsuranceEndorsement, CurrencyPurchaseData, TradeTransaction, CurrencyTranche, TradeStageData, ShippingDocument, ShippingDocType, DocStatus, InvoiceItem, InspectionData, InspectionPayment, InspectionCertificate } from '../types';
 import { getTradeRecords, saveTradeRecord, updateTradeRecord, deleteTradeRecord, getSettings, uploadFile } from '../services/storageService';
 import { generateUUID, formatCurrency, formatNumberString, deformatNumberString, parsePersianDate, getCurrentShamsiDate } from '../constants';
 import { Container, Plus, Search, CheckCircle2, Circle, Save, Trash2, X, Package, ArrowRight, History, Banknote, Coins, Filter, Wallet, FileSpreadsheet, Shield, LayoutDashboard, Printer, FileDown, PieChart as PieIcon, BarChart3, ListFilter, Paperclip, Upload, Calendar, Building2, Layers, FolderOpen, ChevronLeft, ArrowLeft, Home, Calculator, Ship, FileText, Scale, Stamp, AlertCircle, Plane, ClipboardCheck, Microscope, Eye, RefreshCw } from 'lucide-react';
@@ -65,9 +65,11 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
     // Insurance State
     const [insuranceForm, setInsuranceForm] = useState<NonNullable<TradeRecord['insuranceData']>>({ policyNumber: '', company: '', cost: 0, bank: '', endorsements: [] });
     const [newEndorsement, setNewEndorsement] = useState<Partial<InsuranceEndorsement>>({ amount: 0, description: '', date: '' });
+    const [endorsementType, setEndorsementType] = useState<'increase' | 'refund'>('increase');
     
     // Inspection State
-    const [inspectionForm, setInspectionForm] = useState<InspectionData>({ inspectionCompany: '', certificateNumber: '', totalInvoiceAmount: 0, payments: [] });
+    const [inspectionForm, setInspectionForm] = useState<InspectionData>({ certificates: [], payments: [] });
+    const [newInspectionCertificate, setNewInspectionCertificate] = useState<Partial<InspectionCertificate>>({ part: '', company: '', certificateNumber: '', amount: 0 });
     const [newInspectionPayment, setNewInspectionPayment] = useState<Partial<InspectionPayment>>({ part: '', amount: 0, date: '', bank: '' });
 
     // License Transactions State
@@ -120,9 +122,24 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
 
             // Inspection Init
             if (selectedRecord.inspectionData) {
-                setInspectionForm(selectedRecord.inspectionData);
+                const data = selectedRecord.inspectionData;
+                // Migration Logic if old data exists
+                const certs = data.certificates || [];
+                if (certs.length === 0 && data.certificateNumber) {
+                     certs.push({
+                         id: generateUUID(),
+                         part: 'Original',
+                         certificateNumber: data.certificateNumber,
+                         company: data.inspectionCompany || '',
+                         amount: data.totalInvoiceAmount || 0
+                     });
+                }
+                setInspectionForm({
+                    certificates: certs,
+                    payments: data.payments || []
+                });
             } else {
-                setInspectionForm({ inspectionCompany: '', certificateNumber: '', totalInvoiceAmount: 0, payments: [] });
+                setInspectionForm({ certificates: [], payments: [] });
             }
             
             // Currency Init
@@ -136,6 +153,7 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
             setNewCurrencyTranche({ amount: 0, currencyType: selectedRecord.mainCurrency || 'EUR', date: '', exchangeName: '', brokerName: '', isDelivered: false, deliveryDate: '' });
             setNewItem({ name: '', weight: 0, unitPrice: 0, totalPrice: 0 });
             setNewInspectionPayment({ part: '', amount: 0, date: '', bank: '' });
+            setNewInspectionCertificate({ part: '', company: '', certificateNumber: '', amount: 0 });
 
             // Reset shipping form
             setShippingDocForm({ status: 'Draft', documentNumber: '', documentDate: '', attachments: [], currency: selectedRecord.mainCurrency || 'EUR', invoiceItems: [], freightCost: 0 });
@@ -186,26 +204,51 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
 
     // --- Insurance Handlers ---
     const handleSaveInsurance = async () => { if (!selectedRecord) return; const updatedRecord = { ...selectedRecord, insuranceData: insuranceForm }; const totalCost = (Number(insuranceForm.cost) || 0) + (insuranceForm.endorsements || []).reduce((acc, e) => acc + e.amount, 0); if (!updatedRecord.stages[TradeStage.INSURANCE]) updatedRecord.stages[TradeStage.INSURANCE] = getStageData(updatedRecord, TradeStage.INSURANCE); updatedRecord.stages[TradeStage.INSURANCE].costRial = totalCost; updatedRecord.stages[TradeStage.INSURANCE].isCompleted = !!insuranceForm.policyNumber; await updateTradeRecord(updatedRecord); setSelectedRecord(updatedRecord); alert("اطلاعات بیمه ذخیره شد."); };
-    const handleAddEndorsement = () => { if (!newEndorsement.amount) return; const endorsement: InsuranceEndorsement = { id: generateUUID(), date: newEndorsement.date || '', amount: Number(newEndorsement.amount), description: newEndorsement.description || '' }; const updatedEndorsements = [...(insuranceForm.endorsements || []), endorsement]; setInsuranceForm({ ...insuranceForm, endorsements: updatedEndorsements }); setNewEndorsement({ amount: 0, description: '', date: '' }); };
+    const handleAddEndorsement = () => { 
+        if (!newEndorsement.amount) return;
+        const amount = endorsementType === 'increase' ? Number(newEndorsement.amount) : -Number(newEndorsement.amount);
+        const endorsement: InsuranceEndorsement = { id: generateUUID(), date: newEndorsement.date || '', amount: amount, description: newEndorsement.description || '' }; 
+        const updatedEndorsements = [...(insuranceForm.endorsements || []), endorsement]; 
+        setInsuranceForm({ ...insuranceForm, endorsements: updatedEndorsements }); 
+        setNewEndorsement({ amount: 0, description: '', date: '' });
+        setEndorsementType('increase');
+    };
     const handleDeleteEndorsement = (id: string) => { setInsuranceForm({ ...insuranceForm, endorsements: insuranceForm.endorsements?.filter(e => e.id !== id) }); };
     const calculateInsuranceTotal = () => { const base = Number(insuranceForm.cost) || 0; const endorsed = (insuranceForm.endorsements || []).reduce((acc, e) => acc + e.amount, 0); return base + endorsed; };
 
-    // --- Inspection Handlers (New) ---
-    const handleSaveInspectionGeneral = async () => {
-        if (!selectedRecord) return;
-        const updatedData: InspectionData = { ...inspectionForm };
-        const updatedRecord = { ...selectedRecord, inspectionData: updatedData };
-        
-        // Sync with Stage Info
-        if (!updatedRecord.stages[TradeStage.INSPECTION]) updatedRecord.stages[TradeStage.INSPECTION] = getStageData(updatedRecord, TradeStage.INSPECTION);
-        updatedRecord.stages[TradeStage.INSPECTION].isCompleted = !!updatedData.certificateNumber;
-        // Cost is the Sum of Payments, but we might want to store TotalInvoice somewhere else if needed.
-        // For the stage visual, usually "Cost" implies money spent (Payments).
-        updatedRecord.stages[TradeStage.INSPECTION].costRial = updatedData.payments.reduce((acc, p) => acc + p.amount, 0);
+    // --- Inspection Handlers (Updated for Multiple Certificates) ---
+    const handleAddInspectionCertificate = async () => {
+        if (!selectedRecord || !newInspectionCertificate.amount) return;
+        const cert: InspectionCertificate = {
+            id: generateUUID(),
+            part: newInspectionCertificate.part || 'Part',
+            company: newInspectionCertificate.company || '',
+            certificateNumber: newInspectionCertificate.certificateNumber || '',
+            amount: Number(newInspectionCertificate.amount),
+            description: ''
+        };
+        const updatedCertificates = [...(inspectionForm.certificates || []), cert];
+        const updatedData = { ...inspectionForm, certificates: updatedCertificates };
+        setInspectionForm(updatedData);
+        setNewInspectionCertificate({ part: '', company: '', certificateNumber: '', amount: 0 });
 
+        // Auto Save
+        const updatedRecord = { ...selectedRecord, inspectionData: updatedData };
+        if (!updatedRecord.stages[TradeStage.INSPECTION]) updatedRecord.stages[TradeStage.INSPECTION] = getStageData(updatedRecord, TradeStage.INSPECTION);
+        updatedRecord.stages[TradeStage.INSPECTION].isCompleted = updatedCertificates.length > 0;
         await updateTradeRecord(updatedRecord);
         setSelectedRecord(updatedRecord);
-        alert("اطلاعات بازرسی ذخیره شد.");
+    };
+
+    const handleDeleteInspectionCertificate = async (id: string) => {
+        if (!selectedRecord) return;
+        const updatedCertificates = (inspectionForm.certificates || []).filter(c => c.id !== id);
+        const updatedData = { ...inspectionForm, certificates: updatedCertificates };
+        setInspectionForm(updatedData);
+
+        const updatedRecord = { ...selectedRecord, inspectionData: updatedData };
+        await updateTradeRecord(updatedRecord);
+        setSelectedRecord(updatedRecord);
     };
 
     const handleAddInspectionPayment = async () => {
@@ -517,7 +560,7 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
 
         // Filter by specific Inspection/Insurance Company if selected
         if (activeReport === 'inspection' && reportFilterCompany) {
-            base = base.filter(r => r.inspectionData?.inspectionCompany === reportFilterCompany);
+            base = base.filter(r => (r.inspectionData?.certificates || []).some(c => c.company === reportFilterCompany));
         }
         if (activeReport === 'insurance' && reportFilterCompany) {
             base = base.filter(r => r.insuranceData?.company === reportFilterCompany);
@@ -527,7 +570,7 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
             case 'allocation_queue': return base.filter(r => r.stages[TradeStage.ALLOCATION_QUEUE]?.isCompleted === false && r.stages[TradeStage.INSURANCE]?.isCompleted === true);
             case 'allocated': return base.filter(r => r.stages[TradeStage.ALLOCATION_APPROVED]?.isCompleted === true);
             case 'shipping': return base.filter(r => r.stages[TradeStage.SHIPPING_DOCS]?.isCompleted === false && r.stages[TradeStage.CURRENCY_PURCHASE]?.isCompleted === true);
-            case 'inspection': return base.filter(r => !!r.inspectionData?.inspectionCompany);
+            case 'inspection': return base.filter(r => (r.inspectionData?.certificates || []).length > 0);
             case 'insurance': return base.filter(r => !!r.insuranceData?.policyNumber);
             default: return base;
         }
@@ -535,7 +578,7 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
 
     const getUniqueInspectionCompanies = () => {
         const companies = new Set<string>();
-        records.forEach(r => { if (r.inspectionData?.inspectionCompany) companies.add(r.inspectionData.inspectionCompany); });
+        records.forEach(r => { (r.inspectionData?.certificates || []).forEach(c => companies.add(c.company)); });
         return Array.from(companies);
     };
 
@@ -604,8 +647,8 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
                     <button onClick={() => { setActiveReport('allocation_queue'); setReportFilterCompany(''); setReportFilterInternalCompany(''); }} className={`p-3 rounded-lg text-right text-sm flex items-center gap-3 transition-colors whitespace-nowrap ${activeReport === 'allocation_queue' ? 'bg-purple-50 text-purple-700 font-bold' : 'hover:bg-gray-50 text-gray-600'}`}><History size={18}/> در صف تخصیص</button>
                     <button onClick={() => { setActiveReport('allocated'); setReportFilterCompany(''); setReportFilterInternalCompany(''); }} className={`p-3 rounded-lg text-right text-sm flex items-center gap-3 transition-colors whitespace-nowrap ${activeReport === 'allocated' ? 'bg-green-50 text-green-700 font-bold' : 'hover:bg-gray-50 text-gray-600'}`}><CheckCircle2 size={18}/> تخصیص یافته</button>
                     <button onClick={() => { setActiveReport('currency'); setReportFilterCompany(''); setReportFilterInternalCompany(''); }} className={`p-3 rounded-lg text-right text-sm flex items-center gap-3 transition-colors whitespace-nowrap ${activeReport === 'currency' ? 'bg-amber-50 text-amber-700 font-bold' : 'hover:bg-gray-50 text-gray-600'}`}><Coins size={18}/> خرید ارز</button>
-                    <button onClick={() => { setActiveReport('insurance'); setReportFilterCompany(''); setReportFilterInternalCompany(''); }} className={`p-3 rounded-lg text-right text-sm flex items-center gap-3 transition-colors whitespace-nowrap ${activeReport === 'insurance' ? 'bg-indigo-50 text-indigo-700 font-bold' : 'hover:bg-gray-50 text-gray-600'}`}><Shield size={18}/> بیمه</button>
-                    <button onClick={() => { setActiveReport('inspection'); setReportFilterCompany(''); setReportFilterInternalCompany(''); }} className={`p-3 rounded-lg text-right text-sm flex items-center gap-3 transition-colors whitespace-nowrap ${activeReport === 'inspection' ? 'bg-rose-50 text-rose-700 font-bold' : 'hover:bg-gray-50 text-gray-600'}`}><Microscope size={18}/> بازرسی</button>
+                    <button onClick={() => { setActiveReport('insurance'); setReportFilterCompany(''); setReportFilterInternalCompany(''); }} className={`p-3 rounded-lg text-right text-sm flex items-center gap-3 transition-colors whitespace-nowrap ${activeReport === 'insurance' ? 'bg-indigo-50 text-indigo-700 font-bold' : 'hover:bg-gray-50 text-gray-600'}`}><Shield size={18}/> گزارش بیمه</button>
+                    <button onClick={() => { setActiveReport('inspection'); setReportFilterCompany(''); setReportFilterInternalCompany(''); }} className={`p-3 rounded-lg text-right text-sm flex items-center gap-3 transition-colors whitespace-nowrap ${activeReport === 'inspection' ? 'bg-rose-50 text-rose-700 font-bold' : 'hover:bg-gray-50 text-gray-600'}`}><Microscope size={18}/> گزارش بازرسی</button>
                     <button onClick={() => { setActiveReport('shipping'); setReportFilterCompany(''); setReportFilterInternalCompany(''); }} className={`p-3 rounded-lg text-right text-sm flex items-center gap-3 transition-colors whitespace-nowrap ${activeReport === 'shipping' ? 'bg-cyan-50 text-cyan-700 font-bold' : 'hover:bg-gray-50 text-gray-600'}`}><Container size={18}/> در حال حمل</button>
                     <div className="mt-auto pt-4 border-t hidden md:block"><button onClick={() => setViewMode('dashboard')} className="w-full p-3 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg flex items-center justify-center gap-2 text-sm"><Home size={16}/> بازگشت به داشبورد</button></div>
                 </div>
@@ -653,22 +696,34 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
                                     {activeReport === 'allocation_queue' && (<tr><th className="p-3">پرونده</th><th className="p-3">ثبت سفارش</th><th className="p-3">مبلغ ارزی</th><th className="p-3">بانک عامل</th><th className="p-3">تاریخ ورود به صف</th><th className="p-3">تعداد روز در صف</th><th className="p-3">نرخ ارز (تخمینی)</th><th className="p-3">معادل ریالی</th></tr>)}
                                     {activeReport === 'allocated' && (<tr><th className="p-3">پرونده</th><th className="p-3">ثبت سفارش</th><th className="p-3">مبلغ ارزی</th><th className="p-3">بانک</th><th className="p-3">تاریخ تخصیص</th><th className="p-3">مهلت انقضا</th><th className="p-3">مانده (روز)</th><th className="p-3">کد تخصیص</th></tr>)}
                                     {activeReport === 'currency' && (<tr><th className="p-3 w-48">پرونده / ثبت سفارش</th><th className="p-3 text-center">مبلغ</th><th className="p-3 text-center">ارز</th><th className="p-3 text-center">نرخ ریالی</th><th className="p-3 text-center">معادل ریالی</th><th className="p-3">کارگزار/صرافی</th><th className="p-3">تاریخ خرید</th><th className="p-3 text-center">وضعیت تحویل</th></tr>)}
-                                    {activeReport === 'insurance' && (<tr><th className="p-3">پرونده / شرکت داخلی</th><th className="p-3">شماره بیمه</th><th className="p-3">شرکت بیمه</th><th className="p-3">هزینه (بدهی)</th><th className="p-3">الحاقیه (بدهی)</th><th className="p-3">جمع بدهی</th></tr>)}
-                                    {activeReport === 'inspection' && (<tr><th className="p-3">پرونده / شرکت داخلی</th><th className="p-3">شرکت بازرسی</th><th className="p-3">شماره گواهی</th><th className="p-3">مبلغ قرارداد (بستانکار)</th><th className="p-3">پرداخت‌ها (بدهکار)</th><th className="p-3 text-center">مانده (تراز)</th></tr>)}
+                                    
+                                    {activeReport === 'insurance' && (<tr><th className="p-3">پرونده / شرکت داخلی</th><th className="p-3">بیمه‌نامه / شرکت</th><th className="p-3 text-center">هزینه‌ها (قرارداد + الحاقیه)</th><th className="p-3 text-center">مانده تعهد (خالص)</th></tr>)}
+                                    
+                                    {activeReport === 'inspection' && (<tr><th className="p-3">پرونده / شرکت داخلی</th><th className="p-3">شرکت بازرسی</th><th className="p-3">شماره گواهی / پارت‌ها</th><th className="p-3">مبلغ قرارداد (بستانکار)</th><th className="p-3">پرداخت‌ها (بدهکار)</th><th className="p-3 text-center">مانده (تراز)</th></tr>)}
                                 </thead>
                                 <tbody className="divide-y divide-gray-200 print:divide-gray-400">
                                     {reportData.map(r => (
                                         <React.Fragment key={r.id}>
                                             {activeReport === 'general' && (<tr className="hover:bg-gray-50"><td className="p-3 font-bold">{r.fileNumber}</td><td className="p-3">{r.goodsName}</td><td className="p-3">{r.sellerName}</td><td className="p-3">{r.company}</td><td className="p-3 text-center">{r.status}</td></tr>)}
                                             
-                                            {/* INSPECTION REPORT WITH DEBTOR/CREDITOR LOGIC */}
+                                            {/* INSPECTION REPORT WITH MULTIPLE CERTIFICATES */}
                                             {activeReport === 'inspection' && (
                                                 <tr className="hover:bg-rose-50/20 valign-top">
                                                     <td className="p-3 font-bold border-l">{r.fileNumber}<div className="text-xs font-normal text-gray-500 mt-1">{r.company}</div></td>
-                                                    <td className="p-3">{r.inspectionData?.inspectionCompany || '-'}</td>
-                                                    <td className="p-3 font-mono">{r.inspectionData?.certificateNumber || '-'}</td>
+                                                    <td className="p-3">{(r.inspectionData?.certificates || []).map(c => c.company).filter((v, i, a) => a.indexOf(v) === i).join(', ') || '-'}</td>
+                                                    <td className="p-3 font-mono text-xs">
+                                                        {(r.inspectionData?.certificates || []).map(c => (
+                                                            <div key={c.id} className="border-b border-dashed border-gray-300 pb-1 mb-1 last:border-0 last:mb-0">
+                                                                <span className="font-bold">{c.part}:</span> {c.certificateNumber}
+                                                            </div>
+                                                        ))}
+                                                        {(r.inspectionData?.certificates || []).length === 0 && '-'}
+                                                    </td>
                                                     <td className="p-3 font-mono dir-ltr font-bold text-gray-700 bg-red-50/50">
-                                                        {formatCurrency(r.inspectionData?.totalInvoiceAmount || 0)}
+                                                        {formatCurrency((r.inspectionData?.certificates || []).reduce((acc, c) => acc + c.amount, 0))}
+                                                        {(r.inspectionData?.certificates || []).length > 0 && (
+                                                            <div className="text-[10px] text-gray-400 font-normal mt-1">جمع کل قراردادها</div>
+                                                        )}
                                                     </td>
                                                     <td className="p-3 bg-green-50/50">
                                                         <div className="font-bold font-mono dir-ltr text-green-700">
@@ -687,7 +742,7 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
                                                     </td>
                                                     <td className="p-3 dir-ltr text-center font-mono font-black">
                                                         {(() => {
-                                                            const totalDue = r.inspectionData?.totalInvoiceAmount || 0;
+                                                            const totalDue = (r.inspectionData?.certificates || []).reduce((acc, c) => acc + c.amount, 0);
                                                             const totalPaid = (r.inspectionData?.payments || []).reduce((acc, p) => acc + p.amount, 0);
                                                             const balance = totalDue - totalPaid;
                                                             return (
@@ -695,6 +750,34 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
                                                                     {balance === 0 ? 'تسویه شده' : formatCurrency(balance)}
                                                                 </span>
                                                             );
+                                                        })()}
+                                                    </td>
+                                                </tr>
+                                            )}
+
+                                            {activeReport === 'insurance' && r.insuranceData?.policyNumber && (
+                                                <tr className="hover:bg-purple-50/20 valign-top">
+                                                    <td className="p-3 font-bold border-l">{r.fileNumber}<div className="text-xs font-normal text-gray-500 mt-1">{r.company}</div></td>
+                                                    <td className="p-3">
+                                                        <div className="font-bold text-gray-800">{r.insuranceData.policyNumber}</div>
+                                                        <div className="text-xs text-gray-500">{r.insuranceData.company}</div>
+                                                    </td>
+                                                    <td className="p-3 font-mono text-xs bg-gray-50/50">
+                                                        <div className="flex justify-between items-center border-b border-gray-200 pb-1 mb-1">
+                                                            <span>اصل قرارداد:</span>
+                                                            <span className="font-bold text-red-600">{formatCurrency(r.insuranceData.cost)}</span>
+                                                        </div>
+                                                        {(r.insuranceData.endorsements || []).map(e => (
+                                                            <div key={e.id} className="flex justify-between items-center border-b border-dashed border-gray-200 pb-1 mb-1 last:border-0 last:mb-0">
+                                                                <span className="truncate max-w-[100px]">{e.description || 'الحاقیه'}:</span>
+                                                                <span className={e.amount >= 0 ? "text-red-600" : "text-green-600"}>{formatCurrency(Math.abs(e.amount))} {e.amount >= 0 ? '+' : '-'}</span>
+                                                            </div>
+                                                        ))}
+                                                    </td>
+                                                    <td className="p-3 dir-ltr text-center font-mono font-bold text-lg">
+                                                        {(() => {
+                                                            const total = (r.insuranceData.cost || 0) + (r.insuranceData.endorsements || []).reduce((acc, e) => acc + e.amount, 0);
+                                                            return <span className="text-purple-800">{formatCurrency(total)}</span>
                                                         })()}
                                                     </td>
                                                 </tr>
@@ -744,16 +827,6 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
                                                     )}
                                                 </>
                                             )}
-                                            {activeReport === 'insurance' && r.insuranceData?.policyNumber && (
-                                                <tr className="hover:bg-purple-50/20">
-                                                    <td className="p-3 font-bold border-l">{r.fileNumber}<div className="text-xs font-normal text-gray-500 mt-1">{r.company}</div></td>
-                                                    <td className="p-3">{r.insuranceData.policyNumber}</td>
-                                                    <td className="p-3">{r.insuranceData.company}</td>
-                                                    <td className="p-3 dir-ltr text-right font-mono bg-red-50/50">{formatCurrency(r.insuranceData.cost)}</td>
-                                                    <td className="p-3 dir-ltr text-right font-mono bg-red-50/50">{(r.insuranceData.endorsements || []).reduce((a,b)=>a+b.amount,0).toLocaleString()}</td>
-                                                    <td className="p-3 dir-ltr text-right font-mono font-bold text-purple-700 bg-gray-50">{(r.insuranceData.cost + (r.insuranceData.endorsements || []).reduce((a,b)=>a+b.amount,0)).toLocaleString()}</td>
-                                                </tr>
-                                            )}
                                         </React.Fragment>
                                     ))}
                                 </tbody>
@@ -801,26 +874,46 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
                     {activeTab === 'inspection' && (
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                             <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm">
-                                <h3 className="font-bold text-gray-800 mb-6 flex items-center gap-2"><Microscope className="text-rose-600"/> مشخصات گواهی بازرسی</h3>
-                                <div className="space-y-4">
-                                    <div><label className="text-xs font-bold text-gray-500 block mb-1">شرکت بازرسی</label><input className="w-full border rounded-lg p-2 bg-gray-50" value={inspectionForm.inspectionCompany} onChange={e => setInspectionForm({...inspectionForm, inspectionCompany: e.target.value})} placeholder="نام شرکت..." /></div>
-                                    <div><label className="text-xs font-bold text-gray-500 block mb-1">شماره گواهی</label><input className="w-full border rounded-lg p-2 bg-gray-50" value={inspectionForm.certificateNumber} onChange={e => setInspectionForm({...inspectionForm, certificateNumber: e.target.value})} placeholder="NO-1234..." /></div>
-                                    <div>
-                                        <label className="text-xs font-bold text-gray-500 block mb-1">مبلغ کل قرارداد (ریال)</label>
-                                        <input className="w-full border rounded-lg p-2 bg-gray-50 font-mono dir-ltr" value={formatNumberString(inspectionForm.totalInvoiceAmount?.toString() || '')} onChange={e => setInspectionForm({...inspectionForm, totalInvoiceAmount: deformatNumberString(e.target.value)})} placeholder="0" />
+                                <h3 className="font-bold text-gray-800 mb-6 flex items-center gap-2"><Microscope className="text-rose-600"/> مشخصات گواهی‌های بازرسی (بستانکار)</h3>
+                                
+                                <div className="bg-gray-50 p-4 rounded-xl border mb-4">
+                                    <h4 className="font-bold text-sm mb-3">افزودن پارت گواهی</h4>
+                                    <div className="grid grid-cols-1 gap-2 mb-2">
+                                        <input className="w-full border rounded-lg p-2 bg-white" value={newInspectionCertificate.company} onChange={e => setNewInspectionCertificate({...newInspectionCertificate, company: e.target.value})} placeholder="نام شرکت بازرسی" />
+                                        <div className="flex gap-2">
+                                            <input className="flex-1 border rounded-lg p-2 bg-white" value={newInspectionCertificate.part} onChange={e => setNewInspectionCertificate({...newInspectionCertificate, part: e.target.value})} placeholder="عنوان (مثلا اصل گواهی)" />
+                                            <input className="flex-1 border rounded-lg p-2 bg-white" value={newInspectionCertificate.certificateNumber} onChange={e => setNewInspectionCertificate({...newInspectionCertificate, certificateNumber: e.target.value})} placeholder="شماره گواهی" />
+                                        </div>
+                                        <input className="w-full border rounded-lg p-2 bg-white font-mono dir-ltr" value={formatNumberString(newInspectionCertificate.amount?.toString() || '')} onChange={e => setNewInspectionCertificate({...newInspectionCertificate, amount: deformatNumberString(e.target.value)})} placeholder="مبلغ (ریال)" />
+                                        <button onClick={handleAddInspectionCertificate} disabled={!newInspectionCertificate.amount} className="w-full bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700">افزودن گواهی</button>
                                     </div>
-                                    <button onClick={handleSaveInspectionGeneral} className="w-full bg-blue-600 text-white py-2 rounded-lg mt-4 hover:bg-blue-700">ذخیره اطلاعات کلی</button>
+                                </div>
+
+                                <div className="space-y-2 max-h-[300px] overflow-y-auto">
+                                    {(inspectionForm.certificates || []).map(c => (
+                                        <div key={c.id} className="flex justify-between items-center p-3 bg-gray-50 rounded border hover:bg-white transition-colors">
+                                            <div>
+                                                <div className="font-bold text-sm text-gray-800">{c.part}</div>
+                                                <div className="text-xs text-gray-500">{c.company} - {c.certificateNumber}</div>
+                                            </div>
+                                            <div className="flex items-center gap-3">
+                                                <span className="font-mono font-bold text-gray-700 dir-ltr">{formatCurrency(c.amount)}</span>
+                                                <button onClick={() => handleDeleteInspectionCertificate(c.id)} className="text-red-400 hover:text-red-600"><Trash2 size={14}/></button>
+                                            </div>
+                                        </div>
+                                    ))}
+                                    {(inspectionForm.certificates || []).length === 0 && <div className="text-center text-gray-400 text-sm py-4">هنوز گواهی ثبت نشده است.</div>}
                                 </div>
                             </div>
                             
                             <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm">
                                 <h3 className="font-bold text-gray-800 mb-6 flex items-center justify-between">
-                                    <span className="flex items-center gap-2"><ListFilter className="text-gray-600"/> لیست پرداخت‌ها (پارت‌ها)</span>
+                                    <span className="flex items-center gap-2"><ListFilter className="text-gray-600"/> لیست پرداخت‌ها (بدهکار)</span>
                                 </h3>
                                 
                                 <div className="bg-gray-50 p-4 rounded-xl border mb-4">
                                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-2">
-                                        <input className="border rounded p-2 text-sm" placeholder="عنوان پارت (مثلا پارت 1)" value={newInspectionPayment.part} onChange={e => setNewInspectionPayment({...newInspectionPayment, part: e.target.value})} />
+                                        <input className="border rounded p-2 text-sm" placeholder="عنوان پارت (مثلا پیش‌پرداخت)" value={newInspectionPayment.part} onChange={e => setNewInspectionPayment({...newInspectionPayment, part: e.target.value})} />
                                         <input className="border rounded p-2 text-sm dir-ltr" placeholder="مبلغ (ریال)" value={formatNumberString(newInspectionPayment.amount?.toString())} onChange={e => setNewInspectionPayment({...newInspectionPayment, amount: deformatNumberString(e.target.value)})} />
                                         <input className="border rounded p-2 text-sm" placeholder="نام بانک" value={newInspectionPayment.bank} onChange={e => setNewInspectionPayment({...newInspectionPayment, bank: e.target.value})} />
                                         <div className="flex gap-2">
@@ -849,17 +942,17 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
                                 {/* Summary */}
                                 <div className="mt-6 pt-4 border-t space-y-2">
                                     <div className="flex justify-between text-sm">
-                                        <span className="text-gray-500">مبلغ کل قرارداد (بستانکار):</span>
-                                        <span className="font-bold font-mono dir-ltr">{formatCurrency(inspectionForm.totalInvoiceAmount || 0)}</span>
+                                        <span className="text-gray-500">جمع کل قراردادها:</span>
+                                        <span className="font-bold font-mono dir-ltr text-red-600">{formatCurrency((inspectionForm.certificates || []).reduce((acc, c) => acc + c.amount, 0))}</span>
                                     </div>
                                     <div className="flex justify-between text-sm">
-                                        <span className="text-gray-500">جمع پرداخت‌ها (بدهکار):</span>
+                                        <span className="text-gray-500">جمع کل پرداختی‌ها:</span>
                                         <span className="font-bold font-mono dir-ltr text-green-600">{formatCurrency((inspectionForm.payments || []).reduce((acc, p) => acc + p.amount, 0))}</span>
                                     </div>
                                     <div className="flex justify-between text-base border-t pt-2 mt-2">
                                         <span className="font-bold text-gray-800">مانده حساب:</span>
                                         {(() => {
-                                            const balance = (inspectionForm.totalInvoiceAmount || 0) - (inspectionForm.payments || []).reduce((acc, p) => acc + p.amount, 0);
+                                            const balance = ((inspectionForm.certificates || []).reduce((acc, c) => acc + c.amount, 0)) - ((inspectionForm.payments || []).reduce((acc, p) => acc + p.amount, 0));
                                             return <span className={`font-black font-mono dir-ltr ${balance > 0 ? 'text-red-600' : 'text-green-600'}`}>{balance === 0 ? 'تسویه' : formatCurrency(balance)}</span>;
                                         })()}
                                     </div>
@@ -997,28 +1090,37 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
                     {activeTab === 'insurance' && (
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                             <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm">
-                                <h3 className="font-bold text-gray-800 mb-6 flex items-center gap-2"><Shield className="text-indigo-600"/> مشخصات بیمه‌نامه</h3>
+                                <h3 className="font-bold text-gray-800 mb-6 flex items-center gap-2"><Shield className="text-indigo-600"/> مشخصات بیمه‌نامه (هزینه اصلی)</h3>
                                 <div className="space-y-4">
                                     <div><label className="text-xs font-bold text-gray-500 block mb-1">شماره بیمه‌نامه</label><input className="w-full border rounded-lg p-2 bg-gray-50" value={insuranceForm.policyNumber} onChange={e => setInsuranceForm({...insuranceForm, policyNumber: e.target.value})} /></div>
                                     <div><label className="text-xs font-bold text-gray-500 block mb-1">شرکت بیمه</label><input className="w-full border rounded-lg p-2 bg-gray-50" value={insuranceForm.company} onChange={e => setInsuranceForm({...insuranceForm, company: e.target.value})} /></div>
-                                    <div><label className="text-xs font-bold text-gray-500 block mb-1">هزینه پایه (ریال)</label><input className="w-full border rounded-lg p-2 bg-gray-50 font-mono dir-ltr" value={formatNumberString(insuranceForm.cost.toString())} onChange={e => setInsuranceForm({...insuranceForm, cost: deformatNumberString(e.target.value)})} /></div>
+                                    <div><label className="text-xs font-bold text-gray-500 block mb-1">هزینه پایه قرارداد (ریال)</label><input className="w-full border rounded-lg p-2 bg-gray-50 font-mono dir-ltr" value={formatNumberString(insuranceForm.cost.toString())} onChange={e => setInsuranceForm({...insuranceForm, cost: deformatNumberString(e.target.value)})} /></div>
                                     <button onClick={handleSaveInsurance} className="w-full bg-blue-600 text-white py-2 rounded-lg mt-4 hover:bg-blue-700">ذخیره اطلاعات پایه</button>
                                 </div>
                             </div>
                             <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm">
-                                <h3 className="font-bold text-gray-800 mb-6 flex items-center justify-between"><span>الحاقیه‌ها</span><span className="text-sm bg-indigo-50 text-indigo-700 px-2 py-1 rounded">جمع کل: {formatCurrency(calculateInsuranceTotal())}</span></h3>
-                                <div className="bg-gray-50 p-3 rounded-lg border mb-4 flex flex-col sm:flex-row gap-2">
-                                    <input className="flex-1 border rounded p-2 text-sm dir-ltr" placeholder="مبلغ (ریال)" value={formatNumberString(newEndorsement.amount?.toString())} onChange={e => setNewEndorsement({...newEndorsement, amount: deformatNumberString(e.target.value)})} />
-                                    <div className="flex gap-2 flex-1">
-                                        <input className="flex-1 border rounded p-2 text-sm" placeholder="توضیحات" value={newEndorsement.description} onChange={e => setNewEndorsement({...newEndorsement, description: e.target.value})} />
-                                        <button onClick={handleAddEndorsement} className="bg-indigo-600 text-white px-3 rounded hover:bg-indigo-700"><Plus/></button>
+                                <h3 className="font-bold text-gray-800 mb-6 flex items-center justify-between"><span>الحاقیه‌ها (افزایش/کاهش)</span><span className="text-sm bg-indigo-50 text-indigo-700 px-2 py-1 rounded">جمع کل نهایی: {formatCurrency(calculateInsuranceTotal())}</span></h3>
+                                <div className="bg-gray-50 p-3 rounded-lg border mb-4">
+                                    <div className="flex gap-2 mb-2 p-1 bg-white rounded-lg border w-fit mx-auto">
+                                        <button onClick={() => setEndorsementType('increase')} className={`px-3 py-1 text-xs rounded-md transition-colors ${endorsementType === 'increase' ? 'bg-red-50 text-red-600 font-bold shadow-sm' : 'text-gray-500'}`}>افزایش هزینه (+)</button>
+                                        <button onClick={() => setEndorsementType('refund')} className={`px-3 py-1 text-xs rounded-md transition-colors ${endorsementType === 'refund' ? 'bg-green-50 text-green-600 font-bold shadow-sm' : 'text-gray-500'}`}>برگشت وجه (-)</button>
+                                    </div>
+                                    <div className="flex flex-col sm:flex-row gap-2">
+                                        <input className="flex-1 border rounded p-2 text-sm dir-ltr" placeholder="مبلغ (ریال)" value={formatNumberString(newEndorsement.amount?.toString())} onChange={e => setNewEndorsement({...newEndorsement, amount: deformatNumberString(e.target.value)})} />
+                                        <div className="flex gap-2 flex-1">
+                                            <input className="flex-1 border rounded p-2 text-sm" placeholder="توضیحات" value={newEndorsement.description} onChange={e => setNewEndorsement({...newEndorsement, description: e.target.value})} />
+                                            <button onClick={handleAddEndorsement} className={`${endorsementType === 'increase' ? 'bg-red-600' : 'bg-green-600'} text-white px-3 rounded hover:opacity-90`}><Plus/></button>
+                                        </div>
                                     </div>
                                 </div>
                                 <div className="space-y-2">
                                     {(insuranceForm.endorsements || []).map(e => (
                                         <div key={e.id} className="flex justify-between items-center p-3 bg-gray-50 rounded border">
                                             <span className="text-sm">{e.description || 'بدون توضیح'}</span>
-                                            <div className="flex items-center gap-3"><span className="font-mono font-bold">{formatCurrency(e.amount)}</span><button onClick={() => handleDeleteEndorsement(e.id)} className="text-red-400 hover:text-red-600"><Trash2 size={16}/></button></div>
+                                            <div className="flex items-center gap-3">
+                                                <span className={`font-mono font-bold ${e.amount >= 0 ? 'text-red-600' : 'text-green-600'}`}>{formatCurrency(Math.abs(e.amount))} {e.amount >= 0 ? '(+)' : '(-)'}</span>
+                                                <button onClick={() => handleDeleteEndorsement(e.id)} className="text-gray-400 hover:text-red-600"><Trash2 size={16}/></button>
+                                            </div>
                                         </div>
                                     ))}
                                     {(insuranceForm.endorsements || []).length === 0 && <div className="text-center text-gray-400 text-sm">بدون الحاقیه</div>}
@@ -1055,7 +1157,7 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
                                                     <td className="p-3 text-center">{t.currencyType}</td>
                                                     <td className="p-3 text-center dir-ltr font-mono">{formatCurrency(t.rate || 0)}</td>
                                                     <td className="p-3 text-center dir-ltr font-mono font-bold text-gray-700">{formatCurrency((t.rate || 0) * t.amount)}</td>
-                                                    <td className="p-3 text-center">{t.exchangeName} / {t.brokerName}</td>
+                                                    <td className="p-3">{t.exchangeName} / {t.brokerName}</td>
                                                     <td className="p-3 text-center"><span className={`px-2 py-1 rounded text-xs ${t.isDelivered ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>{t.isDelivered ? `تحویل شده: ${t.deliveryDate}` : 'تحویل نشده'}</span></td>
                                                     <td className="p-3 text-center"><button onClick={() => handleRemoveTranche(t.id)} className="text-red-500 hover:text-red-700"><Trash2 size={16}/></button></td>
                                                 </tr>

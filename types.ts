@@ -209,11 +209,23 @@ export interface InspectionPayment {
     description?: string;
 }
 
-export interface InspectionData {
-    inspectionCompany: string;
+export interface InspectionCertificate {
+    id: string;
+    part: string; // e.g. "COI Original", "Amendment 1"
     certificateNumber: string;
-    totalInvoiceAmount?: number; // مبلغ کل قرارداد/صورتحساب (برای مانده گیری)
-    payments: InspectionPayment[];
+    company: string;
+    amount: number;
+    description?: string;
+}
+
+export interface InspectionData {
+    // Legacy fields (kept for migration safety, but UI will focus on arrays)
+    inspectionCompany?: string; 
+    certificateNumber?: string;
+    totalInvoiceAmount?: number;
+    
+    certificates: InspectionCertificate[]; // List of certificates/parts
+    payments: InspectionPayment[]; // List of payments
 }
 
 export interface CurrencyPayment {
