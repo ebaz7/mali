@@ -1,15 +1,16 @@
 
 import React, { useState } from 'react';
-import { PaymentOrder, OrderStatus, PaymentMethod } from '../types';
+import { PaymentOrder, OrderStatus, PaymentMethod, SystemSettings } from '../types';
 import { formatCurrency, formatDate } from '../constants';
 import { X, Printer, Image as ImageIcon, FileDown, Loader2 } from 'lucide-react';
 
 interface PrintVoucherProps {
   order: PaymentOrder;
   onClose: () => void;
+  settings?: SystemSettings;
 }
 
-const PrintVoucher: React.FC<PrintVoucherProps> = ({ order, onClose }) => {
+const PrintVoucher: React.FC<PrintVoucherProps> = ({ order, onClose, settings }) => {
   const [processing, setProcessing] = useState(false);
 
   const handlePrint = () => {
@@ -144,28 +145,40 @@ const PrintVoucher: React.FC<PrintVoucherProps> = ({ order, onClose }) => {
         )}
 
         <div className="relative z-10">
-            {/* Header */}
-            <div className="border-b-2 border-gray-800 pb-4 mb-6 flex justify-between items-end">
-                <div className="text-right w-1/2">
-                    <h1 className="text-2xl font-bold text-gray-900 mb-2 h-8">
-                        {order.payingCompany || ''}
-                    </h1>
-                    <h2 className="text-lg font-bold text-gray-700">دستور پرداخت / سند حسابداری</h2>
-                </div>
-                <div className="text-left text-sm font-mono space-y-2">
-                    <div className="flex items-center gap-2 justify-end">
-                        <span className="text-gray-600 font-sans font-bold">شماره دستور:</span>
-                        <span className="font-bold text-lg border-b border-gray-300 min-w-[100px] text-center inline-block">{order.trackingNumber}</span>
+            {/* New Letterhead Header with Logo */}
+            <div className="border-b-2 border-gray-800 pb-2 mb-4 flex justify-between items-center">
+                <div className="flex items-center gap-4">
+                    {/* Logo/Image */}
+                    {settings?.pwaIcon && (
+                        <div className="w-16 h-16 flex items-center justify-center">
+                             <img src={settings.pwaIcon} alt="Logo" className="max-w-full max-h-full object-contain" />
+                        </div>
+                    )}
+                    <div>
+                        <h1 className="text-2xl font-black text-gray-900 tracking-tight">
+                            {order.payingCompany || 'شرکت بازرگانی'}
+                        </h1>
+                        <p className="text-xs text-gray-500 font-bold mt-1">سیستم مدیریت مالی و پرداخت</p>
                     </div>
-                    <div className="flex items-center gap-2 justify-end">
-                        <span className="text-gray-600 font-sans font-bold">تاریخ:</span>
-                        <span className="font-medium text-lg border-b border-gray-300 min-w-[140px] text-center inline-block">{formatDate(order.date)}</span>
+                </div>
+                
+                <div className="text-left flex flex-col items-end gap-1">
+                    <h2 className="text-xl font-black bg-gray-100 border border-gray-200 text-gray-800 px-4 py-1.5 rounded-lg mb-1">
+                        رسید پرداخت وجه
+                    </h2>
+                    <div className="flex items-center gap-2 text-sm">
+                        <span className="font-bold text-gray-500">شماره:</span>
+                        <span className="font-mono font-bold text-lg">{order.trackingNumber}</span>
+                    </div>
+                    <div className="flex items-center gap-2 text-sm">
+                        <span className="font-bold text-gray-500">تاریخ:</span>
+                        <span className="font-bold text-gray-800">{formatDate(order.date)}</span>
                     </div>
                 </div>
             </div>
 
             {/* Body */}
-            <div className="space-y-6">
+            <div className="space-y-4">
                 <div className="grid grid-cols-2 gap-6">
                     <div className="bg-gray-50/50 border border-gray-300 p-3 rounded print:bg-transparent">
                         <span className="block text-gray-500 text-xs mb-1">در وجه (ذینفع):</span>

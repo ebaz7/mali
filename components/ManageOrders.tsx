@@ -259,7 +259,7 @@ const ManageOrders: React.FC<ManageOrdersProps> = ({ orders, refreshData, curren
           </table>
         </div>
       </div>
-      {printOrder && <PrintVoucher order={printOrder} onClose={() => setPrintOrder(null)} />}
+      {printOrder && <PrintVoucher order={printOrder} onClose={() => setPrintOrder(null)} settings={settings} />}
       {editingOrder && <EditOrderModal order={editingOrder} onClose={() => setEditingOrder(null)} onSave={refreshData} />}
     </>
   );
