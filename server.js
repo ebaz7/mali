@@ -136,7 +136,9 @@ const sendTelegramNotification = async (targetRole, message, specificUserId = nu
         if (specificUserId) {
             targetUsers = db.users.filter(u => u.id === specificUserId);
         } else if (targetRole) {
-            targetUsers = db.users.filter(u => u.role === targetRole || u.role === 'admin'); // Admins usually want to know too
+            // STRICT MODE: Only send to the specific role requested, NOT admins automatically.
+            // Unless the role is 'admin' itself.
+            targetUsers = db.users.filter(u => u.role === targetRole);
         }
 
         // Filter users who have a Telegram Chat ID
@@ -407,7 +409,7 @@ app.post('/api/orders', (req, res) => {
     
     saveDb(db);
     
-    // NOTIFY FINANCIAL MANAGER
+    // NOTIFY: Only Financial Manager (when User creates)
     const msg = `🧾 <b>درخواست پرداخت جدید</b>\n\nشماره: ${newOrder.trackingNumber}\nمبلغ: ${new Intl.NumberFormat('fa-IR').format(newOrder.totalAmount)} ریال\nگیرنده: ${newOrder.payee}\nدرخواست کننده: ${newOrder.requester}`;
     sendTelegramNotification('financial', msg);
 
@@ -428,28 +430,35 @@ app.put('/api/orders/:id', (req, res) => {
         db.orders[index] = updatedOrder;
         saveDb(db);
 
-        // NOTIFICATION LOGIC BASED ON STATUS CHANGE
+        // NOTIFICATION LOGIC - STRICT & SEQUENTIAL
         if (oldStatus !== updatedOrder.status) {
             const tracking = updatedOrder.trackingNumber;
             const amount = new Intl.NumberFormat('fa-IR').format(updatedOrder.totalAmount);
             
             if (updatedOrder.status === 'تایید مالی / در انتظار مدیریت') { // APPROVED_FINANCE
-                 const msg = `✅ <b>تایید مالی انجام شد</b>\n\nدستور پرداخت شماره ${tracking}\nمبلغ: ${amount} ریال\n\nمدیر محترم، این درخواست در انتظار تایید شماست.`;
+                 const msg = `✅ <b>تایید مالی انجام شد</b>\n\nدستور پرداخت شماره ${tracking}\nمبلغ: ${amount} ریال\n\nمدیر محترم، این درخواست در کارتابل شما قرار گرفت.`;
+                 // ONLY to Manager
                  sendTelegramNotification('manager', msg);
             }
             else if (updatedOrder.status === 'تایید مدیریت / در انتظار مدیرعامل') { // APPROVED_MANAGER
                  const msg = `👑 <b>تایید مدیریت انجام شد</b>\n\nدستور پرداخت شماره ${tracking}\nمبلغ: ${amount} ریال\n\nمدیرعامل محترم، این درخواست در کارتابل شما قرار گرفت.`;
+                 // ONLY to CEO
                  sendTelegramNotification('ceo', msg);
             }
             else if (updatedOrder.status === 'تایید نهایی') { // APPROVED_CEO
                  const msg = `💰 <b>پرداخت تایید نهایی شد</b>\n\nدستور پرداخت شماره ${tracking}\nمبلغ: ${amount} ریال\n\nآماده پرداخت.`;
-                 // Notify Financial again so they know they can pay
+                 // To Financial (to pay)
                  sendTelegramNotification('financial', msg);
+                 
+                 // Also confirm to Requester (if found)
+                 const requesterUser = db.users.find(u => u.fullName === updatedOrder.requester);
+                 if (requesterUser) {
+                     const userMsg = `✅ <b>درخواست شما تایید شد</b>\n\nدستور پرداخت شماره ${tracking} تایید نهایی شد.`;
+                     sendTelegramNotification(null, userMsg, requesterUser.id);
+                 }
             }
             else if (updatedOrder.status === 'رد شده') { // REJECTED
-                 // Need to find the requester to notify them specifically if possible, 
-                 // but for now let's just notify admins or generic role. 
-                 // Ideally we find the User object by `requester` name (fullName).
+                 // ONLY to Requester
                  const requesterUser = db.users.find(u => u.fullName === updatedOrder.requester);
                  if (requesterUser) {
                      const msg = `❌ <b>درخواست پرداخت رد شد</b>\n\nدستور پرداخت شماره ${tracking}\nدلیل: ${updatedOrder.rejectionReason || 'نامشخص'}`;

@@ -1,4 +1,5 @@
 
+
 import React, { useState, useEffect, useRef } from 'react';
 import Layout from './components/Layout';
 import Dashboard from './components/Dashboard';
@@ -130,7 +131,10 @@ function App() {
     try {
         const [ordersData, settingsData] = await Promise.all([getOrders(), getSettings()]);
         setSettings(settingsData);
-        if (!isFirstLoad.current && silent) checkForNotifications(prevOrdersRef.current, ordersData, currentUser);
+        // Only run notification check if it's NOT the first load (prevents old notifications on refresh)
+        if (!isFirstLoad.current && silent) {
+            checkForNotifications(prevOrdersRef.current, ordersData, currentUser);
+        }
         prevOrdersRef.current = ordersData;
         setOrders(ordersData);
         isFirstLoad.current = false;
@@ -138,18 +142,67 @@ function App() {
   };
 
   const checkForNotifications = (oldList: PaymentOrder[], newList: PaymentOrder[], user: User) => {
+     // 1. Detect New Orders (Only for Financial Manager)
      const newOrders = newList.filter(n => !oldList.find(o => o.id === n.id));
      newOrders.forEach(order => {
-        if ([UserRole.ADMIN, UserRole.MANAGER, UserRole.FINANCIAL, UserRole.CEO].includes(user.role)) {
-             const title = 'درخواست پرداخت جدید'; const body = `شماره: ${order.trackingNumber}`; sendNotification(title, body); addAppNotification(title, body);
+        if (user.role === UserRole.FINANCIAL || user.role === UserRole.ADMIN) {
+             const title = 'درخواست پرداخت جدید'; 
+             const body = `شماره: ${order.trackingNumber}`; 
+             sendNotification(title, body); 
+             addAppNotification(title, body);
         }
      });
+
+     // 2. Detect Status Changes (Sequential Workflow)
      newList.forEach(newItem => {
         const oldItem = oldList.find(o => o.id === newItem.id);
         if (oldItem && oldItem.status !== newItem.status) {
-           if (newItem.requester === user.fullName) {
-               let msg = newItem.status === OrderStatus.REJECTED ? 'درخواست شما رد شد.' : 'وضعیت درخواست شما تغییر کرد.';
-               sendNotification('تغییر وضعیت', msg); addAppNotification('تغییر وضعیت', msg);
+           const newStatus = newItem.status;
+           
+           // A. Financial Approved -> Notify MANAGER
+           if (newStatus === OrderStatus.APPROVED_FINANCE) {
+               if (user.role === UserRole.MANAGER || user.role === UserRole.ADMIN) {
+                   const title = 'تایید مالی شد';
+                   const body = `درخواست ${newItem.trackingNumber} منتظر تایید مدیریت است.`;
+                   sendNotification(title, body);
+                   addAppNotification(title, body);
+               }
+           }
+           
+           // B. Manager Approved -> Notify CEO
+           else if (newStatus === OrderStatus.APPROVED_MANAGER) {
+               if (user.role === UserRole.CEO || user.role === UserRole.ADMIN) {
+                   const title = 'تایید مدیریت شد';
+                   const body = `درخواست ${newItem.trackingNumber} منتظر تایید نهایی شماست.`;
+                   sendNotification(title, body);
+                   addAppNotification(title, body);
+               }
+           }
+           
+           // C. CEO Approved -> Notify Financial (to Pay) + Requester
+           else if (newStatus === OrderStatus.APPROVED_CEO) {
+               if (user.role === UserRole.FINANCIAL || user.role === UserRole.ADMIN) {
+                   const title = 'تایید نهایی شد (پرداخت)';
+                   const body = `درخواست ${newItem.trackingNumber} تایید شد. لطفا اقدام به پرداخت کنید.`;
+                   sendNotification(title, body);
+                   addAppNotification(title, body);
+               }
+               if (newItem.requester === user.fullName) {
+                   const title = 'درخواست تایید شد';
+                   const body = `درخواست شما (${newItem.trackingNumber}) تایید نهایی شد.`;
+                   sendNotification(title, body);
+                   addAppNotification(title, body);
+               }
+           }
+           
+           // D. Rejected -> Notify Requester
+           else if (newStatus === OrderStatus.REJECTED) {
+               if (newItem.requester === user.fullName) {
+                   const title = 'درخواست رد شد';
+                   const body = `درخواست ${newItem.trackingNumber} رد شد. دلیل: ${newItem.rejectionReason || 'نامشخص'}`;
+                   sendNotification(title, body);
+                   addAppNotification(title, body);
+               }
            }
         }
      });
