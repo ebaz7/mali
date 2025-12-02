@@ -587,9 +587,9 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
 
     // --- Sub-Components ---
     const ReportHeader = ({ title, icon: Icon }: { title: string, icon: any }) => (
-        <div className="flex justify-between items-center mb-6 no-print">
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 no-print gap-4">
             <div className="flex items-center gap-4"><div className="p-2 rounded-lg bg-blue-100 text-blue-700"><Icon size={24}/></div><div><h2 className="text-xl font-bold text-gray-800">{title}</h2><p className="text-xs text-gray-500 mt-1">گزارش‌گیری، چاپ و خروجی</p></div></div>
-            <div className="flex gap-2"><button onClick={handleDownloadPDF} disabled={isGeneratingPDF} className="flex items-center gap-2 px-3 py-2 text-sm bg-red-50 text-red-700 rounded-lg hover:bg-red-100"><FileDown size={16}/> {isGeneratingPDF ? '...' : 'PDF'}</button><button onClick={handlePrint} className="flex items-center gap-2 px-3 py-2 text-sm bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100"><Printer size={16}/> چاپ</button><button onClick={() => setViewMode('dashboard')} className="flex items-center gap-2 px-3 py-2 text-sm bg-gray-100 text-gray-600 rounded-lg hover:bg-gray-200"><ArrowRight size={16}/> بازگشت</button></div>
+            <div className="flex gap-2 flex-wrap"><button onClick={handleDownloadPDF} disabled={isGeneratingPDF} className="flex items-center gap-2 px-3 py-2 text-sm bg-red-50 text-red-700 rounded-lg hover:bg-red-100"><FileDown size={16}/> {isGeneratingPDF ? '...' : 'PDF'}</button><button onClick={handlePrint} className="flex items-center gap-2 px-3 py-2 text-sm bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100"><Printer size={16}/> چاپ</button><button onClick={() => setViewMode('dashboard')} className="flex items-center gap-2 px-3 py-2 text-sm bg-gray-100 text-gray-600 rounded-lg hover:bg-gray-200"><ArrowRight size={16}/> بازگشت</button></div>
         </div>
     );
 
@@ -597,35 +597,35 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
     if (viewMode === 'reports') {
         const reportData = getReportRecords();
         return (
-            <div className="flex h-[calc(100vh-100px)] animate-fade-in bg-gray-50 rounded-2xl overflow-hidden border border-gray-200">
-                <div className="w-64 bg-white border-l p-4 flex flex-col gap-2 overflow-y-auto no-print">
-                    <div className="mb-4 font-bold text-gray-700 px-2">مرکز گزارشات</div>
-                    <button onClick={() => { setActiveReport('general'); setReportFilterCompany(''); setReportFilterInternalCompany(''); }} className={`p-3 rounded-lg text-right text-sm flex items-center gap-3 transition-colors ${activeReport === 'general' ? 'bg-blue-50 text-blue-700 font-bold' : 'hover:bg-gray-50 text-gray-600'}`}><ListFilter size={18}/> گزارش جامع</button>
-                    <button onClick={() => { setActiveReport('allocation_queue'); setReportFilterCompany(''); setReportFilterInternalCompany(''); }} className={`p-3 rounded-lg text-right text-sm flex items-center gap-3 transition-colors ${activeReport === 'allocation_queue' ? 'bg-purple-50 text-purple-700 font-bold' : 'hover:bg-gray-50 text-gray-600'}`}><History size={18}/> در صف تخصیص</button>
-                    <button onClick={() => { setActiveReport('allocated'); setReportFilterCompany(''); setReportFilterInternalCompany(''); }} className={`p-3 rounded-lg text-right text-sm flex items-center gap-3 transition-colors ${activeReport === 'allocated' ? 'bg-green-50 text-green-700 font-bold' : 'hover:bg-gray-50 text-gray-600'}`}><CheckCircle2 size={18}/> تخصیص یافته</button>
-                    <button onClick={() => { setActiveReport('currency'); setReportFilterCompany(''); setReportFilterInternalCompany(''); }} className={`p-3 rounded-lg text-right text-sm flex items-center gap-3 transition-colors ${activeReport === 'currency' ? 'bg-amber-50 text-amber-700 font-bold' : 'hover:bg-gray-50 text-gray-600'}`}><Coins size={18}/> خرید ارز</button>
-                    <button onClick={() => { setActiveReport('insurance'); setReportFilterCompany(''); setReportFilterInternalCompany(''); }} className={`p-3 rounded-lg text-right text-sm flex items-center gap-3 transition-colors ${activeReport === 'insurance' ? 'bg-indigo-50 text-indigo-700 font-bold' : 'hover:bg-gray-50 text-gray-600'}`}><Shield size={18}/> بیمه و الحاقیه‌ها</button>
-                    <button onClick={() => { setActiveReport('inspection'); setReportFilterCompany(''); setReportFilterInternalCompany(''); }} className={`p-3 rounded-lg text-right text-sm flex items-center gap-3 transition-colors ${activeReport === 'inspection' ? 'bg-rose-50 text-rose-700 font-bold' : 'hover:bg-gray-50 text-gray-600'}`}><Microscope size={18}/> گواهی بازرسی</button>
-                    <button onClick={() => { setActiveReport('shipping'); setReportFilterCompany(''); setReportFilterInternalCompany(''); }} className={`p-3 rounded-lg text-right text-sm flex items-center gap-3 transition-colors ${activeReport === 'shipping' ? 'bg-cyan-50 text-cyan-700 font-bold' : 'hover:bg-gray-50 text-gray-600'}`}><Container size={18}/> در حال حمل</button>
-                    <div className="mt-auto pt-4 border-t"><button onClick={() => setViewMode('dashboard')} className="w-full p-3 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg flex items-center justify-center gap-2 text-sm"><Home size={16}/> بازگشت به داشبورد</button></div>
+            <div className="flex flex-col md:flex-row md:h-[calc(100vh-100px)] animate-fade-in bg-gray-50 rounded-2xl overflow-hidden border border-gray-200">
+                <div className="w-full md:w-64 bg-white border-b md:border-b-0 md:border-l p-4 flex flex-row md:flex-col gap-2 overflow-x-auto md:overflow-y-auto no-print">
+                    <div className="mb-4 font-bold text-gray-700 px-2 hidden md:block">مرکز گزارشات</div>
+                    <button onClick={() => { setActiveReport('general'); setReportFilterCompany(''); setReportFilterInternalCompany(''); }} className={`p-3 rounded-lg text-right text-sm flex items-center gap-3 transition-colors whitespace-nowrap ${activeReport === 'general' ? 'bg-blue-50 text-blue-700 font-bold' : 'hover:bg-gray-50 text-gray-600'}`}><ListFilter size={18}/> گزارش جامع</button>
+                    <button onClick={() => { setActiveReport('allocation_queue'); setReportFilterCompany(''); setReportFilterInternalCompany(''); }} className={`p-3 rounded-lg text-right text-sm flex items-center gap-3 transition-colors whitespace-nowrap ${activeReport === 'allocation_queue' ? 'bg-purple-50 text-purple-700 font-bold' : 'hover:bg-gray-50 text-gray-600'}`}><History size={18}/> در صف تخصیص</button>
+                    <button onClick={() => { setActiveReport('allocated'); setReportFilterCompany(''); setReportFilterInternalCompany(''); }} className={`p-3 rounded-lg text-right text-sm flex items-center gap-3 transition-colors whitespace-nowrap ${activeReport === 'allocated' ? 'bg-green-50 text-green-700 font-bold' : 'hover:bg-gray-50 text-gray-600'}`}><CheckCircle2 size={18}/> تخصیص یافته</button>
+                    <button onClick={() => { setActiveReport('currency'); setReportFilterCompany(''); setReportFilterInternalCompany(''); }} className={`p-3 rounded-lg text-right text-sm flex items-center gap-3 transition-colors whitespace-nowrap ${activeReport === 'currency' ? 'bg-amber-50 text-amber-700 font-bold' : 'hover:bg-gray-50 text-gray-600'}`}><Coins size={18}/> خرید ارز</button>
+                    <button onClick={() => { setActiveReport('insurance'); setReportFilterCompany(''); setReportFilterInternalCompany(''); }} className={`p-3 rounded-lg text-right text-sm flex items-center gap-3 transition-colors whitespace-nowrap ${activeReport === 'insurance' ? 'bg-indigo-50 text-indigo-700 font-bold' : 'hover:bg-gray-50 text-gray-600'}`}><Shield size={18}/> بیمه</button>
+                    <button onClick={() => { setActiveReport('inspection'); setReportFilterCompany(''); setReportFilterInternalCompany(''); }} className={`p-3 rounded-lg text-right text-sm flex items-center gap-3 transition-colors whitespace-nowrap ${activeReport === 'inspection' ? 'bg-rose-50 text-rose-700 font-bold' : 'hover:bg-gray-50 text-gray-600'}`}><Microscope size={18}/> بازرسی</button>
+                    <button onClick={() => { setActiveReport('shipping'); setReportFilterCompany(''); setReportFilterInternalCompany(''); }} className={`p-3 rounded-lg text-right text-sm flex items-center gap-3 transition-colors whitespace-nowrap ${activeReport === 'shipping' ? 'bg-cyan-50 text-cyan-700 font-bold' : 'hover:bg-gray-50 text-gray-600'}`}><Container size={18}/> در حال حمل</button>
+                    <div className="mt-auto pt-4 border-t hidden md:block"><button onClick={() => setViewMode('dashboard')} className="w-full p-3 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg flex items-center justify-center gap-2 text-sm"><Home size={16}/> بازگشت به داشبورد</button></div>
                 </div>
 
-                <div className="flex-1 p-8 overflow-y-auto">
+                <div className="flex-1 p-4 md:p-8 overflow-y-auto">
                     <ReportHeader title={activeReport === 'general' ? 'گزارش جامع' : activeReport === 'inspection' ? 'گزارش گواهی بازرسی و مغایرت' : 'گزارش'} icon={activeReport === 'inspection' ? Microscope : FileSpreadsheet} />
                     
                     <div className="mb-6 bg-white p-4 rounded-xl border border-gray-200 flex flex-wrap items-center gap-4 no-print">
-                        <div className="flex flex-col gap-1">
+                        <div className="flex flex-col gap-1 w-full md:w-auto">
                             <label className="text-xs font-bold text-gray-700">شرکت داخلی (ما):</label>
-                            <select className="border rounded-lg p-2 text-sm min-w-[200px]" value={reportFilterInternalCompany} onChange={e => setReportFilterInternalCompany(e.target.value)}>
+                            <select className="border rounded-lg p-2 text-sm w-full md:min-w-[200px]" value={reportFilterInternalCompany} onChange={e => setReportFilterInternalCompany(e.target.value)}>
                                 <option value="">همه شرکت‌ها</option>
                                 {availableCompanies.map(c => <option key={c} value={c}>{c}</option>)}
                             </select>
                         </div>
 
                         {activeReport === 'inspection' && (
-                            <div className="flex flex-col gap-1">
+                            <div className="flex flex-col gap-1 w-full md:w-auto">
                                 <label className="text-xs font-bold text-gray-700">شرکت بازرسی (طرف حساب):</label>
-                                <select className="border rounded-lg p-2 text-sm min-w-[200px]" value={reportFilterCompany} onChange={e => setReportFilterCompany(e.target.value)}>
+                                <select className="border rounded-lg p-2 text-sm w-full md:min-w-[200px]" value={reportFilterCompany} onChange={e => setReportFilterCompany(e.target.value)}>
                                     <option value="">همه شرکت‌ها</option>
                                     {getUniqueInspectionCompanies().map(c => <option key={c} value={c}>{c}</option>)}
                                 </select>
@@ -633,21 +633,21 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
                         )}
 
                          {activeReport === 'insurance' && (
-                            <div className="flex flex-col gap-1">
+                            <div className="flex flex-col gap-1 w-full md:w-auto">
                                 <label className="text-xs font-bold text-gray-700">شرکت بیمه (طرف حساب):</label>
-                                <select className="border rounded-lg p-2 text-sm min-w-[200px]" value={reportFilterCompany} onChange={e => setReportFilterCompany(e.target.value)}>
+                                <select className="border rounded-lg p-2 text-sm w-full md:min-w-[200px]" value={reportFilterCompany} onChange={e => setReportFilterCompany(e.target.value)}>
                                     <option value="">همه شرکت‌ها</option>
                                     {getUniqueInsuranceCompanies().map(c => <option key={c} value={c}>{c}</option>)}
                                 </select>
                             </div>
                         )}
 
-                        {(reportFilterCompany || reportFilterInternalCompany) && <button onClick={() => { setReportFilterCompany(''); setReportFilterInternalCompany(''); }} className="text-xs text-red-500 hover:underline mt-5 bg-red-50 px-3 py-2 rounded-lg">حذف فیلترها</button>}
+                        {(reportFilterCompany || reportFilterInternalCompany) && <button onClick={() => { setReportFilterCompany(''); setReportFilterInternalCompany(''); }} className="text-xs text-red-500 hover:underline mt-2 md:mt-5 bg-red-50 px-3 py-2 rounded-lg">حذف فیلترها</button>}
                     </div>
 
-                    <div id="report-table-container" className="bg-white p-6 rounded-xl border shadow-sm print:shadow-none print:border-none print:p-0">
+                    <div id="report-table-container" className="bg-white p-4 md:p-6 rounded-xl border shadow-sm print:shadow-none print:border-none print:p-0">
                         <div className="overflow-x-auto">
-                            <table className="w-full text-sm text-right border-collapse">
+                            <table className="w-full text-sm text-right border-collapse min-w-[800px]">
                                 <thead className="bg-gray-800 text-white font-bold text-xs print:bg-gray-200 print:text-black">
                                     {activeReport === 'general' && (<tr><th className="p-3">پرونده</th><th className="p-3">کالا</th><th className="p-3">فروشنده</th><th className="p-3">شرکت داخلی</th><th className="p-3 text-center">وضعیت</th></tr>)}
                                     {activeReport === 'allocation_queue' && (<tr><th className="p-3">پرونده</th><th className="p-3">ثبت سفارش</th><th className="p-3">مبلغ ارزی</th><th className="p-3">بانک عامل</th><th className="p-3">تاریخ ورود به صف</th><th className="p-3">تعداد روز در صف</th><th className="p-3">نرخ ارز (تخمینی)</th><th className="p-3">معادل ریالی</th></tr>)}
@@ -771,13 +771,13 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
             <div className="space-y-6 animate-fade-in bg-white rounded-2xl shadow-sm border border-gray-200 min-h-screen flex flex-col">
                 {/* Header */}
                 <div className="bg-gradient-to-l from-blue-600 to-blue-800 text-white p-6 rounded-t-2xl shadow-lg relative overflow-hidden">
-                    <div className="relative z-10 flex justify-between items-start">
+                    <div className="relative z-10 flex flex-col md:flex-row justify-between items-start gap-4">
                         <div>
                             <div className="flex items-center gap-3 mb-2 opacity-90"><Building2 size={16}/><span className="text-sm">{selectedRecord.company}</span><span className="w-1 h-1 bg-white rounded-full"></span><span className="text-sm opacity-80">{selectedRecord.commodityGroup}</span></div>
-                            <h1 className="text-3xl font-bold mb-2 flex items-center gap-3">{selectedRecord.fileNumber} <span className="text-sm font-normal bg-white/20 px-2 py-1 rounded border border-white/20">وضعیت: {selectedRecord.status}</span></h1>
+                            <h1 className="text-2xl md:text-3xl font-bold mb-2 flex flex-wrap items-center gap-3">{selectedRecord.fileNumber} <span className="text-sm font-normal bg-white/20 px-2 py-1 rounded border border-white/20">وضعیت: {selectedRecord.status}</span></h1>
                             <p className="text-blue-100 text-sm opacity-90">{selectedRecord.goodsName} | فروشنده: {selectedRecord.sellerName}</p>
                         </div>
-                        <div className="flex gap-2">
+                        <div className="flex gap-2 self-end md:self-start">
                             <button onClick={() => handleDeleteRecord(selectedRecord.id)} className="p-2 bg-white/10 hover:bg-red-500 hover:text-white rounded-lg transition-colors text-white/80" title="حذف پرونده"><Trash2 size={20}/></button>
                             <button onClick={() => { setViewMode('dashboard'); setSelectedRecord(null); }} className="p-2 bg-white/20 hover:bg-white/30 rounded-lg transition-colors text-white"><X size={20}/></button>
                         </div>
@@ -795,7 +795,7 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
                 </div>
 
                 {/* Content */}
-                <div className="p-6 flex-1 bg-gray-50">
+                <div className="p-4 md:p-6 flex-1 bg-gray-50">
                     
                     {/* INSPECTION TAB */}
                     {activeTab === 'inspection' && (
@@ -819,7 +819,7 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
                                 </h3>
                                 
                                 <div className="bg-gray-50 p-4 rounded-xl border mb-4">
-                                    <div className="grid grid-cols-2 gap-2 mb-2">
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-2">
                                         <input className="border rounded p-2 text-sm" placeholder="عنوان پارت (مثلا پارت 1)" value={newInspectionPayment.part} onChange={e => setNewInspectionPayment({...newInspectionPayment, part: e.target.value})} />
                                         <input className="border rounded p-2 text-sm dir-ltr" placeholder="مبلغ (ریال)" value={formatNumberString(newInspectionPayment.amount?.toString())} onChange={e => setNewInspectionPayment({...newInspectionPayment, amount: deformatNumberString(e.target.value)})} />
                                         <input className="border rounded p-2 text-sm" placeholder="نام بانک" value={newInspectionPayment.bank} onChange={e => setNewInspectionPayment({...newInspectionPayment, bank: e.target.value})} />
@@ -883,10 +883,10 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
                                                     <h3 className={`font-bold text-lg ${isDone ? 'text-blue-700' : 'text-gray-600'}`}>{stageName}</h3>
                                                     {isDone && <CheckCircle2 className="text-green-500" size={20} />}
                                                 </div>
-                                                <div className="flex gap-6 text-sm text-gray-500">
+                                                <div className="flex flex-col sm:flex-row gap-2 sm:gap-6 text-sm text-gray-500">
                                                     {stageInfo.updatedAt > 0 && <span>آخرین بروزرسانی: {new Date(stageInfo.updatedAt).toLocaleDateString('fa-IR')}</span>}
                                                     {(stageInfo.costRial > 0 || stageInfo.costCurrency > 0) && (
-                                                        <span className="flex items-center gap-1 text-gray-700 font-medium bg-gray-100 px-2 rounded"><Wallet size={12}/> هزینه: {formatCurrency(stageInfo.costRial)} {stageInfo.costCurrency > 0 && `/ ${stageInfo.costCurrency} ${stageInfo.currencyType}`}</span>
+                                                        <span className="flex items-center gap-1 text-gray-700 font-medium bg-gray-100 px-2 rounded w-fit"><Wallet size={12}/> هزینه: {formatCurrency(stageInfo.costRial)} {stageInfo.costCurrency > 0 && `/ ${stageInfo.costCurrency} ${stageInfo.currencyType}`}</span>
                                                     )}
                                                     {stageInfo.description && <span className="truncate max-w-[200px] italic">"{stageInfo.description}"</span>}
                                                 </div>
@@ -917,7 +917,7 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
                             <div className="lg:col-span-2 space-y-6">
                                 <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm">
                                     <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2"><FileText className="text-blue-600"/> اطلاعات پایه و اقلام</h3>
-                                    <div className="grid grid-cols-2 gap-4 mb-6">
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
                                         <div><label className="text-xs font-bold text-gray-500 block mb-1">شماره ثبت سفارش</label><input className="w-full border rounded-lg p-2 bg-gray-50" value={selectedRecord.registrationNumber || ''} onChange={e => handleUpdateProforma('registrationNumber', e.target.value)} /></div>
                                         <div><label className="text-xs font-bold text-gray-500 block mb-1">تاریخ صدور</label><input className="w-full border rounded-lg p-2 bg-gray-50 dir-ltr text-right" placeholder="1403/01/01" value={selectedRecord.registrationDate || ''} onChange={e => handleUpdateProforma('registrationDate', e.target.value)} /></div>
                                         <div><label className="text-xs font-bold text-gray-500 block mb-1">مهلت انقضا</label><input className="w-full border rounded-lg p-2 bg-gray-50 dir-ltr text-right" placeholder="1403/06/01" value={selectedRecord.registrationExpiry || ''} onChange={e => handleUpdateProforma('registrationExpiry', e.target.value)} /></div>
@@ -926,36 +926,38 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
                                     
                                     <div className="bg-gray-50 p-4 rounded-xl border mb-4">
                                         <h4 className="font-bold text-sm mb-3">افزودن کالا به لیست</h4>
-                                        <div className="grid grid-cols-5 gap-2 items-end">
+                                        <div className="grid grid-cols-2 md:grid-cols-5 gap-2 items-end">
                                             <div className="col-span-2"><input className="w-full border rounded p-2 text-sm" placeholder="نام کالا" value={newItem.name} onChange={e => setNewItem({...newItem, name: e.target.value})} /></div>
                                             <div><input className="w-full border rounded p-2 text-sm" placeholder="وزن (KG)" type="number" value={newItem.weight || ''} onChange={e => setNewItem({...newItem, weight: Number(e.target.value)})} /></div>
                                             <div><input className="w-full border rounded p-2 text-sm" placeholder={`قیمت (${selectedRecord.mainCurrency})`} type="number" value={newItem.unitPrice || ''} onChange={e => setNewItem({...newItem, unitPrice: Number(e.target.value)})} /></div>
-                                            <button onClick={handleAddItem} className="bg-blue-600 text-white p-2 rounded text-sm hover:bg-blue-700">افزودن</button>
+                                            <button onClick={handleAddItem} className="col-span-2 md:col-span-1 bg-blue-600 text-white p-2 rounded text-sm hover:bg-blue-700">افزودن</button>
                                         </div>
                                     </div>
 
-                                    <table className="w-full text-sm text-right border-collapse">
-                                        <thead className="bg-gray-100 text-gray-600"><tr><th className="p-2 border">ردیف</th><th className="p-2 border">شرح کالا</th><th className="p-2 border">وزن (KG)</th><th className="p-2 border">فی ({selectedRecord.mainCurrency})</th><th className="p-2 border">کل</th><th className="p-2 border">حذف</th></tr></thead>
-                                        <tbody>
-                                            {selectedRecord.items.map((item, idx) => (
-                                                <tr key={item.id} className="hover:bg-gray-50">
-                                                    <td className="p-2 border text-center">{idx + 1}</td>
-                                                    <td className="p-2 border font-medium">{item.name}</td>
-                                                    <td className="p-2 border dir-ltr font-mono">{formatNumberString(item.weight.toString())}</td>
-                                                    <td className="p-2 border dir-ltr font-mono">{formatNumberString(item.unitPrice.toString())}</td>
-                                                    <td className="p-2 border dir-ltr font-mono font-bold">{formatNumberString(item.totalPrice.toString())}</td>
-                                                    <td className="p-2 border text-center"><button onClick={() => handleRemoveItem(item.id)} className="text-red-500"><X size={16}/></button></td>
+                                    <div className="overflow-x-auto">
+                                        <table className="w-full text-sm text-right border-collapse min-w-[500px]">
+                                            <thead className="bg-gray-100 text-gray-600"><tr><th className="p-2 border">ردیف</th><th className="p-2 border">شرح کالا</th><th className="p-2 border">وزن (KG)</th><th className="p-2 border">فی ({selectedRecord.mainCurrency})</th><th className="p-2 border">کل</th><th className="p-2 border">حذف</th></tr></thead>
+                                            <tbody>
+                                                {selectedRecord.items.map((item, idx) => (
+                                                    <tr key={item.id} className="hover:bg-gray-50">
+                                                        <td className="p-2 border text-center">{idx + 1}</td>
+                                                        <td className="p-2 border font-medium">{item.name}</td>
+                                                        <td className="p-2 border dir-ltr font-mono">{formatNumberString(item.weight.toString())}</td>
+                                                        <td className="p-2 border dir-ltr font-mono">{formatNumberString(item.unitPrice.toString())}</td>
+                                                        <td className="p-2 border dir-ltr font-mono font-bold">{formatNumberString(item.totalPrice.toString())}</td>
+                                                        <td className="p-2 border text-center"><button onClick={() => handleRemoveItem(item.id)} className="text-red-500"><X size={16}/></button></td>
+                                                    </tr>
+                                                ))}
+                                                <tr className="bg-blue-50 font-bold">
+                                                    <td colSpan={2} className="p-2 border text-center">جمع کل (FOB)</td>
+                                                    <td className="p-2 border dir-ltr font-mono">{formatNumberString(selectedRecord.items.reduce((a, b) => a + b.weight, 0).toString())}</td>
+                                                    <td className="p-2 border"></td>
+                                                    <td className="p-2 border dir-ltr font-mono text-blue-700">{formatNumberString(selectedRecord.items.reduce((a, b) => a + b.totalPrice, 0).toString())}</td>
+                                                    <td></td>
                                                 </tr>
-                                            ))}
-                                            <tr className="bg-blue-50 font-bold">
-                                                <td colSpan={2} className="p-2 border text-center">جمع کل (FOB)</td>
-                                                <td className="p-2 border dir-ltr font-mono">{formatNumberString(selectedRecord.items.reduce((a, b) => a + b.weight, 0).toString())}</td>
-                                                <td className="p-2 border"></td>
-                                                <td className="p-2 border dir-ltr font-mono text-blue-700">{formatNumberString(selectedRecord.items.reduce((a, b) => a + b.totalPrice, 0).toString())}</td>
-                                                <td></td>
-                                            </tr>
-                                        </tbody>
-                                    </table>
+                                            </tbody>
+                                        </table>
+                                    </div>
                                 </div>
                             </div>
                             
@@ -1005,10 +1007,12 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
                             </div>
                             <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm">
                                 <h3 className="font-bold text-gray-800 mb-6 flex items-center justify-between"><span>الحاقیه‌ها</span><span className="text-sm bg-indigo-50 text-indigo-700 px-2 py-1 rounded">جمع کل: {formatCurrency(calculateInsuranceTotal())}</span></h3>
-                                <div className="bg-gray-50 p-3 rounded-lg border mb-4 flex gap-2">
+                                <div className="bg-gray-50 p-3 rounded-lg border mb-4 flex flex-col sm:flex-row gap-2">
                                     <input className="flex-1 border rounded p-2 text-sm dir-ltr" placeholder="مبلغ (ریال)" value={formatNumberString(newEndorsement.amount?.toString())} onChange={e => setNewEndorsement({...newEndorsement, amount: deformatNumberString(e.target.value)})} />
-                                    <input className="flex-1 border rounded p-2 text-sm" placeholder="توضیحات" value={newEndorsement.description} onChange={e => setNewEndorsement({...newEndorsement, description: e.target.value})} />
-                                    <button onClick={handleAddEndorsement} className="bg-indigo-600 text-white px-3 rounded hover:bg-indigo-700"><Plus/></button>
+                                    <div className="flex gap-2 flex-1">
+                                        <input className="flex-1 border rounded p-2 text-sm" placeholder="توضیحات" value={newEndorsement.description} onChange={e => setNewEndorsement({...newEndorsement, description: e.target.value})} />
+                                        <button onClick={handleAddEndorsement} className="bg-indigo-600 text-white px-3 rounded hover:bg-indigo-700"><Plus/></button>
+                                    </div>
                                 </div>
                                 <div className="space-y-2">
                                     {(insuranceForm.endorsements || []).map(e => (
@@ -1040,7 +1044,7 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
                                 </div>
 
                                 <div className="overflow-x-auto">
-                                    <table className="w-full text-sm text-right border-collapse">
+                                    <table className="w-full text-sm text-right border-collapse min-w-[700px]">
                                         <thead className="bg-gray-100 text-gray-600"><tr><th className="p-3">ردیف</th><th className="p-3">صرافی</th><th className="p-3 text-center">مبلغ ارزی</th><th className="p-3 text-center">نوع</th><th className="p-3 text-center">نرخ (ریال)</th><th className="p-3 text-center">معادل ریالی</th><th className="p-3 text-center">وضعیت تحویل</th><th className="p-3 text-center">عملیات</th></tr></thead>
                                         <tbody>
                                             {(currencyForm.tranches || []).map((t, idx) => (
@@ -1051,8 +1055,7 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
                                                     <td className="p-3 text-center">{t.currencyType}</td>
                                                     <td className="p-3 text-center dir-ltr font-mono">{formatCurrency(t.rate || 0)}</td>
                                                     <td className="p-3 text-center dir-ltr font-mono font-bold text-gray-700">{formatCurrency((t.rate || 0) * t.amount)}</td>
-                                                    <td className="p-3">{t.exchangeName} / {t.brokerName}</td>
-                                                    <td className="p-3">{t.date}</td>
+                                                    <td className="p-3 text-center">{t.exchangeName} / {t.brokerName}</td>
                                                     <td className="p-3 text-center"><span className={`px-2 py-1 rounded text-xs ${t.isDelivered ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>{t.isDelivered ? `تحویل شده: ${t.deliveryDate}` : 'تحویل نشده'}</span></td>
                                                     <td className="p-3 text-center"><button onClick={() => handleRemoveTranche(t.id)} className="text-red-500 hover:text-red-700"><Trash2 size={16}/></button></td>
                                                 </tr>
@@ -1075,13 +1078,13 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
                     {activeTab === 'shipping_docs' && (
                         <div className="space-y-6">
                             <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm">
-                                <div className="flex items-center justify-between mb-6">
+                                <div className="flex flex-col sm:flex-row items-center justify-between mb-6 gap-4">
                                     <h3 className="font-bold text-gray-800 flex items-center gap-2"><FileText className="text-cyan-600"/> ثبت اسناد حمل</h3>
-                                    <div className="flex bg-gray-100 p-1 rounded-lg">
-                                        <button onClick={() => setActiveShippingSubTab('Commercial Invoice')} className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${activeShippingSubTab === 'Commercial Invoice' ? 'bg-white shadow text-blue-600' : 'text-gray-500'}`}>Invoice</button>
-                                        <button onClick={() => setActiveShippingSubTab('Packing List')} className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${activeShippingSubTab === 'Packing List' ? 'bg-white shadow text-blue-600' : 'text-gray-500'}`}>Packing</button>
-                                        <button onClick={() => setActiveShippingSubTab('Bill of Lading')} className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${activeShippingSubTab === 'Bill of Lading' ? 'bg-white shadow text-blue-600' : 'text-gray-500'}`}>BL</button>
-                                        <button onClick={() => setActiveShippingSubTab('Certificate of Origin')} className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${activeShippingSubTab === 'Certificate of Origin' ? 'bg-white shadow text-blue-600' : 'text-gray-500'}`}>CO</button>
+                                    <div className="flex bg-gray-100 p-1 rounded-lg overflow-x-auto max-w-full">
+                                        <button onClick={() => setActiveShippingSubTab('Commercial Invoice')} className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all whitespace-nowrap ${activeShippingSubTab === 'Commercial Invoice' ? 'bg-white shadow text-blue-600' : 'text-gray-500'}`}>Invoice</button>
+                                        <button onClick={() => setActiveShippingSubTab('Packing List')} className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all whitespace-nowrap ${activeShippingSubTab === 'Packing List' ? 'bg-white shadow text-blue-600' : 'text-gray-500'}`}>Packing</button>
+                                        <button onClick={() => setActiveShippingSubTab('Bill of Lading')} className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all whitespace-nowrap ${activeShippingSubTab === 'Bill of Lading' ? 'bg-white shadow text-blue-600' : 'text-gray-500'}`}>BL</button>
+                                        <button onClick={() => setActiveShippingSubTab('Certificate of Origin')} className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all whitespace-nowrap ${activeShippingSubTab === 'Certificate of Origin' ? 'bg-white shadow text-blue-600' : 'text-gray-500'}`}>CO</button>
                                     </div>
                                 </div>
 
@@ -1098,23 +1101,23 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
                                     {activeShippingSubTab === 'Commercial Invoice' && (
                                         <div className="bg-white p-4 rounded-xl border border-gray-200 mb-4">
                                             <div className="flex justify-between items-center mb-2"><h4 className="font-bold text-sm text-gray-700">اقلام اینویس</h4><div className="flex items-center gap-2"><span className="text-xs text-gray-500">ارز اینویس:</span><select className="border rounded text-xs p-1" value={shippingDocForm.currency} onChange={e => setShippingDocForm({...shippingDocForm, currency: e.target.value})}>{CURRENCIES.map(c => <option key={c.code} value={c.code}>{c.label}</option>)}</select></div></div>
-                                            <div className="grid grid-cols-5 gap-2 items-end mb-2">
+                                            <div className="grid grid-cols-2 md:grid-cols-5 gap-2 items-end mb-2">
                                                 <div className="col-span-2"><input className="w-full border rounded p-1.5 text-sm" placeholder="نام کالا" value={newInvoiceItem.name} onChange={e => setNewInvoiceItem({...newInvoiceItem, name: e.target.value})} /></div>
                                                 <div><input className="w-full border rounded p-1.5 text-sm" placeholder="وزن (KG)" type="number" value={newInvoiceItem.weight || ''} onChange={e => setNewInvoiceItem({...newInvoiceItem, weight: Number(e.target.value)})} /></div>
                                                 <div><input className="w-full border rounded p-1.5 text-sm" placeholder="قیمت کل" type="number" value={newInvoiceItem.totalPrice || ''} onChange={e => setNewInvoiceItem({...newInvoiceItem, totalPrice: Number(e.target.value)})} /></div>
-                                                <button onClick={handleAddInvoiceItem} className="bg-cyan-600 text-white p-1.5 rounded text-sm hover:bg-cyan-700">افزودن</button>
+                                                <button onClick={handleAddInvoiceItem} className="col-span-2 md:col-span-1 bg-cyan-600 text-white p-1.5 rounded text-sm hover:bg-cyan-700">افزودن</button>
                                             </div>
                                             <div className="space-y-1 max-h-32 overflow-y-auto border-t pt-2">
                                                 {(shippingDocForm.invoiceItems || []).map(item => (
                                                     <div key={item.id} className="text-xs flex justify-between bg-gray-50 p-1.5 rounded border"><span>{item.name} ({item.weight} KG)</span><div className="flex gap-2"><b>{formatNumberString(item.totalPrice.toString())}</b><button onClick={() => handleRemoveInvoiceItem(item.id)} className="text-red-500"><X size={12}/></button></div></div>
                                                 ))}
                                             </div>
-                                            <div className="mt-2 pt-2 border-t flex justify-end gap-4 text-sm font-bold"><span>جمع کالا: {formatNumberString(getInvoiceTotal(shippingDocForm.invoiceItems || []).toString())}</span><div className="flex items-center gap-1"><span>هزینه حمل:</span><input className="w-20 border rounded p-0.5 text-center" value={shippingDocForm.freightCost} onChange={e => setShippingDocForm({...shippingDocForm, freightCost: Number(e.target.value)})} /></div></div>
+                                            <div className="mt-2 pt-2 border-t flex flex-col sm:flex-row justify-end gap-2 sm:gap-4 text-sm font-bold"><span>جمع کالا: {formatNumberString(getInvoiceTotal(shippingDocForm.invoiceItems || []).toString())}</span><div className="flex items-center gap-1"><span>هزینه حمل:</span><input className="w-20 border rounded p-0.5 text-center" value={shippingDocForm.freightCost} onChange={e => setShippingDocForm({...shippingDocForm, freightCost: Number(e.target.value)})} /></div></div>
                                         </div>
                                     )}
 
                                     {activeShippingSubTab === 'Packing List' && (
-                                        <div className="grid grid-cols-3 gap-4 mb-4">
+                                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
                                             <div><label className="text-xs font-bold text-gray-500 block mb-1">وزن خالص (NW)</label><input type="number" className="w-full border rounded p-2 text-sm bg-white" value={shippingDocForm.netWeight || ''} onChange={e => setShippingDocForm({...shippingDocForm, netWeight: Number(e.target.value)})} /></div>
                                             <div><label className="text-xs font-bold text-gray-500 block mb-1">وزن ناخالص (GW)</label><input type="number" className="w-full border rounded p-2 text-sm bg-white" value={shippingDocForm.grossWeight || ''} onChange={e => setShippingDocForm({...shippingDocForm, grossWeight: Number(e.target.value)})} /></div>
                                             <div><label className="text-xs font-bold text-gray-500 block mb-1">تعداد بسته</label><input type="number" className="w-full border rounded p-2 text-sm bg-white" value={shippingDocForm.packagesCount || ''} onChange={e => setShippingDocForm({...shippingDocForm, packagesCount: Number(e.target.value)})} /></div>
@@ -1122,7 +1125,7 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
                                     )}
 
                                     {activeShippingSubTab === 'Bill of Lading' && (
-                                        <div className="grid grid-cols-3 gap-4 mb-4">
+                                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
                                             <div><label className="text-xs font-bold text-gray-500 block mb-1">نام کشتی / وسیله حمل</label><input className="w-full border rounded p-2 text-sm bg-white" value={shippingDocForm.vesselName} onChange={e => setShippingDocForm({...shippingDocForm, vesselName: e.target.value})} /></div>
                                             <div><label className="text-xs font-bold text-gray-500 block mb-1">بندر بارگیری (POL)</label><input className="w-full border rounded p-2 text-sm bg-white" value={shippingDocForm.portOfLoading} onChange={e => setShippingDocForm({...shippingDocForm, portOfLoading: e.target.value})} /></div>
                                             <div><label className="text-xs font-bold text-gray-500 block mb-1">بندر تخلیه (POD)</label><input className="w-full border rounded p-2 text-sm bg-white" value={shippingDocForm.portOfDischarge} onChange={e => setShippingDocForm({...shippingDocForm, portOfDischarge: e.target.value})} /></div>
@@ -1144,7 +1147,7 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
                                                     <div className={`p-2 rounded-lg ${doc.status === 'Final' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}><FileText size={24}/></div>
                                                     <div>
                                                         <h4 className="font-bold text-gray-800">{doc.type} <span className="text-xs font-normal text-gray-500 bg-gray-100 px-2 rounded-full">{doc.status === 'Final' ? 'نهایی (Original)' : 'پیش‌نویس'}</span></h4>
-                                                        <div className="text-sm text-gray-600 flex gap-4 mt-1"><span>شماره: {doc.documentNumber}</span><span>تاریخ: {doc.documentDate}</span>{doc.partNumber && <span className="text-blue-600 bg-blue-50 px-1 rounded">{doc.partNumber}</span>}</div>
+                                                        <div className="text-sm text-gray-600 flex flex-wrap gap-4 mt-1"><span>شماره: {doc.documentNumber}</span><span>تاریخ: {doc.documentDate}</span>{doc.partNumber && <span className="text-blue-600 bg-blue-50 px-1 rounded">{doc.partNumber}</span>}</div>
                                                     </div>
                                                 </div>
                                                 <div className="flex flex-col items-end gap-2">
@@ -1183,25 +1186,27 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
                     <h2 className="text-2xl font-bold text-gray-800 flex items-center gap-2"><LayoutDashboard className="text-blue-600"/> داشبورد بازرگانی</h2>
                     <p className="text-gray-500 text-sm mt-1">مدیریت پرونده‌های واردات، صادرات و اسناد حمل</p>
                 </div>
-                <div className="flex items-center gap-3">
-                    <div className="relative">
+                <div className="flex flex-col sm:flex-row items-center gap-3">
+                    <div className="relative w-full sm:w-auto">
                         <Search className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
                         <input 
                             type="text" 
                             placeholder="جستجو پرونده، فروشنده..." 
-                            className="pl-4 pr-10 py-2.5 border rounded-xl text-sm w-64 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                            className="pl-4 pr-10 py-2.5 border rounded-xl text-sm w-full sm:w-64 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                             value={searchTerm}
                             onChange={(e) => setSearchTerm(e.target.value)}
                         />
                     </div>
-                    <button onClick={() => setViewMode('reports')} className="bg-gray-100 text-gray-700 px-4 py-2.5 rounded-xl font-medium hover:bg-gray-200 flex items-center gap-2 transition-colors"><PieIcon size={20}/> گزارشات</button>
-                    <button onClick={() => setShowNewModal(true)} className="bg-blue-600 text-white px-4 py-2.5 rounded-xl font-bold hover:bg-blue-700 flex items-center gap-2 shadow-lg shadow-blue-600/20 transition-all"><Plus size={20}/> پرونده جدید</button>
+                    <div className="flex w-full sm:w-auto gap-2">
+                        <button onClick={() => setViewMode('reports')} className="flex-1 sm:flex-none bg-gray-100 text-gray-700 px-4 py-2.5 rounded-xl font-medium hover:bg-gray-200 flex items-center justify-center gap-2 transition-colors"><PieIcon size={20}/> گزارشات</button>
+                        <button onClick={() => setShowNewModal(true)} className="flex-1 sm:flex-none bg-blue-600 text-white px-4 py-2.5 rounded-xl font-bold hover:bg-blue-700 flex items-center justify-center gap-2 shadow-lg shadow-blue-600/20 transition-all"><Plus size={20}/> پرونده جدید</button>
+                    </div>
                 </div>
             </div>
 
             {/* Breadcrumbs / Navigation */}
             {(navLevel !== 'ROOT' || searchTerm) && (
-                <div className="flex items-center gap-2 text-sm text-gray-600 bg-white p-3 rounded-xl border border-gray-200 shadow-sm">
+                <div className="flex items-center gap-2 text-sm text-gray-600 bg-white p-3 rounded-xl border border-gray-200 shadow-sm overflow-x-auto whitespace-nowrap">
                     <button onClick={goRoot} className="hover:text-blue-600 flex items-center gap-1"><Home size={16}/> خانه</button>
                     {selectedCompany && <><ChevronLeft size={16} className="text-gray-400"/> <button onClick={() => goCompany(selectedCompany)} className={navLevel === 'COMPANY' ? "font-bold text-blue-600" : "hover:text-blue-600"}>{selectedCompany}</button></>}
                     {selectedGroup && <><ChevronLeft size={16} className="text-gray-400"/> <span className="font-bold text-blue-600">{selectedGroup}</span></>}
@@ -1308,7 +1313,7 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
             {/* Create Modal */}
             {showNewModal && (
                 <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-                    <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg p-6">
+                    <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg p-6 max-h-[90vh] overflow-y-auto">
                         <div className="flex justify-between items-center mb-6">
                             <h3 className="font-bold text-lg text-gray-800">ایجاد پرونده بازرگانی جدید</h3>
                             <button onClick={() => setShowNewModal(false)}><X size={20} className="text-gray-400 hover:text-red-500"/></button>
@@ -1342,17 +1347,17 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
 
                             {/* Specific Fields per Stage */}
                             {editingStage === TradeStage.ALLOCATION_QUEUE && (
-                                <div className="grid grid-cols-2 gap-4">
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                     <div><label className="text-xs font-bold text-gray-500 block mb-1">تاریخ ورود به صف</label><input className="w-full border rounded p-2 text-sm dir-ltr text-right" value={stageFormData.queueDate || ''} onChange={e => setStageFormData({...stageFormData, queueDate: e.target.value})} placeholder="YYYY/MM/DD"/></div>
                                     <div><label className="text-xs font-bold text-gray-500 block mb-1">نرخ ارز (تخمینی)</label><input className="w-full border rounded p-2 text-sm dir-ltr" value={stageFormData.currencyRate || ''} onChange={e => setStageFormData({...stageFormData, currencyRate: Number(e.target.value)})} /></div>
                                 </div>
                             )}
 
                             {editingStage === TradeStage.ALLOCATION_APPROVED && (
-                                <div className="grid grid-cols-2 gap-4">
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                     <div><label className="text-xs font-bold text-gray-500 block mb-1">تاریخ تخصیص</label><input className="w-full border rounded p-2 text-sm dir-ltr text-right" value={stageFormData.allocationDate || ''} onChange={e => setStageFormData({...stageFormData, allocationDate: e.target.value})} placeholder="YYYY/MM/DD"/></div>
                                     <div><label className="text-xs font-bold text-gray-500 block mb-1">مهلت انقضا</label><input className="w-full border rounded p-2 text-sm dir-ltr text-right" value={stageFormData.allocationExpiry || ''} onChange={e => setStageFormData({...stageFormData, allocationExpiry: e.target.value})} placeholder="YYYY/MM/DD"/></div>
-                                    <div className="col-span-2"><label className="text-xs font-bold text-gray-500 block mb-1">کد تخصیص (فیش)</label><input className="w-full border rounded p-2 text-sm" value={stageFormData.allocationCode || ''} onChange={e => setStageFormData({...stageFormData, allocationCode: e.target.value})} /></div>
+                                    <div className="sm:col-span-2"><label className="text-xs font-bold text-gray-500 block mb-1">کد تخصیص (فیش)</label><input className="w-full border rounded p-2 text-sm" value={stageFormData.allocationCode || ''} onChange={e => setStageFormData({...stageFormData, allocationCode: e.target.value})} /></div>
                                 </div>
                             )}
 

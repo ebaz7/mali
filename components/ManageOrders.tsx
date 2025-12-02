@@ -181,17 +181,19 @@ const ManageOrders: React.FC<ManageOrdersProps> = ({ orders, refreshData, curren
   return (
     <>
       <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden animate-fade-in">
-        <div className="p-6 border-b border-gray-100 flex flex-col gap-4">
-            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-                <div className="flex bg-gray-100 p-1 rounded-lg">
-                    <button onClick={() => { setActiveTab('current'); setCurrentStatusFilter(null); }} className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-all ${activeTab === 'current' ? 'bg-white shadow text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}><ListChecks size={18} /> کارتابل جاری</button>
-                    <button onClick={() => { setActiveTab('archive'); setCurrentStatusFilter(null); }} className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-all ${activeTab === 'archive' ? 'bg-white shadow text-green-600' : 'text-gray-500 hover:text-gray-700'}`}><Archive size={18} /> بایگانی نهایی</button>
+        <div className="p-4 md:p-6 border-b border-gray-100 flex flex-col gap-4">
+            <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
+                <div className="flex bg-gray-100 p-1 rounded-lg w-full lg:w-auto">
+                    <button onClick={() => { setActiveTab('current'); setCurrentStatusFilter(null); }} className={`flex-1 lg:flex-none flex items-center justify-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-all ${activeTab === 'current' ? 'bg-white shadow text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}><ListChecks size={18} /> کارتابل جاری</button>
+                    <button onClick={() => { setActiveTab('archive'); setCurrentStatusFilter(null); }} className={`flex-1 lg:flex-none flex items-center justify-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-all ${activeTab === 'archive' ? 'bg-white shadow text-green-600' : 'text-gray-500 hover:text-gray-700'}`}><Archive size={18} /> بایگانی نهایی</button>
                 </div>
-                <div className="flex items-center gap-3 w-full md:w-auto">
-                    {currentStatusFilter && <div className="bg-amber-100 text-amber-700 px-3 py-1.5 rounded-lg text-xs flex items-center gap-2"><span>فیلتر: {currentStatusFilter === 'pending_all' ? 'همه' : getStatusLabel(currentStatusFilter)}</span><button onClick={() => setCurrentStatusFilter(null)}><X size={14}/></button></div>}
+                <div className="flex flex-col md:flex-row items-center gap-3 w-full lg:w-auto">
+                    {currentStatusFilter && <div className="bg-amber-100 text-amber-700 px-3 py-2 rounded-lg text-xs flex items-center justify-between w-full md:w-auto gap-2"><span>فیلتر: {currentStatusFilter === 'pending_all' ? 'همه' : getStatusLabel(currentStatusFilter)}</span><button onClick={() => setCurrentStatusFilter(null)}><X size={14}/></button></div>}
                     <div className="relative w-full md:w-64"><Search className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} /><input type="text" placeholder="جستجو..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full pl-4 pr-10 py-2.5 border rounded-xl text-sm outline-none"/></div>
-                    <button onClick={() => setShowFilters(!showFilters)} className={`p-2.5 rounded-xl border ${showFilters ? 'bg-blue-50 text-blue-600' : 'bg-white'}`}><Filter size={20}/></button>
-                    {canExport && <button onClick={handleExportCSV} className="bg-green-600 text-white p-2.5 rounded-xl"><FileSpreadsheet size={20}/></button>}
+                    <div className="flex gap-2 w-full md:w-auto">
+                        <button onClick={() => setShowFilters(!showFilters)} className={`flex-1 md:flex-none p-2.5 rounded-xl border flex items-center justify-center ${showFilters ? 'bg-blue-50 text-blue-600' : 'bg-white'}`}><Filter size={20}/></button>
+                        {canExport && <button onClick={handleExportCSV} className="flex-1 md:flex-none bg-green-600 text-white p-2.5 rounded-xl flex items-center justify-center"><FileSpreadsheet size={20}/></button>}
+                    </div>
                 </div>
             </div>
             {showFilters && (
@@ -199,7 +201,7 @@ const ManageOrders: React.FC<ManageOrdersProps> = ({ orders, refreshData, curren
                     <div><label className="block font-bold mb-2">مبلغ (ریال):</label><div className="flex gap-2"><input placeholder="از..." className="w-full border rounded p-2 dir-ltr" value={formatNumberString(amountRange.min)} onChange={e=>setAmountRange({...amountRange, min:deformatNumberString(e.target.value).toString()})}/><span>تا</span><input placeholder="تا..." className="w-full border rounded p-2 dir-ltr" value={formatNumberString(amountRange.max)} onChange={e=>setAmountRange({...amountRange, max:deformatNumberString(e.target.value).toString()})}/></div></div>
                     <div>
                          <div className="flex justify-between items-center mb-2"><label className="font-bold text-gray-700">محدوده تاریخ (شمسی):</label><div className="flex items-center gap-2"><input type="checkbox" id="enableDate" checked={dateRange.enabled} onChange={e => setDateRange({...dateRange, enabled: e.target.checked})}/><label htmlFor="enableDate" className="text-xs text-gray-500 cursor-pointer">فعال‌سازی</label></div></div>
-                         <div className={`grid grid-cols-2 gap-4 ${!dateRange.enabled ? 'opacity-50 pointer-events-none' : ''}`}>
+                         <div className={`grid grid-cols-1 sm:grid-cols-2 gap-4 ${!dateRange.enabled ? 'opacity-50 pointer-events-none' : ''}`}>
                              <div><span className="text-xs text-gray-500 block mb-1">از تاریخ:</span><div className="flex gap-1"><select className="border rounded px-1 py-1 w-full text-xs" value={dateRange.from.year} onChange={e => setDateRange({...dateRange, from: {...dateRange.from, year: Number(e.target.value)}})}>{years.map(y => <option key={y} value={y}>{y}</option>)}</select><select className="border rounded px-1 py-1 w-full text-xs" value={dateRange.from.month} onChange={e => setDateRange({...dateRange, from: {...dateRange.from, month: Number(e.target.value)}})}>{months.map(m => <option key={m} value={m}>{m}</option>)}</select><select className="border rounded px-1 py-1 w-full text-xs" value={dateRange.from.day} onChange={e => setDateRange({...dateRange, from: {...dateRange.from, day: Number(e.target.value)}})}>{days.map(d => <option key={d} value={d}>{d}</option>)}</select></div></div>
                              <div><span className="text-xs text-gray-500 block mb-1">تا تاریخ:</span><div className="flex gap-1"><select className="border rounded px-1 py-1 w-full text-xs" value={dateRange.to.year} onChange={e => setDateRange({...dateRange, to: {...dateRange.to, year: Number(e.target.value)}})}>{years.map(y => <option key={y} value={y}>{y}</option>)}</select><select className="border rounded px-1 py-1 w-full text-xs" value={dateRange.to.month} onChange={e => setDateRange({...dateRange, to: {...dateRange.to, month: Number(e.target.value)}})}>{months.map(m => <option key={m} value={m}>{m}</option>)}</select><select className="border rounded px-1 py-1 w-full text-xs" value={dateRange.to.day} onChange={e => setDateRange({...dateRange, to: {...dateRange.to, day: Number(e.target.value)}})}>{days.map(d => <option key={d} value={d}>{d}</option>)}</select></div></div>
                          </div>
@@ -209,7 +211,7 @@ const ManageOrders: React.FC<ManageOrdersProps> = ({ orders, refreshData, curren
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full text-sm text-right">
+          <table className="w-full text-sm text-right min-w-[800px]">
             <thead className="bg-gray-50 text-gray-600 font-medium">
               <tr>
                 <th className="px-6 py-4">ش. دستور</th>
