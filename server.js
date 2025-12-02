@@ -147,9 +147,17 @@ const findNextAvailableTrackingNumber = (db) => {
 
 // --- DYNAMIC MANIFEST ENDPOINT ---
 app.get('/api/manifest', (req, res) => {
+    // PREVENT CACHING: Critical for icon updates to reflect immediately
+    res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.set('Pragma', 'no-cache');
+    res.set('Expires', '0');
+    res.set('Surrogate-Control', 'no-store');
+
     const db = getDb();
     const settings = db.settings || {};
-    const iconSrc = settings.pwaIcon || "https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/png/google-keep.png";
+    // Append timestamp to icon URL to force client refresh
+    const iconBase = settings.pwaIcon || "https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/png/google-keep.png";
+    const iconSrc = iconBase.includes('?') ? iconBase : `${iconBase}?v=${Date.now()}`;
     
     const manifest = {
       "name": "Payment Order System",

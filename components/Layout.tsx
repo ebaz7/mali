@@ -39,8 +39,25 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab, curr
     getSettings().then(data => {
         setSettings(data);
         if (data.pwaIcon) {
+            // Force update Apple Touch Icon with timestamp to bypass cache
+            const timestamp = Date.now();
+            const iconUrl = data.pwaIcon.includes('?') ? `${data.pwaIcon}&t=${timestamp}` : `${data.pwaIcon}?t=${timestamp}`;
+
             const link = document.querySelector("link[rel*='apple-touch-icon']") as HTMLLinkElement;
-            if (link) link.href = data.pwaIcon;
+            if (link) {
+                link.href = iconUrl;
+            } else {
+                const newLink = document.createElement('link');
+                newLink.rel = 'apple-touch-icon';
+                newLink.href = iconUrl;
+                document.head.appendChild(newLink);
+            }
+
+            // Force browser to re-fetch manifest by updating href with timestamp
+            const manifestLink = document.querySelector("link[rel='manifest']") as HTMLLinkElement;
+            if (manifestLink) {
+                manifestLink.href = `/api/manifest?v=${timestamp}`;
+            }
         }
     });
     setNotifEnabled(isNotificationEnabledInApp());
