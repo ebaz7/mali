@@ -1,14 +1,20 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { User, ChatMessage, ChatGroup, GroupTask, UserRole } from '../types';
-import { getMessages, sendMessage, deleteMessage, getGroups, createGroup, deleteGroup, getTasks, createTask, updateTask, deleteTask, uploadFile, updateGroup } from '../services/storageService';
+import { getMessages, sendMessage, deleteMessage, getGroups, createGroup, deleteGroup, getTasks, createTask, updateTask, deleteTask, uploadFile, updateGroup, updateMessage } from '../services/storageService';
 import { getUsers } from '../services/authService';
 import { sendNotification } from '../services/notificationService';
 import { generateUUID } from '../constants';
-import { Send, User as UserIcon, MessageSquare, Lock, Users, Plus, ListTodo, Paperclip, CheckSquare, Square, Download, X, Trash2, Eye, Reply, Info, Camera, Edit2, ArrowRight } from 'lucide-react';
+import { Send, User as UserIcon, MessageSquare, Lock, Users, Plus, ListTodo, Paperclip, CheckSquare, Square, Download, X, Trash2, Eye, Reply, Info, Camera, Edit2, ArrowRight, Mic, Smile, StopCircle, Check } from 'lucide-react';
 
 interface ChatRoomProps { currentUser: User; onNotification: (title: string, msg: string) => void; }
 const LAST_READ_KEY = 'chat_last_read_map';
+
+const COMMON_EMOJIS = [
+    "👍", "❤️", "😂", "😮", "😢", "😡", "🙏", "🤝", "✅", "👀",
+    "😊", "😎", "🤔", "🎉", "🔥", "💯", "👋", "💪", "💐", "🚀",
+    "✨", "🔴", "🟠", "🟡", "🟢", "🔵", "🟣", "⚫", "⚪", "❓"
+];
 
 const ChatRoom: React.FC<ChatRoomProps> = ({ currentUser, onNotification }) => {
     const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -35,23 +41,26 @@ const ChatRoom: React.FC<ChatRoomProps> = ({ currentUser, onNotification }) => {
     // New State for Reply
     const [replyingTo, setReplyingTo] = useState<ChatMessage | null>(null);
 
+    // New State for Edit Message
+    const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
+
     // New State for Group Info Modal
     const [showGroupInfoModal, setShowGroupInfoModal] = useState(false);
     const [editingGroupName, setEditingGroupName] = useState('');
     const [uploadingGroupIcon, setUploadingGroupIcon] = useState(false);
     const groupIconInputRef = useRef<HTMLInputElement>(null);
     
+    // Voice & Emoji State
+    const [isRecording, setIsRecording] = useState(false);
+    const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(null);
+    const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+    
     // Mobile View State Logic
-    // If activeChannel.id is set (or public), we show chat on mobile
-    // We need a specific state to track if we are "inside" a chat on mobile for the Public channel specifically, 
-    // because 'public' is default. 
-    // Simplified: If user explicitly clicks a channel, we enter "Chat Mode" on mobile.
-    // However, since Public is default, we can just use a boolean for "mobileViewMode"
     const [mobileShowChat, setMobileShowChat] = useState(false);
 
 
     useEffect(() => { try { const stored = localStorage.getItem(LAST_READ_KEY); if (stored) setLastReadMap(JSON.parse(stored)); } catch (e) { console.error("Failed to load read history"); } }, []);
-    useEffect(() => { activeChannelRef.current = activeChannel; const key = getChannelKey(activeChannel.type, activeChannel.id); updateLastRead(key); setReplyingTo(null); }, [activeChannel, activeTab]);
+    useEffect(() => { activeChannelRef.current = activeChannel; const key = getChannelKey(activeChannel.type, activeChannel.id); updateLastRead(key); setReplyingTo(null); setEditingMessageId(null); setInputText(''); }, [activeChannel, activeTab]);
     const updateLastRead = (key: string) => { setLastReadMap(prev => { const next = { ...prev, [key]: Date.now() }; localStorage.setItem(LAST_READ_KEY, JSON.stringify(next)); return next; }); };
     const getChannelKey = (type: 'public' | 'private' | 'group', id: string | null) => { if (type === 'public') return 'public'; return `${type}_${id}`; };
 
@@ -66,42 +75,59 @@ const ChatRoom: React.FC<ChatRoomProps> = ({ currentUser, onNotification }) => {
             incoming.forEach(inc => {
                 const msgChannelKey = inc.groupId ? `group_${inc.groupId}` : inc.recipient ? `private_${inc.senderUsername}` : 'public';
                 const currentChannelKey = getChannelKey(activeChannelRef.current.type, activeChannelRef.current.id);
-                if (msgChannelKey !== currentChannelKey || document.hidden) { const title = `پیام جدید از ${inc.sender}`; const body = inc.message || 'فایل ضمیمه'; sendNotification(title, body); onNotification(title, body); } else { updateLastRead(currentChannelKey); }
+                if (msgChannelKey !== currentChannelKey || document.hidden) { const title = `پیام جدید از ${inc.sender}`; const body = inc.message || (inc.audioUrl ? 'پیام صوتی' : 'فایل ضمیمه'); sendNotification(title, body); onNotification(title, body); } else { updateLastRead(currentChannelKey); }
             });
         }
         lastMsgCountRef.current = msgs.length;
         const usrList = await getUsers(); setUsers(usrList.filter(u => u.username !== currentUser.username));
-        // Group Filtering Logic maintained:
         const grpList = await getGroups(); const isManager = [UserRole.ADMIN, UserRole.MANAGER, UserRole.CEO].includes(currentUser.role); setGroups(grpList.filter(g => isManager || g.members.includes(currentUser.username) || g.createdBy === currentUser.username));
         const tskList = await getTasks(); setTasks(tskList);
     };
 
     useEffect(() => { loadData(); const interval = setInterval(loadData, 3000); return () => clearInterval(interval); }, []);
-    useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages, activeChannel, replyingTo, mobileShowChat]);
+    useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages, activeChannel, replyingTo, mobileShowChat, editingMessageId]);
 
-    const handleSend = async (e: React.FormEvent, attachment?: {fileName: string, url: string}) => {
+    const handleSend = async (e: React.FormEvent, attachment?: {fileName: string, url: string}, audioUrl?: string) => {
         if (e) e.preventDefault();
-        if (!inputText.trim() && !attachment) return;
-        const newMsg: ChatMessage = { 
-            id: generateUUID(), 
-            sender: currentUser.fullName, 
-            senderUsername: currentUser.username, 
-            role: currentUser.role, 
-            message: inputText, 
-            timestamp: Date.now(), 
-            recipient: activeChannel.type === 'private' ? activeChannel.id! : undefined, 
-            groupId: activeChannel.type === 'group' ? activeChannel.id! : undefined, 
-            attachment: attachment,
-            replyTo: replyingTo ? {
-                id: replyingTo.id,
-                sender: replyingTo.sender,
-                message: replyingTo.message || (replyingTo.attachment ? 'فایل ضمیمه' : '...')
-            } : undefined
-        };
-        await sendMessage(newMsg);
+        if (!inputText.trim() && !attachment && !audioUrl) return;
+
+        if (editingMessageId) {
+            // Update logic
+            const msgToUpdate = messages.find(m => m.id === editingMessageId);
+            if (msgToUpdate) {
+                const updatedMsg = { ...msgToUpdate, message: inputText, isEdited: true };
+                await updateMessage(updatedMsg);
+                setEditingMessageId(null);
+            }
+        } else {
+            // New Message Logic
+            const newMsg: ChatMessage = { 
+                id: generateUUID(), 
+                sender: currentUser.fullName, 
+                senderUsername: currentUser.username, 
+                role: currentUser.role, 
+                message: inputText, 
+                timestamp: Date.now(), 
+                recipient: activeChannel.type === 'private' ? activeChannel.id! : undefined, 
+                groupId: activeChannel.type === 'group' ? activeChannel.id! : undefined, 
+                attachment: attachment,
+                audioUrl: audioUrl,
+                replyTo: replyingTo ? {
+                    id: replyingTo.id,
+                    sender: replyingTo.sender,
+                    message: replyingTo.message || (replyingTo.audioUrl ? 'پیام صوتی' : replyingTo.attachment ? 'فایل ضمیمه' : '...')
+                } : undefined
+            };
+            await sendMessage(newMsg);
+        }
+        
         setInputText(''); setShowTagList(false); setReplyingTo(null); const key = getChannelKey(activeChannel.type, activeChannel.id); updateLastRead(key); loadData();
     };
+
     const handleDeleteMessage = async (id: string) => { if (window.confirm("آیا از حذف این پیام مطمئن هستید؟")) { await deleteMessage(id); loadData(); } };
+    const handleEditMessage = (msg: ChatMessage) => { setEditingMessageId(msg.id); setInputText(msg.message); inputRef.current?.focus(); };
+    const handleCancelEdit = () => { setEditingMessageId(null); setInputText(''); };
+    
     const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => { const file = e.target.files?.[0]; if (!file) return; if (file.size > 150 * 1024 * 1024) { alert('حجم فایل نباید بیشتر از 150 مگابایت باشد.'); return; } setIsUploading(true); const reader = new FileReader(); reader.onload = async (ev) => { const base64 = ev.target?.result as string; try { const result = await uploadFile(file.name, base64); await handleSend(null as any, { fileName: result.fileName, url: result.url }); } catch (error) { alert('خطا در آپلود فایل'); } finally { setIsUploading(false); } }; reader.readAsDataURL(file); e.target.value = ''; };
     const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => { const val = e.target.value; setInputText(val); if (val.endsWith('@')) { setShowTagList(true); } else if (!val.includes('@')) { setShowTagList(false); } };
     const handleTagUser = (username: string) => { setInputText(prev => prev + username + ' '); setShowTagList(false); inputRef.current?.focus(); };
@@ -118,90 +144,70 @@ const ChatRoom: React.FC<ChatRoomProps> = ({ currentUser, onNotification }) => {
     // Group Info Handlers
     const activeGroup = groups.find(g => g.id === activeChannel.id);
     const handleOpenGroupInfo = () => { if (activeGroup) { setEditingGroupName(activeGroup.name); setShowGroupInfoModal(true); } };
-    const handleSaveGroupInfo = async () => {
-        if (!activeGroup || !editingGroupName.trim()) return;
-        const updatedGroup = { ...activeGroup, name: editingGroupName };
-        await updateGroup(updatedGroup);
-        setShowGroupInfoModal(false);
-        loadData();
-    };
-    const handleGroupIconChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0]; if (!file || !activeGroup) return;
-        setUploadingGroupIcon(true);
-        const reader = new FileReader();
-        reader.onload = async (ev) => {
-            const base64 = ev.target?.result as string;
-            try {
-                const result = await uploadFile(file.name, base64);
-                const updatedGroup = { ...activeGroup, icon: result.url };
-                await updateGroup(updatedGroup);
-                loadData();
-            } catch (error) { alert('خطا در آپلود'); } finally { setUploadingGroupIcon(false); }
-        };
-        reader.readAsDataURL(file);
+    const handleSaveGroupInfo = async () => { if (!activeGroup || !editingGroupName.trim()) return; const updatedGroup = { ...activeGroup, name: editingGroupName }; await updateGroup(updatedGroup); setShowGroupInfoModal(false); loadData(); };
+    const handleGroupIconChange = async (e: React.ChangeEvent<HTMLInputElement>) => { const file = e.target.files?.[0]; if (!file || !activeGroup) return; setUploadingGroupIcon(true); const reader = new FileReader(); reader.onload = async (ev) => { const base64 = ev.target?.result as string; try { const result = await uploadFile(file.name, base64); const updatedGroup = { ...activeGroup, icon: result.url }; await updateGroup(updatedGroup); loadData(); } catch (error) { alert('خطا در آپلود'); } finally { setUploadingGroupIcon(false); } }; reader.readAsDataURL(file); };
+    const handleSelectChannel = (channel: {type: 'public' | 'private' | 'group', id: string | null}) => { setActiveChannel(channel); setActiveTab('chat'); setMobileShowChat(true); };
+
+    // Emoji Logic
+    const handleEmojiClick = (emoji: string) => { setInputText(prev => prev + emoji); setShowEmojiPicker(false); inputRef.current?.focus(); };
+
+    // Voice Recording Logic
+    const handleStartRecording = async () => {
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            const recorder = new MediaRecorder(stream);
+            setMediaRecorder(recorder);
+            const chunks: BlobPart[] = [];
+            
+            recorder.ondataavailable = (e) => chunks.push(e.data);
+            recorder.onstop = async () => {
+                const blob = new Blob(chunks, { type: 'audio/webm' });
+                const reader = new FileReader();
+                reader.readAsDataURL(blob);
+                reader.onloadend = async () => {
+                    const base64 = reader.result as string;
+                    try {
+                        setIsUploading(true);
+                        const result = await uploadFile(`voice_${Date.now()}.webm`, base64);
+                        await handleSend(null as any, undefined, result.url);
+                    } catch (e) {
+                        alert("خطا در ارسال پیام صوتی");
+                    } finally {
+                        setIsUploading(false);
+                    }
+                };
+                stream.getTracks().forEach(track => track.stop());
+            };
+            
+            recorder.start();
+            setIsRecording(true);
+        } catch (err) {
+            alert("دسترسی به میکروفون امکان‌پذیر نیست.");
+        }
     };
 
-    const handleSelectChannel = (channel: {type: 'public' | 'private' | 'group', id: string | null}) => {
-        setActiveChannel(channel);
-        setActiveTab('chat');
-        setMobileShowChat(true);
+    const handleStopRecording = () => {
+        if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+            mediaRecorder.stop();
+            setIsRecording(false);
+            setMediaRecorder(null);
+        }
     };
 
     return (
         <div className="bg-white rounded-2xl shadow-sm border border-gray-200 md:h-[calc(100vh-140px)] h-[calc(100vh-180px)] flex overflow-hidden animate-fade-in relative">
             {showGroupModal && (<div className="absolute inset-0 bg-black/50 z-50 flex items-center justify-center p-4"><div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-sm"><h3 className="font-bold text-lg mb-4">ایجاد گروه جدید</h3><input className="w-full border rounded-lg p-2 mb-4" placeholder="نام گروه" value={newGroupName} onChange={e => setNewGroupName(e.target.value)} /><div className="mb-4 max-h-48 overflow-y-auto border rounded-lg p-2"><label className="text-xs text-gray-500 block mb-2">انتخاب اعضا:</label>{users.map(u => (<div key={u.id} className="flex items-center gap-2 mb-2"><input type="checkbox" checked={selectedGroupMembers.includes(u.username)} onChange={e => { if (e.target.checked) setSelectedGroupMembers([...selectedGroupMembers, u.username]); else setSelectedGroupMembers(selectedGroupMembers.filter(m => m !== u.username)); }} /><span className="text-sm">{u.fullName}</span></div>))}</div><div className="flex gap-2 justify-end"><button onClick={() => setShowGroupModal(false)} className="px-4 py-2 text-sm text-gray-600">انصراف</button><button onClick={handleCreateGroup} className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg">ایجاد</button></div></div></div>)}
             
-            {/* Group Info Modal */}
             {showGroupInfoModal && activeGroup && (
                 <div className="absolute inset-0 bg-black/50 z-[60] flex items-center justify-center p-4">
                     <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-sm flex flex-col h-[500px]">
-                        <div className="flex justify-between items-center mb-4">
-                            <h3 className="font-bold text-lg">اطلاعات گروه</h3>
-                            <button onClick={() => setShowGroupInfoModal(false)}><X size={20} className="text-gray-400"/></button>
-                        </div>
-                        
-                        <div className="flex flex-col items-center mb-6">
-                            <div className="w-20 h-20 rounded-full bg-gray-200 mb-2 overflow-hidden relative group border">
-                                {activeGroup.icon ? <img src={activeGroup.icon} className="w-full h-full object-cover" /> : <Users className="w-full h-full p-4 text-gray-400" />}
-                                {(isAdminOrManager || activeGroup.createdBy === currentUser.username) && (
-                                    <div className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 cursor-pointer transition-opacity" onClick={() => groupIconInputRef.current?.click()}>
-                                        <Camera className="text-white" size={24}/>
-                                    </div>
-                                )}
-                            </div>
-                            <input type="file" ref={groupIconInputRef} className="hidden" accept="image/*" onChange={handleGroupIconChange} />
-                            {(isAdminOrManager || activeGroup.createdBy === currentUser.username) ? (
-                                <div className="flex items-center gap-2 w-full">
-                                    <input className="flex-1 border-b border-gray-300 focus:border-blue-500 outline-none text-center pb-1" value={editingGroupName} onChange={e => setEditingGroupName(e.target.value)} />
-                                    <button onClick={handleSaveGroupInfo} className="text-blue-600"><CheckSquare size={18}/></button>
-                                </div>
-                            ) : (
-                                <h4 className="font-bold text-lg">{activeGroup.name}</h4>
-                            )}
-                        </div>
-
-                        <div className="flex-1 overflow-y-auto border-t pt-4">
-                            <h5 className="text-xs font-bold text-gray-500 mb-3">اعضای گروه ({activeGroup.members.length})</h5>
-                            <div className="space-y-2">
-                                {activeGroup.members.map(memberUsername => {
-                                    const user = [...users, currentUser].find(u => u.username === memberUsername);
-                                    return (
-                                        <div key={memberUsername} className="flex items-center gap-3 p-2 hover:bg-gray-50 rounded-lg">
-                                            <div className="w-8 h-8 rounded-full bg-gray-200 overflow-hidden">
-                                                {user?.avatar ? <img src={user.avatar} className="w-full h-full object-cover" /> : <UserIcon size={16} className="m-2 text-gray-500"/>}
-                                            </div>
-                                            <span className="text-sm text-gray-800">{user?.fullName || memberUsername}</span>
-                                            {activeGroup.createdBy === memberUsername && <span className="text-[10px] bg-blue-100 text-blue-600 px-1.5 rounded mr-auto">مالک</span>}
-                                        </div>
-                                    );
-                                })}
-                            </div>
-                        </div>
+                        <div className="flex justify-between items-center mb-4"><h3 className="font-bold text-lg">اطلاعات گروه</h3><button onClick={() => setShowGroupInfoModal(false)}><X size={20} className="text-gray-400"/></button></div>
+                        <div className="flex flex-col items-center mb-6"><div className="w-20 h-20 rounded-full bg-gray-200 mb-2 overflow-hidden relative group border">{activeGroup.icon ? <img src={activeGroup.icon} className="w-full h-full object-cover" /> : <Users className="w-full h-full p-4 text-gray-400" />}{(isAdminOrManager || activeGroup.createdBy === currentUser.username) && (<div className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 cursor-pointer transition-opacity" onClick={() => groupIconInputRef.current?.click()}><Camera className="text-white" size={24}/></div>)}</div><input type="file" ref={groupIconInputRef} className="hidden" accept="image/*" onChange={handleGroupIconChange} />{(isAdminOrManager || activeGroup.createdBy === currentUser.username) ? (<div className="flex items-center gap-2 w-full"><input className="flex-1 border-b border-gray-300 focus:border-blue-500 outline-none text-center pb-1" value={editingGroupName} onChange={e => setEditingGroupName(e.target.value)} /><button onClick={handleSaveGroupInfo} className="text-blue-600"><CheckSquare size={18}/></button></div>) : (<h4 className="font-bold text-lg">{activeGroup.name}</h4>)}</div>
+                        <div className="flex-1 overflow-y-auto border-t pt-4"><h5 className="text-xs font-bold text-gray-500 mb-3">اعضای گروه ({activeGroup.members.length})</h5><div className="space-y-2">{activeGroup.members.map(memberUsername => { const user = [...users, currentUser].find(u => u.username === memberUsername); return (<div key={memberUsername} className="flex items-center gap-3 p-2 hover:bg-gray-50 rounded-lg"><div className="w-8 h-8 rounded-full bg-gray-200 overflow-hidden">{user?.avatar ? <img src={user.avatar} className="w-full h-full object-cover" /> : <UserIcon size={16} className="m-2 text-gray-500"/>}</div><span className="text-sm text-gray-800">{user?.fullName || memberUsername}</span>{activeGroup.createdBy === memberUsername && <span className="text-[10px] bg-blue-100 text-blue-600 px-1.5 rounded mr-auto">مالک</span>}</div>); })}</div></div>
                     </div>
                 </div>
             )}
 
-            {/* Sidebar List - Hidden on mobile if chat is active */}
             <div className={`md:w-64 w-full bg-gray-50 border-l border-gray-200 flex flex-col flex-shrink-0 transition-all duration-300 ${mobileShowChat ? 'hidden md:flex' : 'flex'}`}>
                 <div className="p-4 border-b border-gray-200 flex justify-between items-center bg-gray-100">
                     <h3 className="font-bold text-gray-700">لیست گفتگوها</h3>
@@ -219,79 +225,120 @@ const ChatRoom: React.FC<ChatRoomProps> = ({ currentUser, onNotification }) => {
                 </div>
             </div>
 
-            {/* Chat Area - Hidden on mobile if list is active */}
             <div className={`flex-1 flex flex-col min-w-0 transition-all duration-300 ${!mobileShowChat ? 'hidden md:flex' : 'flex'}`}>
                 <div className="p-3 border-b border-gray-100 bg-white flex justify-between items-center shadow-sm z-10">
                     <div className="flex items-center gap-2 md:gap-3">
-                        {/* Mobile Back Button */}
-                        <button onClick={() => setMobileShowChat(false)} className="md:hidden p-2 text-gray-600 hover:bg-gray-100 rounded-full">
-                            <ArrowRight size={20} />
-                        </button>
-                        
-                        <div className="bg-blue-100 p-2 rounded-lg text-blue-600 hidden md:block">
-                            {activeChannel.type === 'private' ? <Lock size={20} /> : activeChannel.type === 'group' ? <ListTodo size={20} /> : <MessageSquare size={20} />}
-                        </div>
-                        <div>
-                            <h2 className="font-bold text-gray-800 text-sm md:text-base">
-                                {activeChannel.type === 'public' ? 'کانال عمومی شرکت' : activeChannel.type === 'private' ? users.find(u => u.username === activeChannel.id)?.fullName : groups.find(g => g.id === activeChannel.id)?.name}
-                            </h2>
-                        </div>
+                        <button onClick={() => setMobileShowChat(false)} className="md:hidden p-2 text-gray-600 hover:bg-gray-100 rounded-full"><ArrowRight size={20} /></button>
+                        <div className="bg-blue-100 p-2 rounded-lg text-blue-600 hidden md:block">{activeChannel.type === 'private' ? <Lock size={20} /> : activeChannel.type === 'group' ? <ListTodo size={20} /> : <MessageSquare size={20} />}</div>
+                        <div><h2 className="font-bold text-gray-800 text-sm md:text-base">{activeChannel.type === 'public' ? 'کانال عمومی شرکت' : activeChannel.type === 'private' ? users.find(u => u.username === activeChannel.id)?.fullName : groups.find(g => g.id === activeChannel.id)?.name}</h2></div>
                     </div>
                     <div className="flex items-center gap-2">
-                        {activeChannel.type === 'group' && (
-                            <>
-                                <button onClick={handleOpenGroupInfo} className="p-2 hover:bg-gray-100 rounded-lg text-gray-600 flex items-center gap-1 text-xs font-bold">
-                                    <Info size={18}/> <span className="hidden md:inline">اطلاعات گروه</span>
-                                </button>
-                                <div className="h-6 w-px bg-gray-300 mx-1 hidden md:block"></div>
-                                <div className="flex bg-gray-100 p-1 rounded-lg">
-                                    <button onClick={() => setActiveTab('chat')} className={`px-2 md:px-4 py-1.5 rounded-md text-xs md:text-sm transition-all ${activeTab === 'chat' ? 'bg-white shadow text-blue-600 font-medium' : 'text-gray-500'}`}>گفتگو</button>
-                                    <button onClick={() => setActiveTab('tasks')} className={`px-2 md:px-4 py-1.5 rounded-md text-xs md:text-sm transition-all ${activeTab === 'tasks' ? 'bg-white shadow text-indigo-600 font-medium' : 'text-gray-500'}`}>تسک‌ها</button>
-                                </div>
-                            </>
-                        )}
+                        {activeChannel.type === 'group' && (<><button onClick={handleOpenGroupInfo} className="p-2 hover:bg-gray-100 rounded-lg text-gray-600 flex items-center gap-1 text-xs font-bold"><Info size={18}/> <span className="hidden md:inline">اطلاعات گروه</span></button><div className="h-6 w-px bg-gray-300 mx-1 hidden md:block"></div><div className="flex bg-gray-100 p-1 rounded-lg"><button onClick={() => setActiveTab('chat')} className={`px-2 md:px-4 py-1.5 rounded-md text-xs md:text-sm transition-all ${activeTab === 'chat' ? 'bg-white shadow text-blue-600 font-medium' : 'text-gray-500'}`}>گفتگو</button><button onClick={() => setActiveTab('tasks')} className={`px-2 md:px-4 py-1.5 rounded-md text-xs md:text-sm transition-all ${activeTab === 'tasks' ? 'bg-white shadow text-indigo-600 font-medium' : 'text-gray-500'}`}>تسک‌ها</button></div></>)}
                     </div>
                 </div>
                 {activeTab === 'chat' ? (
-                    <><div className="flex-1 overflow-y-auto p-4 space-y-4 bg-gray-50/50">{displayedMessages.map((msg) => { const isMe = msg.senderUsername === currentUser.username; const isRecipient = activeChannel.type === 'private' && msg.recipient === currentUser.username; const canDelete = isAdminOrManager || isMe || isRecipient; const senderUser = [...users, currentUser].find(u => u.username === msg.senderUsername); return (<div key={msg.id} className={`flex flex-col ${isMe ? 'items-end' : 'items-start'} group`}>
-                        <div className={`flex items-end gap-2 max-w-[85%] ${isMe ? 'flex-row-reverse' : ''}`}>
-                            <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 overflow-hidden ${isMe ? 'bg-blue-200' : 'bg-gray-200'}`}>
-                                {senderUser?.avatar ? <img src={senderUser.avatar} className="w-full h-full object-cover"/> : <UserIcon size={14} className="text-gray-700" />}
-                            </div>
-                            <div className="flex flex-col">
-                                {msg.replyTo && (
-                                    <div className={`text-xs mb-1 px-3 py-1.5 rounded-lg border-l-4 ${isMe ? 'bg-blue-100 border-blue-400 self-end mr-2' : 'bg-gray-200 border-gray-400 self-start ml-2'}`}>
-                                        <span className="font-bold block mb-0.5">{msg.replyTo.sender}</span>
-                                        <span className="truncate block max-w-[150px] opacity-70">{msg.replyTo.message}</span>
+                    <><div className="flex-1 overflow-y-auto p-4 space-y-4 bg-gray-50/50">
+                        {displayedMessages.map((msg) => { 
+                            const isMe = msg.senderUsername === currentUser.username; 
+                            const isRecipient = activeChannel.type === 'private' && msg.recipient === currentUser.username; 
+                            const canDelete = isAdminOrManager || isMe || isRecipient; 
+                            const senderUser = [...users, currentUser].find(u => u.username === msg.senderUsername); 
+                            
+                            return (
+                            <div key={msg.id} className={`flex flex-col ${isMe ? 'items-end' : 'items-start'} group`}>
+                                <div className={`flex items-end gap-2 max-w-[85%] ${isMe ? 'flex-row-reverse' : ''}`}>
+                                    <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 overflow-hidden ${isMe ? 'bg-blue-200' : 'bg-gray-200'}`}>
+                                        {senderUser?.avatar ? <img src={senderUser.avatar} className="w-full h-full object-cover"/> : <UserIcon size={14} className="text-gray-700" />}
                                     </div>
-                                )}
-                                <div className={`px-4 py-2 rounded-2xl text-sm shadow-sm relative group-hover:shadow-md transition-shadow ${isMe ? 'bg-blue-600 text-white rounded-bl-none' : 'bg-white border border-gray-200 text-gray-800 rounded-br-none'}`}>
-                                    <div className={`text-[10px] mb-1 font-bold ${isMe ? 'text-blue-100' : 'text-gray-500'} flex justify-between items-center min-w-[100px]`}>
-                                        <span>{msg.sender}</span>
-                                        <div className="flex gap-2">
-                                            <button onClick={() => setReplyingTo(msg)} className={`opacity-0 group-hover:opacity-100 transition-opacity hover:scale-110 ${isMe ? 'text-blue-200 hover:text-white' : 'text-gray-400 hover:text-blue-600'}`} title="پاسخ دادن"><Reply size={12} /></button>
-                                            {canDelete && (<button onClick={() => handleDeleteMessage(msg.id)} className={`opacity-0 group-hover:opacity-100 transition-opacity hover:text-red-500 ${isMe ? 'text-blue-200' : 'text-gray-400'}`} title="حذف پیام"><Trash2 size={12} /></button>)}
+                                    <div className="flex flex-col relative">
+                                        {/* Action Buttons OUTSIDE the bubble */}
+                                        <div className={`absolute top-0 ${isMe ? '-left-8' : '-right-8'} flex flex-col gap-1 opacity-0 group-hover:opacity-100 transition-opacity`}>
+                                            <button onClick={() => setReplyingTo(msg)} className="text-gray-400 hover:text-blue-500 p-0.5" title="پاسخ"><Reply size={14} /></button>
+                                            {isMe && <button onClick={() => handleEditMessage(msg)} className="text-gray-400 hover:text-amber-500 p-0.5" title="ویرایش"><Edit2 size={14} /></button>}
+                                            {canDelete && <button onClick={() => handleDeleteMessage(msg.id)} className="text-gray-400 hover:text-red-500 p-0.5" title="حذف"><Trash2 size={14} /></button>}
+                                        </div>
+
+                                        {msg.replyTo && (
+                                            <div className={`text-xs mb-1 px-3 py-1.5 rounded-lg border-l-4 ${isMe ? 'bg-blue-100 border-blue-400 self-end mr-2' : 'bg-gray-200 border-gray-400 self-start ml-2'}`}>
+                                                <span className="font-bold block mb-0.5">{msg.replyTo.sender}</span>
+                                                <span className="truncate block max-w-[150px] opacity-70">{msg.replyTo.message}</span>
+                                            </div>
+                                        )}
+                                        <div className={`px-4 py-2 rounded-2xl text-sm shadow-sm relative transition-shadow ${isMe ? 'bg-blue-600 text-white rounded-bl-none' : 'bg-white border border-gray-200 text-gray-800 rounded-br-none'}`}>
+                                            <div className={`text-[10px] mb-1 font-bold ${isMe ? 'text-blue-100' : 'text-gray-500'} flex justify-between items-center min-w-[100px]`}>
+                                                <span>{msg.sender}</span>
+                                            </div>
+                                            {msg.message && <p>{msg.message}</p>}
+                                            {msg.audioUrl && (
+                                                <audio controls className="mt-1 h-8 max-w-[200px]">
+                                                    <source src={msg.audioUrl} type="audio/webm" />
+                                                    مرورگر شما پشتیبانی نمی‌کند.
+                                                </audio>
+                                            )}
+                                            {msg.attachment && (<div className={`mt-2 p-2 rounded-lg flex items-center gap-2 ${isMe ? 'bg-blue-700/50' : 'bg-gray-50 border border-gray-100'}`}><div className={`p-1.5 rounded-md ${isMe ? 'bg-blue-500 text-white' : 'bg-white text-gray-500 border border-gray-200'}`}><Paperclip size={14} /></div><span className={`text-xs truncate flex-1 ${isMe ? 'text-blue-50' : 'text-gray-600'}`} dir="ltr">{msg.attachment.fileName}</span><div className="flex items-center gap-1"><a href={msg.attachment.url} target="_blank" rel="noreferrer" className={`p-1.5 rounded-md transition-colors ${isMe ? 'hover:bg-blue-500 text-blue-100' : 'hover:bg-gray-200 text-gray-500'}`} title="مشاهده"><Eye size={14} /></a><a href={msg.attachment.url} download={msg.attachment.fileName} className={`p-1.5 rounded-md transition-colors ${isMe ? 'hover:bg-blue-500 text-blue-100' : 'hover:bg-gray-200 text-gray-500'}`} title="دانلود"><Download size={14} /></a></div></div>)}
+                                            <div className="flex justify-end gap-1 mt-1">
+                                                {msg.isEdited && <span className={`text-[9px] ${isMe ? 'text-blue-200' : 'text-gray-400'}`}>(ویرایش شده)</span>}
+                                                <span className={`text-[10px] ${isMe ? 'text-blue-200' : 'text-gray-400'}`}>{new Date(msg.timestamp).toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' })}</span>
+                                            </div>
                                         </div>
                                     </div>
-                                    {msg.message && <p>{msg.message}</p>}{msg.attachment && (<div className={`mt-2 p-2 rounded-lg flex items-center gap-2 ${isMe ? 'bg-blue-700/50' : 'bg-gray-50 border border-gray-100'}`}><div className={`p-1.5 rounded-md ${isMe ? 'bg-blue-500 text-white' : 'bg-white text-gray-500 border border-gray-200'}`}><Paperclip size={14} /></div><span className={`text-xs truncate flex-1 ${isMe ? 'text-blue-50' : 'text-gray-600'}`} dir="ltr">{msg.attachment.fileName}</span><div className="flex items-center gap-1"><a href={msg.attachment.url} target="_blank" rel="noreferrer" className={`p-1.5 rounded-md transition-colors ${isMe ? 'hover:bg-blue-500 text-blue-100' : 'hover:bg-gray-200 text-gray-500'}`} title="مشاهده"><Eye size={14} /></a><a href={msg.attachment.url} download={msg.attachment.fileName} className={`p-1.5 rounded-md transition-colors ${isMe ? 'hover:bg-blue-500 text-blue-100' : 'hover:bg-gray-200 text-gray-500'}`} title="دانلود"><Download size={14} /></a></div></div>)}
                                 </div>
                             </div>
-                        </div>
-                        <span className="text-[10px] text-gray-400 mt-1 mx-12">{new Date(msg.timestamp).toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' })}</span></div>); })}<div ref={messagesEndRef} /></div>
+                        ); })}<div ref={messagesEndRef} /></div>
                         
-                        {/* Reply Preview Bar */}
-                        {replyingTo && (
+                        {/* Reply / Edit Preview Bar */}
+                        {(replyingTo || editingMessageId) && (
                             <div className="px-4 py-2 bg-gray-100 border-t flex justify-between items-center text-sm animate-fade-in">
-                                <div className="flex items-center gap-2 text-gray-600">
-                                    <Reply size={16} className="text-blue-500"/>
-                                    <span className="font-bold text-blue-600">پاسخ به {replyingTo.sender}:</span>
-                                    <span className="truncate max-w-[150px] md:max-w-[200px]">{replyingTo.message || 'فایل ضمیمه'}</span>
-                                </div>
-                                <button onClick={() => setReplyingTo(null)} className="text-gray-400 hover:text-red-500"><X size={18}/></button>
+                                {replyingTo && (
+                                    <div className="flex items-center gap-2 text-gray-600">
+                                        <Reply size={16} className="text-blue-500"/>
+                                        <span className="font-bold text-blue-600">پاسخ به {replyingTo.sender}:</span>
+                                        <span className="truncate max-w-[150px] md:max-w-[200px]">{replyingTo.message || 'فایل/صدا'}</span>
+                                    </div>
+                                )}
+                                {editingMessageId && (
+                                    <div className="flex items-center gap-2 text-gray-600">
+                                        <Edit2 size={16} className="text-amber-500"/>
+                                        <span className="font-bold text-amber-600">در حال ویرایش پیام...</span>
+                                    </div>
+                                )}
+                                <button onClick={() => { setReplyingTo(null); handleCancelEdit(); }} className="text-gray-400 hover:text-red-500"><X size={18}/></button>
                             </div>
                         )}
 
-                        <form onSubmit={(e) => handleSend(e)} className="p-4 border-t bg-white flex gap-2 items-center relative">{showTagList && (<div className="absolute bottom-20 left-4 bg-white border shadow-xl rounded-xl overflow-hidden w-48 z-20">{users.map(u => (<button key={u.id} type="button" onClick={() => handleTagUser(u.username)} className="block w-full text-right px-4 py-2 hover:bg-gray-100 text-sm">{u.fullName}</button>))}</div>)}<input type="file" ref={fileInputRef} className="hidden" accept="image/*,application/pdf" capture onChange={handleFileUpload} /><button type="button" onClick={() => fileInputRef.current?.click()} disabled={isUploading} className="p-3 rounded-xl bg-gray-100 hover:bg-gray-200 text-gray-600 transition-colors" title="ارسال فایل (دوربین/گالری)"><Paperclip size={20} /></button><input ref={inputRef} type="text" value={inputText} onChange={handleInputChange} className="flex-1 border border-gray-300 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder={isUploading ? "در حال ارسال فایل..." : "پیام (با @ تگ کنید)..."} disabled={isUploading} /><button type="submit" disabled={isUploading} className="bg-blue-600 hover:bg-blue-700 text-white p-3 rounded-xl transition-colors shadow-lg shadow-blue-600/20"><Send size={20} /></button></form></>
+                        <form onSubmit={(e) => handleSend(e)} className="p-4 border-t bg-white flex gap-2 items-center relative">
+                            {showTagList && (<div className="absolute bottom-20 left-4 bg-white border shadow-xl rounded-xl overflow-hidden w-48 z-20">{users.map(u => (<button key={u.id} type="button" onClick={() => handleTagUser(u.username)} className="block w-full text-right px-4 py-2 hover:bg-gray-100 text-sm">{u.fullName}</button>))}</div>)}
+                            
+                            {showEmojiPicker && (
+                                <div className="absolute bottom-20 right-4 bg-white border shadow-xl rounded-xl p-3 z-20 w-64">
+                                    <div className="grid grid-cols-6 gap-2">
+                                        {COMMON_EMOJIS.map(emoji => (
+                                            <button key={emoji} type="button" onClick={() => handleEmojiClick(emoji)} className="text-xl hover:bg-gray-100 rounded p-1">{emoji}</button>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+
+                            <input type="file" ref={fileInputRef} className="hidden" accept="image/*,application/pdf" capture onChange={handleFileUpload} />
+                            
+                            <button type="button" onClick={() => fileInputRef.current?.click()} disabled={isUploading || !!editingMessageId} className="p-2 md:p-3 rounded-xl bg-gray-100 hover:bg-gray-200 text-gray-600 transition-colors" title="ارسال فایل"><Paperclip size={20} /></button>
+                            
+                            {!isRecording ? (
+                                <button type="button" onClick={handleStartRecording} disabled={!!editingMessageId} className={`p-2 md:p-3 rounded-xl bg-gray-100 hover:bg-red-100 text-gray-600 hover:text-red-600 transition-colors ${editingMessageId ? 'opacity-50' : ''}`} title="ضبط صدا"><Mic size={20} /></button>
+                            ) : (
+                                <button type="button" onClick={handleStopRecording} className="p-2 md:p-3 rounded-xl bg-red-100 text-red-600 animate-pulse transition-colors" title="توقف ضبط"><StopCircle size={20} /></button>
+                            )}
+
+                            <div className="flex-1 relative">
+                                <input ref={inputRef} type="text" value={inputText} onChange={handleInputChange} className="w-full border border-gray-300 rounded-xl pl-10 pr-4 py-3 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder={isUploading ? "در حال ارسال فایل..." : isRecording ? "در حال ضبط صدا..." : "پیام..."} disabled={isUploading || isRecording} />
+                                <button type="button" onClick={() => setShowEmojiPicker(!showEmojiPicker)} className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-yellow-500"><Smile size={20}/></button>
+                            </div>
+
+                            <button type="submit" disabled={isUploading || isRecording} className={`text-white p-3 rounded-xl transition-colors shadow-lg ${editingMessageId ? 'bg-amber-500 hover:bg-amber-600' : 'bg-blue-600 hover:bg-blue-700 shadow-blue-600/20'}`}>
+                                {editingMessageId ? <Check size={20}/> : <Send size={20} />}
+                            </button>
+                        </form>
+                    </>
                 ) : (
                     <div className="flex-1 flex flex-col overflow-hidden bg-gray-50"><div className="p-4 border-b bg-white"><div className="flex flex-col md:flex-row gap-2"><input className="flex-1 border rounded-lg px-3 py-2 text-sm" placeholder="عنوان تسک جدید..." value={newTaskTitle} onChange={e => setNewTaskTitle(e.target.value)} /><select className="border rounded-lg px-3 py-2 text-sm w-full md:w-40" value={newTaskAssignee} onChange={e => setNewTaskAssignee(e.target.value)}><option value="">مسئول (اختیاری)</option>{groups.find(g => g.id === activeChannel.id)?.members.map(m => { const user = users.find(u => u.username === m) || (currentUser.username === m ? currentUser : null); return user ? <option key={m} value={m}>{user.fullName}</option> : null; })}</select><button onClick={handleAddTask} className="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-indigo-700">افزودن</button></div></div><div className="flex-1 overflow-y-auto p-4 space-y-2">{activeGroupTasks.length === 0 && <div className="text-center text-gray-400 mt-10">هیچ تسکی تعریف نشده است.</div>}{activeGroupTasks.map(task => { const assigneeName = task.assignee ? (users.find(u => u.username === task.assignee)?.fullName || (currentUser.username === task.assignee ? 'خودم' : task.assignee)) : 'نامشخص'; const canDeleteTask = isAdminOrManager || task.createdBy === currentUser.username; return (<div key={task.id} className="bg-white p-3 rounded-xl border border-gray-200 flex items-center justify-between shadow-sm"><div className="flex items-center gap-3"><button onClick={() => toggleTask(task)} className={task.isCompleted ? "text-green-500" : "text-gray-300 hover:text-gray-400"}>{task.isCompleted ? <CheckSquare size={24} /> : <Square size={24} />}</button><div><p className={`font-medium ${task.isCompleted ? 'line-through text-gray-400' : 'text-gray-800'}`}>{task.title}</p><div className="flex gap-2 text-xs mt-1"><span className="bg-gray-100 text-gray-500 px-2 py-0.5 rounded">مسئول: {assigneeName}</span><span className="text-gray-400">{new Date(task.createdAt).toLocaleDateString('fa-IR')}</span></div></div></div>{canDeleteTask && (<button onClick={() => handleDeleteTask(task.id)} className="text-gray-300 hover:text-red-500 transition-colors p-1" title="حذف تسک"><Trash2 size={16} /></button>)}</div>); })}</div></div>
                 )}

@@ -114,6 +114,8 @@ export interface ChatMessage {
         fileName: string;
         url: string;
     };
+    audioUrl?: string; // For Voice Messages
+    isEdited?: boolean; // Track if message was edited
     replyTo?: {
         id: string;
         sender: string;

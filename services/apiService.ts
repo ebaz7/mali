@@ -118,7 +118,33 @@ export const apiCall = async <T>(endpoint: string, method: string = 'GET', body?
             if (method === 'POST') { setLocalData(LS_KEYS.SETTINGS, body); return body as unknown as T; }
         }
 
-        // --- CHAT GROUPS (UPDATED) ---
+        // --- CHAT MESSAGES (UPDATED) ---
+        if (endpoint === '/chat') {
+            if (method === 'GET') return getLocalData<ChatMessage[]>(LS_KEYS.CHAT, []) as unknown as T;
+            if (method === 'POST') {
+                const msgs = getLocalData<ChatMessage[]>(LS_KEYS.CHAT, []);
+                if (msgs.length > 500) msgs.shift(); // keep last 500
+                msgs.push(body);
+                setLocalData(LS_KEYS.CHAT, msgs);
+                return msgs as unknown as T;
+            }
+        }
+        if (endpoint.startsWith('/chat/')) {
+            const id = endpoint.split('/').pop();
+            let msgs = getLocalData<ChatMessage[]>(LS_KEYS.CHAT, []);
+            if (method === 'PUT') {
+                const idx = msgs.findIndex(m => m.id === id);
+                if (idx !== -1) { msgs[idx] = body; setLocalData(LS_KEYS.CHAT, msgs); }
+                return msgs as unknown as T;
+            }
+            if (method === 'DELETE') {
+                msgs = msgs.filter(m => m.id !== id);
+                setLocalData(LS_KEYS.CHAT, msgs);
+                return msgs as unknown as T;
+            }
+        }
+
+        // --- CHAT GROUPS ---
         if (endpoint === '/groups' && method === 'GET') {
             return getLocalData<ChatGroup[]>(LS_KEYS.GROUPS, []) as unknown as T;
         }
@@ -140,8 +166,6 @@ export const apiCall = async <T>(endpoint: string, method: string = 'GET', body?
                 groups = groups.filter(g => g.id !== id);
                 setLocalData(LS_KEYS.GROUPS, groups);
                 // Clean up related data (optional but good practice)
-                // Note: Messages and tasks cleanup is usually handled in logic or server, 
-                // but doing it here for mock completeness if needed, or rely on logic in `server.js` equivalent
                 return groups as unknown as T;
             }
         }

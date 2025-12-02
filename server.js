@@ -170,6 +170,15 @@ app.post('/api/chat', (req, res) => {
     saveDb(db);
     res.json(db.messages);
 });
+app.put('/api/chat/:id', (req, res) => {
+    const db = getDb();
+    const idx = db.messages.findIndex(m => m.id === req.params.id);
+    if (idx !== -1) {
+        db.messages[idx] = { ...db.messages[idx], ...req.body };
+        saveDb(db);
+        res.json(db.messages);
+    } else res.status(404).json({ message: 'Message not found' });
+});
 app.delete('/api/chat/:id', (req, res) => {
     const db = getDb();
     db.messages = db.messages.filter(m => m.id !== req.params.id);
