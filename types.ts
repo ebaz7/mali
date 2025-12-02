@@ -97,6 +97,7 @@ export interface SystemSettings {
   rolePermissions: Record<string, RolePermissions>; // Dynamic permissions
   pwaIcon?: string; // Custom PWA Icon URL
   telegramBotToken?: string; // Token for Telegram Bot Notifications
+  telegramAdminId?: string; // Chat ID of the main admin for backups
 }
 
 export interface DashboardStats {

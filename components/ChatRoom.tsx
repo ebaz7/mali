@@ -1,4 +1,6 @@
 
+
+
 import React, { useState, useEffect, useRef } from 'react';
 import { User, ChatMessage, ChatGroup, GroupTask, UserRole } from '../types';
 import { getMessages, sendMessage, deleteMessage, getGroups, createGroup, deleteGroup, getTasks, createTask, updateTask, deleteTask, uploadFile, updateGroup, updateMessage } from '../services/storageService';
@@ -357,16 +359,20 @@ const ChatRoom: React.FC<ChatRoomProps> = ({ currentUser, onNotification }) => {
                                                 </div>
                                                 {msg.message && <p>{msg.message}</p>}
                                                 {msg.audioUrl && (
-                                                    <audio 
-                                                        key={msg.audioUrl}
-                                                        controls 
-                                                        className="mt-1 h-8 max-w-[200px]" 
-                                                        preload="metadata" 
-                                                        playsInline 
-                                                    >
-                                                        <source src={msg.audioUrl} type={msg.audioUrl.includes('.m4a') ? 'audio/mp4' : 'audio/webm'} />
-                                                        <source src={msg.audioUrl} />
-                                                    </audio>
+                                                    <div className="mt-1">
+                                                        <audio 
+                                                            key={msg.audioUrl}
+                                                            controls 
+                                                            className="h-8 max-w-[200px]" 
+                                                            preload="metadata" 
+                                                            playsInline
+                                                            src={msg.audioUrl}
+                                                        >
+                                                            {/* Explicitly define source types for better iOS support */}
+                                                            {msg.audioUrl.includes('.m4a') && <source src={msg.audioUrl} type="audio/mp4" />}
+                                                            {msg.audioUrl.includes('.webm') && <source src={msg.audioUrl} type="audio/webm" />}
+                                                        </audio>
+                                                    </div>
                                                 )}
                                                 {msg.attachment && (<div className={`mt-2 p-2 rounded-lg flex items-center gap-2 ${isMe ? 'bg-blue-700/50' : 'bg-gray-50 border border-gray-100'}`}><div className={`p-1.5 rounded-md ${isMe ? 'bg-blue-500 text-white' : 'bg-white text-gray-500 border border-gray-200'}`}><Paperclip size={14} /></div><span className={`text-xs truncate flex-1 ${isMe ? 'text-blue-50' : 'text-gray-600'}`} dir="ltr">{msg.attachment.fileName}</span><div className="flex items-center gap-1"><a href={msg.attachment.url} target="_blank" rel="noreferrer" className={`p-1.5 rounded-md transition-colors ${isMe ? 'hover:bg-blue-500 text-blue-100' : 'hover:bg-gray-200 text-gray-500'}`} title="مشاهده"><Eye size={14} /></a><a href={msg.attachment.url} download={msg.attachment.fileName} className={`p-1.5 rounded-md transition-colors ${isMe ? 'hover:bg-blue-500 text-blue-100' : 'hover:bg-gray-200 text-gray-500'}`} title="دانلود"><Download size={14} /></a></div></div>)}
                                                 <div className="flex justify-end gap-1 mt-1">

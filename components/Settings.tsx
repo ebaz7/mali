@@ -2,16 +2,18 @@
 
 
 
+
+
 import React, { useState, useEffect, useRef } from 'react';
 import { getSettings, saveSettings, restoreSystemData, uploadFile } from '../services/storageService';
 import { SystemSettings, UserRole, RolePermissions } from '../types';
-import { Settings as SettingsIcon, Save, Loader2, Download, UploadCloud, Database, AlertTriangle, Bell, Info, Plus, Trash2, Building, ShieldCheck, Landmark, Package, AppWindow, BellRing, BellOff, Send } from 'lucide-react';
+import { Settings as SettingsIcon, Save, Loader2, Download, UploadCloud, Database, AlertTriangle, Bell, Info, Plus, Trash2, Building, ShieldCheck, Landmark, Package, AppWindow, BellRing, BellOff, Send, Crown } from 'lucide-react';
 import { apiCall } from '../services/apiService';
 import { requestNotificationPermission, setNotificationPreference, isNotificationEnabledInApp } from '../services/notificationService';
 
 const Settings: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'general' | 'permissions'>('general');
-  const [settings, setSettings] = useState<SystemSettings>({ currentTrackingNumber: 1000, companyNames: [], defaultCompany: '', bankNames: [], commodityGroups: [], rolePermissions: {} as any, pwaIcon: '', telegramBotToken: '' });
+  const [settings, setSettings] = useState<SystemSettings>({ currentTrackingNumber: 1000, companyNames: [], defaultCompany: '', bankNames: [], commodityGroups: [], rolePermissions: {} as any, pwaIcon: '', telegramBotToken: '', telegramAdminId: '' });
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
   const [newCompany, setNewCompany] = useState('');
@@ -25,7 +27,7 @@ const Settings: React.FC = () => {
 
   useEffect(() => { loadSettings(); setNotificationsEnabled(isNotificationEnabledInApp()); }, []);
 
-  const loadSettings = async () => { try { const data = await getSettings(); const safeData = { ...data, companyNames: data.companyNames || [], defaultCompany: data.defaultCompany || '', bankNames: data.bankNames || [], commodityGroups: data.commodityGroups || [], rolePermissions: data.rolePermissions || {}, pwaIcon: data.pwaIcon || '', telegramBotToken: data.telegramBotToken || '' }; setSettings(safeData); } catch (e) { console.error("Failed to load settings"); } };
+  const loadSettings = async () => { try { const data = await getSettings(); const safeData = { ...data, companyNames: data.companyNames || [], defaultCompany: data.defaultCompany || '', bankNames: data.bankNames || [], commodityGroups: data.commodityGroups || [], rolePermissions: data.rolePermissions || {}, pwaIcon: data.pwaIcon || '', telegramBotToken: data.telegramBotToken || '', telegramAdminId: data.telegramAdminId || '' }; setSettings(safeData); } catch (e) { console.error("Failed to load settings"); } };
   const handleSave = async (e: React.FormEvent) => { e.preventDefault(); setLoading(true); try { await saveSettings(settings); setMessage('تنظیمات با موفقیت ذخیره شد.'); setTimeout(() => setMessage(''), 3000); } catch (e) { setMessage('خطا در ذخیره تنظیمات.'); } finally { setLoading(false); } };
   const handleAddCompany = () => { if (newCompany.trim() && !settings.companyNames.includes(newCompany.trim())) { setSettings({ ...settings, companyNames: [...settings.companyNames, newCompany.trim()] }); setNewCompany(''); } };
   const handleRemoveCompany = (name: string) => { setSettings({ ...settings, companyNames: settings.companyNames.filter(c => c !== name) }); };
@@ -100,20 +102,33 @@ const Settings: React.FC = () => {
                 {/* TELEGRAM BOT SECTION */}
                 <div className="space-y-4 border-t pt-6">
                     <div className="flex items-center gap-2 mb-2"><Send className="text-blue-500" size={20} /><h3 className="font-bold text-gray-800">ربات تلگرام (اعلان‌های کارتابل)</h3></div>
-                    <div className="bg-blue-50 p-4 rounded-xl border border-blue-100">
-                        <label className="text-xs font-bold text-gray-700 block mb-2">توکن ربات تلگرام (Bot Token)</label>
-                        <input 
-                          type="text" 
-                          className="w-full border border-blue-200 rounded-lg p-2 text-sm dir-ltr font-mono" 
-                          placeholder="123456789:ABCdefGHIjklMNOpqrsTUVwxyz"
-                          value={settings.telegramBotToken}
-                          onChange={(e) => setSettings({...settings, telegramBotToken: e.target.value})}
-                        />
-                        <p className="text-xs text-gray-500 mt-2">
-                            برای دریافت توکن، به ربات <a href="https://t.me/BotFather" target="_blank" className="text-blue-600 underline font-bold">BotFather@</a> در تلگرام پیام دهید و یک ربات جدید بسازید.
-                            <br/>
-                            توجه: کاربران باید Chat ID خود را در پروفایلشان وارد کنند تا پیام دریافت کنند.
-                        </p>
+                    <div className="bg-blue-50 p-4 rounded-xl border border-blue-100 grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="md:col-span-2">
+                            <label className="text-xs font-bold text-gray-700 block mb-2">توکن ربات تلگرام (Bot Token)</label>
+                            <input 
+                            type="text" 
+                            className="w-full border border-blue-200 rounded-lg p-2 text-sm dir-ltr font-mono" 
+                            placeholder="123456789:ABCdefGHIjklMNOpqrsTUVwxyz"
+                            value={settings.telegramBotToken}
+                            onChange={(e) => setSettings({...settings, telegramBotToken: e.target.value})}
+                            />
+                            <p className="text-xs text-gray-500 mt-2">
+                                برای دریافت توکن، به ربات <a href="https://t.me/BotFather" target="_blank" className="text-blue-600 underline font-bold">BotFather@</a> در تلگرام پیام دهید و یک ربات جدید بسازید.
+                                <br/>
+                                توجه: کاربران باید Chat ID خود را در پروفایلشان وارد کنند تا پیام دریافت کنند.
+                            </p>
+                        </div>
+                        <div className="md:col-span-2 border-t border-blue-200 pt-3">
+                             <label className="text-xs font-bold text-gray-700 flex items-center gap-1 mb-2"><Crown size={14}/> شناسه چت ادمین اصلی (جهت بک‌آپ)</label>
+                             <input 
+                                type="text" 
+                                className="w-full border border-blue-200 rounded-lg p-2 text-sm dir-ltr font-mono" 
+                                placeholder="Admin Chat ID"
+                                value={settings.telegramAdminId}
+                                onChange={(e) => setSettings({...settings, telegramAdminId: e.target.value})}
+                             />
+                             <p className="text-[10px] text-gray-500 mt-1">فایل‌های بک‌آپ خودکار (هر ۲۴ ساعت) به این آیدی ارسال می‌شود. خودتان به ربات پیام دهید و /id را بزنید.</p>
+                        </div>
                     </div>
                 </div>
 
