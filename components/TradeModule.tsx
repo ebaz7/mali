@@ -1051,7 +1051,9 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
                                                     <td className="p-3 text-center">{t.currencyType}</td>
                                                     <td className="p-3 text-center dir-ltr font-mono">{formatCurrency(t.rate || 0)}</td>
                                                     <td className="p-3 text-center dir-ltr font-mono font-bold text-gray-700">{formatCurrency((t.rate || 0) * t.amount)}</td>
-                                                    <td className="p-3 text-center"><button onClick={() => handleUpdateTrancheDelivery(t.id, !t.isDelivered, t.isDelivered ? '' : new Date().toLocaleDateString('fa-IR'))} className={`px-2 py-1 rounded text-xs transition-colors ${t.isDelivered ? 'bg-green-100 text-green-700 hover:bg-green-200' : 'bg-yellow-100 text-yellow-700 hover:bg-yellow-200'}`}>{t.isDelivered ? `تحویل شده: ${t.deliveryDate || '-'}` : 'در انتظار تحویل'}</button></td>
+                                                    <td className="p-3">{t.exchangeName} / {t.brokerName}</td>
+                                                    <td className="p-3">{t.date}</td>
+                                                    <td className="p-3 text-center"><span className={`px-2 py-1 rounded text-xs ${t.isDelivered ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>{t.isDelivered ? `تحویل شده: ${t.deliveryDate}` : 'تحویل نشده'}</span></td>
                                                     <td className="p-3 text-center"><button onClick={() => handleRemoveTranche(t.id)} className="text-red-500 hover:text-red-700"><Trash2 size={16}/></button></td>
                                                 </tr>
                                             ))}
@@ -1172,7 +1174,216 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
         );
     }
 
-    return null;
+    // --- DASHBOARD VIEW ---
+    return (
+        <div className="space-y-6 animate-fade-in pb-20">
+            {/* Header & Actions */}
+            <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div>
+                    <h2 className="text-2xl font-bold text-gray-800 flex items-center gap-2"><LayoutDashboard className="text-blue-600"/> داشبورد بازرگانی</h2>
+                    <p className="text-gray-500 text-sm mt-1">مدیریت پرونده‌های واردات، صادرات و اسناد حمل</p>
+                </div>
+                <div className="flex items-center gap-3">
+                    <div className="relative">
+                        <Search className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+                        <input 
+                            type="text" 
+                            placeholder="جستجو پرونده، فروشنده..." 
+                            className="pl-4 pr-10 py-2.5 border rounded-xl text-sm w-64 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                        />
+                    </div>
+                    <button onClick={() => setViewMode('reports')} className="bg-gray-100 text-gray-700 px-4 py-2.5 rounded-xl font-medium hover:bg-gray-200 flex items-center gap-2 transition-colors"><PieIcon size={20}/> گزارشات</button>
+                    <button onClick={() => setShowNewModal(true)} className="bg-blue-600 text-white px-4 py-2.5 rounded-xl font-bold hover:bg-blue-700 flex items-center gap-2 shadow-lg shadow-blue-600/20 transition-all"><Plus size={20}/> پرونده جدید</button>
+                </div>
+            </div>
+
+            {/* Breadcrumbs / Navigation */}
+            {(navLevel !== 'ROOT' || searchTerm) && (
+                <div className="flex items-center gap-2 text-sm text-gray-600 bg-white p-3 rounded-xl border border-gray-200 shadow-sm">
+                    <button onClick={goRoot} className="hover:text-blue-600 flex items-center gap-1"><Home size={16}/> خانه</button>
+                    {selectedCompany && <><ChevronLeft size={16} className="text-gray-400"/> <button onClick={() => goCompany(selectedCompany)} className={navLevel === 'COMPANY' ? "font-bold text-blue-600" : "hover:text-blue-600"}>{selectedCompany}</button></>}
+                    {selectedGroup && <><ChevronLeft size={16} className="text-gray-400"/> <span className="font-bold text-blue-600">{selectedGroup}</span></>}
+                    {searchTerm && <><ChevronLeft size={16} className="text-gray-400"/> <span>جستجو: "{searchTerm}"</span></>}
+                </div>
+            )}
+
+            {/* Stats Cards (Only on Root) */}
+            {navLevel === 'ROOT' && !searchTerm && (
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                    <div className="bg-gradient-to-br from-blue-500 to-blue-600 text-white p-4 rounded-xl shadow-lg shadow-blue-500/20">
+                        <div className="text-blue-100 text-sm mb-1 font-medium">کل پرونده‌ها</div>
+                        <div className="text-3xl font-bold">{records.length}</div>
+                    </div>
+                    <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex items-center justify-between">
+                        <div><div className="text-gray-500 text-xs font-bold mb-1">در حال ثبت سفارش</div><div className="text-xl font-bold text-gray-800">{records.filter(r => r.stages[TradeStage.LICENSES]?.isCompleted && !r.stages[TradeStage.SHIPPING_DOCS]?.isCompleted).length}</div></div>
+                        <div className="bg-yellow-50 p-2 rounded-lg text-yellow-600"><FileText size={20}/></div>
+                    </div>
+                    <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex items-center justify-between">
+                        <div><div className="text-gray-500 text-xs font-bold mb-1">در حال حمل</div><div className="text-xl font-bold text-gray-800">{records.filter(r => r.stages[TradeStage.SHIPPING_DOCS]?.isCompleted && !r.stages[TradeStage.CLEARANCE_DOCS]?.isCompleted).length}</div></div>
+                        <div className="bg-cyan-50 p-2 rounded-lg text-cyan-600"><Ship size={20}/></div>
+                    </div>
+                    <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex items-center justify-between">
+                        <div><div className="text-gray-500 text-xs font-bold mb-1">تکمیل شده</div><div className="text-xl font-bold text-gray-800">{records.filter(r => r.stages[TradeStage.FINAL_COST]?.isCompleted).length}</div></div>
+                        <div className="bg-green-50 p-2 rounded-lg text-green-600"><CheckCircle2 size={20}/></div>
+                    </div>
+                </div>
+            )}
+
+            {/* Grouped Data Grid (Companies / Commodity Groups) */}
+            {!searchTerm && navLevel !== 'GROUP' && (
+                <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-6">
+                    {getGroupedData().map((item, idx) => (
+                        <div 
+                            key={idx} 
+                            onClick={() => item.type === 'company' ? goCompany(item.name) : goGroup(item.name)}
+                            className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm hover:shadow-md transition-all cursor-pointer group relative overflow-hidden"
+                        >
+                            <div className="absolute top-0 right-0 w-1 h-full bg-blue-500 group-hover:w-2 transition-all"></div>
+                            <div className="mb-4">
+                                <div className="w-12 h-12 bg-blue-50 rounded-xl flex items-center justify-center text-blue-600 group-hover:bg-blue-600 group-hover:text-white transition-colors">
+                                    {item.type === 'company' ? <Building2 size={24}/> : <Package size={24}/>}
+                                </div>
+                            </div>
+                            <h3 className="font-bold text-lg text-gray-800 mb-1">{item.name}</h3>
+                            <p className="text-gray-500 text-sm">{item.count} پرونده</p>
+                            <div className="mt-4 flex justify-end">
+                                <ArrowLeft size={20} className="text-gray-300 group-hover:text-blue-500 group-hover:-translate-x-1 transition-all"/>
+                            </div>
+                        </div>
+                    ))}
+                    {getGroupedData().length === 0 && (
+                        <div className="col-span-full text-center py-12 text-gray-400">
+                            <FolderOpen size={48} className="mx-auto mb-4 opacity-20"/>
+                            <p>هیچ موردی یافت نشد.</p>
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {/* File List (Records) */}
+            {(searchTerm || navLevel === 'GROUP') && (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {getFilteredRecords().map(record => (
+                        <div key={record.id} className="bg-white rounded-2xl border border-gray-200 shadow-sm hover:shadow-md transition-all group overflow-hidden flex flex-col">
+                             <div className="p-5 flex-1">
+                                <div className="flex justify-between items-start mb-3">
+                                    <div className="flex items-center gap-2">
+                                        <div className="bg-gray-100 p-2 rounded-lg text-gray-600"><FileText size={20}/></div>
+                                        <div>
+                                            <h3 className="font-bold text-gray-800">{record.fileNumber}</h3>
+                                            <span className="text-[10px] text-gray-500">{record.startDate.split('T')[0]}</span>
+                                        </div>
+                                    </div>
+                                    <span className={`text-[10px] px-2 py-1 rounded-full border ${record.status === 'Completed' ? 'bg-green-50 text-green-700 border-green-200' : 'bg-blue-50 text-blue-700 border-blue-200'}`}>{record.status === 'Active' ? 'فعال' : 'تکمیل شده'}</span>
+                                </div>
+                                <div className="space-y-2 mb-4">
+                                    <div className="text-sm text-gray-600 flex items-center gap-2"><span className="w-1.5 h-1.5 bg-gray-300 rounded-full"></span><span className="font-bold">کالا:</span> {record.goodsName}</div>
+                                    <div className="text-sm text-gray-600 flex items-center gap-2"><span className="w-1.5 h-1.5 bg-gray-300 rounded-full"></span><span className="font-bold">فروشنده:</span> {record.sellerName}</div>
+                                    <div className="text-sm text-gray-600 flex items-center gap-2"><span className="w-1.5 h-1.5 bg-gray-300 rounded-full"></span><span className="font-bold">ارزش:</span> <span className="dir-ltr font-mono">{formatNumberString(record.items.reduce((a,b)=>a+b.totalPrice,0).toString())} {record.mainCurrency}</span></div>
+                                </div>
+                             </div>
+                             <div className="bg-gray-50 p-3 border-t border-gray-100 flex justify-between items-center">
+                                <div className="flex gap-1">
+                                    {/* Mini Progress Indicators */}
+                                    <div className={`w-2 h-2 rounded-full ${record.stages[TradeStage.LICENSES]?.isCompleted ? 'bg-green-500' : 'bg-gray-300'}`} title="مجوز"></div>
+                                    <div className={`w-2 h-2 rounded-full ${record.stages[TradeStage.INSURANCE]?.isCompleted ? 'bg-green-500' : 'bg-gray-300'}`} title="بیمه"></div>
+                                    <div className={`w-2 h-2 rounded-full ${record.stages[TradeStage.CURRENCY_PURCHASE]?.isCompleted ? 'bg-green-500' : 'bg-gray-300'}`} title="ارز"></div>
+                                    <div className={`w-2 h-2 rounded-full ${record.stages[TradeStage.SHIPPING_DOCS]?.isCompleted ? 'bg-green-500' : 'bg-gray-300'}`} title="حمل"></div>
+                                </div>
+                                <button onClick={() => { setSelectedRecord(record); setViewMode('details'); setActiveTab('timeline'); }} className="text-sm font-bold text-blue-600 hover:text-blue-700 flex items-center gap-1">مشاهده و مدیریت <ArrowLeft size={16}/></button>
+                             </div>
+                        </div>
+                    ))}
+                    {getFilteredRecords().length === 0 && (
+                        <div className="col-span-full text-center py-12 text-gray-400">
+                            <FileText size={48} className="mx-auto mb-4 opacity-20"/>
+                            <p>هیچ پرونده‌ای یافت نشد.</p>
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {/* Create Modal */}
+            {showNewModal && (
+                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                    <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg p-6">
+                        <div className="flex justify-between items-center mb-6">
+                            <h3 className="font-bold text-lg text-gray-800">ایجاد پرونده بازرگانی جدید</h3>
+                            <button onClick={() => setShowNewModal(false)}><X size={20} className="text-gray-400 hover:text-red-500"/></button>
+                        </div>
+                        <div className="space-y-4">
+                            <div><label className="text-sm font-medium text-gray-700 block mb-1">شرکت (صاحب پرونده)</label><select className="w-full border rounded-xl px-4 py-2.5 bg-gray-50" value={newRecordCompany} onChange={e => setNewRecordCompany(e.target.value)}><option value="">انتخاب شرکت...</option>{availableCompanies.map(c => <option key={c} value={c}>{c}</option>)}</select></div>
+                            <div><label className="text-sm font-medium text-gray-700 block mb-1">شماره پرونده / سفارش</label><input autoFocus className="w-full border rounded-xl px-4 py-2.5" value={newFileNumber} onChange={e => setNewFileNumber(e.target.value)} placeholder="مثلا 1403-A-101" /></div>
+                            <div><label className="text-sm font-medium text-gray-700 block mb-1">نام کالا (کلی)</label><input className="w-full border rounded-xl px-4 py-2.5" value={newGoodsName} onChange={e => setNewGoodsName(e.target.value)} placeholder="مثلا قطعات یدکی دستگاه..." /></div>
+                            <div><label className="text-sm font-medium text-gray-700 block mb-1">فروشنده (Seller)</label><input className="w-full border rounded-xl px-4 py-2.5" value={newSellerName} onChange={e => setNewSellerName(e.target.value)} /></div>
+                            <div><label className="text-sm font-medium text-gray-700 block mb-1">گروه کالایی</label><select className="w-full border rounded-xl px-4 py-2.5 bg-gray-50" value={newCommodityGroup} onChange={e => setNewCommodityGroup(e.target.value)}><option value="">انتخاب گروه...</option>{commodityGroups.map(c => <option key={c} value={c}>{c}</option>)}</select></div>
+                            <div><label className="text-sm font-medium text-gray-700 block mb-1">ارز پایه</label><select className="w-full border rounded-xl px-4 py-2.5 bg-gray-50" value={newMainCurrency} onChange={e => setNewMainCurrency(e.target.value)}>{CURRENCIES.map(c => <option key={c.code} value={c.code}>{c.label}</option>)}</select></div>
+                            <button onClick={handleCreateRecord} disabled={!newFileNumber || !newGoodsName || !newRecordCompany} className="w-full bg-blue-600 text-white py-3 rounded-xl font-bold hover:bg-blue-700 shadow-lg mt-2 disabled:opacity-50">ایجاد پرونده</button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Stage Detail Modal */}
+            {editingStage && (
+                 <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                    <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+                        <div className="flex justify-between items-center p-6 border-b sticky top-0 bg-white z-10">
+                            <h3 className="font-bold text-lg text-gray-800">جزئیات مرحله: <span className="text-blue-600">{editingStage}</span></h3>
+                            <button onClick={() => setEditingStage(null)}><X size={24} className="text-gray-400 hover:text-red-500"/></button>
+                        </div>
+                        <div className="p-6 space-y-6">
+                            <div className="flex items-center gap-3 bg-gray-50 p-3 rounded-lg border">
+                                <input type="checkbox" id="stageCompleted" checked={stageFormData.isCompleted} onChange={e => setStageFormData({...stageFormData, isCompleted: e.target.checked})} className="w-5 h-5 text-green-600 rounded cursor-pointer" />
+                                <label htmlFor="stageCompleted" className="font-bold text-gray-700 cursor-pointer">این مرحله تکمیل شده است</label>
+                            </div>
+
+                            {/* Specific Fields per Stage */}
+                            {editingStage === TradeStage.ALLOCATION_QUEUE && (
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div><label className="text-xs font-bold text-gray-500 block mb-1">تاریخ ورود به صف</label><input className="w-full border rounded p-2 text-sm dir-ltr text-right" value={stageFormData.queueDate || ''} onChange={e => setStageFormData({...stageFormData, queueDate: e.target.value})} placeholder="YYYY/MM/DD"/></div>
+                                    <div><label className="text-xs font-bold text-gray-500 block mb-1">نرخ ارز (تخمینی)</label><input className="w-full border rounded p-2 text-sm dir-ltr" value={stageFormData.currencyRate || ''} onChange={e => setStageFormData({...stageFormData, currencyRate: Number(e.target.value)})} /></div>
+                                </div>
+                            )}
+
+                            {editingStage === TradeStage.ALLOCATION_APPROVED && (
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div><label className="text-xs font-bold text-gray-500 block mb-1">تاریخ تخصیص</label><input className="w-full border rounded p-2 text-sm dir-ltr text-right" value={stageFormData.allocationDate || ''} onChange={e => setStageFormData({...stageFormData, allocationDate: e.target.value})} placeholder="YYYY/MM/DD"/></div>
+                                    <div><label className="text-xs font-bold text-gray-500 block mb-1">مهلت انقضا</label><input className="w-full border rounded p-2 text-sm dir-ltr text-right" value={stageFormData.allocationExpiry || ''} onChange={e => setStageFormData({...stageFormData, allocationExpiry: e.target.value})} placeholder="YYYY/MM/DD"/></div>
+                                    <div className="col-span-2"><label className="text-xs font-bold text-gray-500 block mb-1">کد تخصیص (فیش)</label><input className="w-full border rounded p-2 text-sm" value={stageFormData.allocationCode || ''} onChange={e => setStageFormData({...stageFormData, allocationCode: e.target.value})} /></div>
+                                </div>
+                            )}
+
+                            {/* Common Fields */}
+                            <div><label className="text-sm font-bold text-gray-700 block mb-1">توضیحات تکمیلی</label><textarea rows={3} className="w-full border rounded-xl p-3" value={stageFormData.description} onChange={e => setStageFormData({...stageFormData, description: e.target.value})} placeholder="یادداشت‌های مربوط به این مرحله..." /></div>
+                            
+                            <div>
+                                <label className="text-sm font-bold text-gray-700 block mb-2">فایل‌های ضمیمه</label>
+                                <div className="space-y-2 mb-3">
+                                    {(stageFormData.attachments || []).map((att, idx) => (
+                                        <div key={idx} className="flex justify-between items-center bg-gray-50 p-2 rounded border text-sm">
+                                            <a href={att.url} target="_blank" className="text-blue-600 truncate max-w-[200px] hover:underline">{att.fileName}</a>
+                                            <button onClick={() => removeStageAttachment(idx)} className="text-red-500"><X size={16}/></button>
+                                        </div>
+                                    ))}
+                                </div>
+                                <div className="flex gap-2">
+                                    <input type="file" ref={fileInputRef} className="hidden" onChange={handleStageFileChange} />
+                                    <button onClick={() => fileInputRef.current?.click()} disabled={uploadingStageFile} className="bg-gray-100 text-gray-700 px-4 py-2 rounded-lg text-sm hover:bg-gray-200 border">{uploadingStageFile ? 'در حال آپلود...' : 'افزودن فایل'}</button>
+                                </div>
+                            </div>
+                        </div>
+                        <div className="p-6 border-t bg-gray-50 flex justify-end gap-3">
+                            <button onClick={() => setEditingStage(null)} className="px-6 py-2 rounded-xl text-gray-600 hover:bg-gray-200">انصراف</button>
+                            <button onClick={handleSaveStage} className="px-8 py-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 shadow-lg">ذخیره تغییرات</button>
+                        </div>
+                    </div>
+                 </div>
+            )}
+        </div>
+    );
 };
 
 export default TradeModule;
