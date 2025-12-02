@@ -27,17 +27,17 @@ const getDb = () => {
     if (!fs.existsSync(DB_FILE)) {
         const initialData = {
             settings: {
-                currentTrackingNumber: 1602, // Default so next is 1603
+                currentTrackingNumber: 1602, // Default base number
                 companyNames: [],
                 defaultCompany: '',
                 bankNames: [],
                 commodityGroups: [],
                 rolePermissions: {
-                    admin: { canViewAll: true, canApproveFinancial: true, canApproveManager: true, canApproveCeo: true, canEditOwn: true, canEditAll: true, canDeleteOwn: true, canDeleteAll: true, canManageTrade: true },
-                    ceo: { canViewAll: true, canApproveFinancial: false, canApproveManager: false, canApproveCeo: true, canEditOwn: true, canEditAll: true, canDeleteOwn: true, canDeleteAll: true, canManageTrade: true },
-                    manager: { canViewAll: true, canApproveFinancial: false, canApproveManager: true, canApproveCeo: false, canEditOwn: true, canEditAll: true, canDeleteOwn: true, canDeleteAll: true, canManageTrade: true },
-                    financial: { canViewAll: true, canApproveFinancial: true, canApproveManager: false, canApproveCeo: false, canEditOwn: true, canEditAll: false, canDeleteOwn: true, canDeleteAll: false, canManageTrade: false },
-                    user: { canViewAll: false, canApproveFinancial: false, canApproveManager: false, canApproveCeo: false, canEditOwn: true, canEditAll: false, canDeleteOwn: true, canDeleteAll: false, canManageTrade: false }
+                    admin: { canViewAll: true, canApproveFinancial: true, canApproveManager: true, canApproveCeo: true, canEditOwn: true, canEditAll: true, canDeleteOwn: true, canDeleteAll: true, canManageTrade: true, canManageSettings: true },
+                    ceo: { canViewAll: true, canApproveFinancial: true, canApproveManager: true, canApproveCeo: true, canEditOwn: true, canEditAll: true, canDeleteOwn: true, canDeleteAll: true, canManageTrade: true, canManageSettings: true },
+                    manager: { canViewAll: true, canApproveFinancial: false, canApproveManager: true, canApproveCeo: false, canEditOwn: true, canEditAll: true, canDeleteOwn: true, canDeleteAll: true, canManageTrade: true, canManageSettings: false },
+                    financial: { canViewAll: true, canApproveFinancial: true, canApproveManager: false, canApproveCeo: false, canEditOwn: true, canEditAll: false, canDeleteOwn: true, canDeleteAll: false, canManageTrade: false, canManageSettings: false },
+                    user: { canViewAll: false, canApproveFinancial: false, canApproveManager: false, canApproveCeo: false, canEditOwn: true, canEditAll: false, canDeleteOwn: true, canDeleteAll: false, canManageTrade: false, canManageSettings: false }
                 }
             },
             orders: [],
@@ -55,13 +55,14 @@ const getDb = () => {
         db = JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
     }
     
+    // Ensure permissions exist
     if (!db.settings.rolePermissions) {
         db.settings.rolePermissions = {
-            admin: { canViewAll: true, canApproveFinancial: true, canApproveManager: true, canApproveCeo: true, canEditOwn: true, canEditAll: true, canDeleteOwn: true, canDeleteAll: true, canManageTrade: true },
-            ceo: { canViewAll: true, canApproveFinancial: false, canApproveManager: false, canApproveCeo: true, canEditOwn: true, canEditAll: true, canDeleteOwn: true, canDeleteAll: true, canManageTrade: true },
-            manager: { canViewAll: true, canApproveFinancial: false, canApproveManager: true, canApproveCeo: false, canEditOwn: true, canEditAll: true, canDeleteOwn: true, canDeleteAll: true, canManageTrade: true },
-            financial: { canViewAll: true, canApproveFinancial: true, canApproveManager: false, canApproveCeo: false, canEditOwn: true, canEditAll: false, canDeleteOwn: true, canDeleteAll: false, canManageTrade: false },
-            user: { canViewAll: false, canApproveFinancial: false, canApproveManager: false, canApproveCeo: false, canEditOwn: true, canEditAll: false, canDeleteOwn: true, canDeleteAll: false, canManageTrade: false }
+            admin: { canViewAll: true, canApproveFinancial: true, canApproveManager: true, canApproveCeo: true, canEditOwn: true, canEditAll: true, canDeleteOwn: true, canDeleteAll: true, canManageTrade: true, canManageSettings: true },
+            ceo: { canViewAll: true, canApproveFinancial: true, canApproveManager: true, canApproveCeo: true, canEditOwn: true, canEditAll: true, canDeleteOwn: true, canDeleteAll: true, canManageTrade: true, canManageSettings: true },
+            manager: { canViewAll: true, canApproveFinancial: false, canApproveManager: true, canApproveCeo: false, canEditOwn: true, canEditAll: true, canDeleteOwn: true, canDeleteAll: true, canManageTrade: true, canManageSettings: false },
+            financial: { canViewAll: true, canApproveFinancial: true, canApproveManager: false, canApproveCeo: false, canEditOwn: true, canEditAll: false, canDeleteOwn: true, canDeleteAll: false, canManageTrade: false, canManageSettings: false },
+            user: { canViewAll: false, canApproveFinancial: false, canApproveManager: false, canApproveCeo: false, canEditOwn: true, canEditAll: false, canDeleteOwn: true, canDeleteAll: false, canManageTrade: false, canManageSettings: false }
         };
         saveDb(db);
     }
@@ -101,15 +102,20 @@ performAutoBackup();
 
 // --- SMART TRACKING NUMBER LOGIC ---
 const findNextAvailableTrackingNumber = (db) => {
+    // The setting currentTrackingNumber acts as the "Floor" or "Base".
+    // We start looking for gaps AFTER this number.
+    const baseNum = (db.settings.currentTrackingNumber || 1602);
+    const startNum = baseNum + 1;
+    
     const existingNumbers = db.orders.map(o => o.trackingNumber).sort((a, b) => a - b);
-    let nextNum = 1603; // Start from 1603 as requested
+    let nextNum = startNum;
 
     for (const num of existingNumbers) {
-        if (num < nextNum) continue; // Ignore numbers smaller than 1603
+        if (num < nextNum) continue; // Ignore numbers below our start threshold
         if (num === nextNum) {
-            nextNum++;
+            nextNum++; // Number taken, increment
         } else if (num > nextNum) {
-            // Found a gap
+            // Found a gap! (num is 1605, nextNum is 1603 -> 1603 is free)
             return nextNum;
         }
     }
@@ -273,10 +279,9 @@ app.post('/api/orders', (req, res) => {
 
     db.orders.unshift(newOrder);
     
-    // Update setting if we exceeded it (to keep track of high watermark)
-    if (assignedTrackingNumber > db.settings.currentTrackingNumber) {
-        db.settings.currentTrackingNumber = assignedTrackingNumber;
-    }
+    // NOTE: We do NOT auto-update db.settings.currentTrackingNumber here.
+    // The user wants that setting to be a fixed "Floor" (معیار شروع).
+    // The system will just fill up from there.
     
     saveDb(db);
     res.json(db.orders);

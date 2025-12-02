@@ -1,5 +1,5 @@
 
-import { User, UserRole, SystemSettings } from '../types';
+import { User, UserRole, SystemSettings, RolePermissions } from '../types';
 import { apiCall } from './apiService';
 
 const CURRENT_USER_KEY = 'app_current_user';
@@ -45,8 +45,8 @@ export const hasPermission = (user: User | null, permissionType: string): boolea
   return false;
 };
 
-export const getRolePermissions = (userRole: string, settings: SystemSettings | null, userObject?: User) => {
-    const defaults = {
+export const getRolePermissions = (userRole: string, settings: SystemSettings | null, userObject?: User): RolePermissions => {
+    const defaults: RolePermissions = {
         canViewAll: userRole !== UserRole.USER,
         canApproveFinancial: userRole === UserRole.FINANCIAL || userRole === UserRole.ADMIN,
         canApproveManager: userRole === UserRole.MANAGER || userRole === UserRole.ADMIN,
@@ -55,7 +55,8 @@ export const getRolePermissions = (userRole: string, settings: SystemSettings | 
         canEditAll: userRole === UserRole.ADMIN || userRole === UserRole.CEO,
         canDeleteOwn: true,
         canDeleteAll: userRole === UserRole.ADMIN,
-        canManageTrade: userRole === UserRole.ADMIN || userRole === UserRole.CEO || userRole === UserRole.MANAGER
+        canManageTrade: userRole === UserRole.ADMIN || userRole === UserRole.CEO || userRole === UserRole.MANAGER,
+        canManageSettings: userRole === UserRole.ADMIN
     };
 
     if (!settings || !settings.rolePermissions || !settings.rolePermissions[userRole]) {

@@ -80,10 +80,9 @@ const PrintVoucher: React.FC<PrintVoucherProps> = ({ order, onClose }) => {
 
   // Helper component for the Stamp
   const Stamp = ({ name, title }: { name: string; title: string }) => (
-    <div className="absolute -top-6 right-2 border-[3px] border-blue-800 text-blue-800 rounded-xl p-1 px-3 rotate-[-15deg] opacity-80 mix-blend-multiply no-print">
-      <div className="text-[10px] font-bold border-b border-blue-800 mb-0.5 text-center">{title}</div>
-      <div className="text-[9px] text-center font-bold whitespace-nowrap">{name}</div>
-      <div className="text-[8px] text-center text-blue-600">تایید سیستمی</div>
+    <div className="border-[2px] border-blue-800 text-blue-800 rounded-lg py-1 px-3 rotate-[-5deg] opacity-90 mix-blend-multiply bg-white/80 print:bg-transparent shadow-sm inline-block">
+      <div className="text-[9px] font-bold border-b border-blue-800 mb-0.5 text-center pb-0.5">{title}</div>
+      <div className="text-[10px] text-center font-bold whitespace-nowrap">{name}</div>
     </div>
   );
 
@@ -219,33 +218,61 @@ const PrintVoucher: React.FC<PrintVoucherProps> = ({ order, onClose }) => {
         </div>
 
         {/* Footer / Signatures - 4 Columns */}
-        <div className="mt-6 pt-4 border-t-2 border-gray-800 print:mt-auto relative z-10">
-            <div className="grid grid-cols-4 gap-4 text-center h-24 items-end">
-                <div className="flex flex-col items-center justify-end h-full relative">
-                    <span className="text-xs font-bold text-gray-700 border-t border-dotted border-gray-400 w-full pt-2">درخواست کننده</span>
-                    <div className="text-[10px] mt-1">{order.requester}</div>
+        <div className="mt-auto pt-4 border-t-2 border-gray-800 print:mt-auto relative z-10">
+            <div className="grid grid-cols-4 gap-4 text-center">
+                
+                {/* Requester */}
+                <div className="flex flex-col items-center justify-end min-h-[90px]">
+                    <div className="mb-2 flex items-center justify-center h-full">
+                        <span className="font-bold text-gray-900 text-base">{order.requester}</span>
+                    </div>
+                    <div className="w-full border-t border-gray-400 pt-1">
+                        <span className="text-xs font-bold text-gray-600">درخواست کننده</span>
+                    </div>
                 </div>
                 
-                <div className="flex flex-col items-center justify-end h-full relative">
-                    {order.approverFinancial && (
-                        <Stamp name={order.approverFinancial} title="تایید مالی" />
-                    )}
-                    <span className="text-xs font-bold text-gray-700 border-t border-dotted border-gray-400 w-full pt-2">مدیر مالی</span>
+                {/* Financial */}
+                <div className="flex flex-col items-center justify-end min-h-[90px]">
+                    <div className="mb-2 flex items-center justify-center h-full">
+                         {order.approverFinancial ? (
+                            <Stamp name={order.approverFinancial} title="تایید مالی" />
+                         ) : (
+                            <span className="text-gray-300 text-[10px] print:hidden">امضا نشده</span>
+                         )}
+                    </div>
+                    <div className="w-full border-t border-gray-400 pt-1">
+                        <span className="text-xs font-bold text-gray-600">مدیر مالی</span>
+                    </div>
                 </div>
                 
-                <div className="flex flex-col items-center justify-end h-full relative">
-                     {order.approverManager && (
-                        <Stamp name={order.approverManager} title="تایید مدیریت" />
-                     )}
-                    <span className="text-xs font-bold text-gray-700 border-t border-dotted border-gray-400 w-full pt-2">مدیریت</span>
+                {/* Manager */}
+                <div className="flex flex-col items-center justify-end min-h-[90px]">
+                    <div className="mb-2 flex items-center justify-center h-full">
+                         {order.approverManager ? (
+                            <Stamp name={order.approverManager} title="تایید مدیریت" />
+                         ) : (
+                            <span className="text-gray-300 text-[10px] print:hidden">امضا نشده</span>
+                         )}
+                    </div>
+                    <div className="w-full border-t border-gray-400 pt-1">
+                        <span className="text-xs font-bold text-gray-600">مدیریت</span>
+                    </div>
                 </div>
                 
-                <div className="flex flex-col items-center justify-end h-full relative">
-                    {order.approverCeo && (
-                         <Stamp name={order.approverCeo} title="تصویب نهایی" />
-                    )}
-                    <span className="text-xs font-bold text-gray-700 border-t border-dotted border-gray-400 w-full pt-2">مدیر عامل</span>
+                {/* CEO */}
+                <div className="flex flex-col items-center justify-end min-h-[90px]">
+                    <div className="mb-2 flex items-center justify-center h-full">
+                         {order.approverCeo ? (
+                            <Stamp name={order.approverCeo} title="مدیر عامل" />
+                         ) : (
+                            <span className="text-gray-300 text-[10px] print:hidden">امضا نشده</span>
+                         )}
+                    </div>
+                    <div className="w-full border-t border-gray-400 pt-1">
+                        <span className="text-xs font-bold text-gray-600">مدیر عامل</span>
+                    </div>
                 </div>
+
             </div>
         </div>
       </div>

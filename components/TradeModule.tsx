@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { User, TradeRecord, TradeStage, TradeItem, SystemSettings, InsuranceEndorsement, CurrencyPurchaseData, TradeTransaction, CurrencyTranche, TradeStageData } from '../types';
 import { getTradeRecords, saveTradeRecord, updateTradeRecord, deleteTradeRecord, getSettings, uploadFile } from '../services/storageService';
@@ -205,6 +206,12 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
             return (shamsi > now ? diffDays : -diffDays).toString();
         } catch (e) { return '-'; }
     };
+    
+    // Helper to get Total Currency Amount (Fallback to items total if not purchased yet)
+    const getCurrencyTotal = (r: TradeRecord) => {
+        if (r.currencyPurchaseData?.purchasedAmount && r.currencyPurchaseData.purchasedAmount > 0) return r.currencyPurchaseData.purchasedAmount;
+        return r.items.reduce((acc, i) => acc + i.totalPrice, 0);
+    };
 
     // --- Export Helpers ---
     const handleDownloadPDF = async () => {
@@ -270,19 +277,19 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
                                                 <tr className="hover:bg-gray-50">
                                                     <td className="p-3 font-bold">{r.fileNumber}</td>
                                                     <td className="p-3">{r.registrationNumber || '-'}</td>
-                                                    <td className="p-3 font-mono dir-ltr">{formatNumberString(r.currencyPurchaseData?.purchasedAmount?.toString() || '0')} {r.mainCurrency}</td>
+                                                    <td className="p-3 font-mono dir-ltr">{formatNumberString(getCurrencyTotal(r).toString())} {r.mainCurrency}</td>
                                                     <td className="p-3">{r.operatingBank || '-'}</td>
                                                     <td className="p-3 dir-ltr text-right">{r.stages[TradeStage.ALLOCATION_QUEUE]?.queueDate || '-'}</td>
                                                     <td className="p-3 font-bold text-amber-600 text-center">{calculateDaysDiff(r.stages[TradeStage.ALLOCATION_QUEUE]?.queueDate)} روز</td>
                                                     <td className="p-3 font-mono dir-ltr">{formatCurrency(r.stages[TradeStage.ALLOCATION_QUEUE]?.currencyRate || 0)}</td>
-                                                    <td className="p-3 font-mono dir-ltr font-bold">{formatCurrency((r.stages[TradeStage.ALLOCATION_QUEUE]?.currencyRate || 0) * (r.currencyPurchaseData?.purchasedAmount || 0))}</td>
+                                                    <td className="p-3 font-mono dir-ltr font-bold">{formatCurrency((r.stages[TradeStage.ALLOCATION_QUEUE]?.currencyRate || 0) * getCurrencyTotal(r))}</td>
                                                 </tr>
                                             )}
                                             {activeReport === 'allocated' && (
                                                 <tr className="hover:bg-gray-50">
                                                     <td className="p-3 font-bold">{r.fileNumber}</td>
                                                     <td className="p-3">{r.registrationNumber || '-'}</td>
-                                                    <td className="p-3 font-mono dir-ltr">{formatNumberString(r.currencyPurchaseData?.purchasedAmount?.toString() || '0')} {r.mainCurrency}</td>
+                                                    <td className="p-3 font-mono dir-ltr">{formatNumberString(getCurrencyTotal(r).toString())} {r.mainCurrency}</td>
                                                     <td className="p-3">{r.operatingBank || '-'}</td>
                                                     <td className="p-3 dir-ltr text-right">{r.stages[TradeStage.ALLOCATION_APPROVED]?.allocationDate || '-'}</td>
                                                     <td className="p-3 dir-ltr text-right">{r.stages[TradeStage.ALLOCATION_APPROVED]?.allocationExpiry || '-'}</td>

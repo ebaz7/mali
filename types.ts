@@ -82,6 +82,7 @@ export interface RolePermissions {
     canDeleteOwn: boolean;
     canDeleteAll: boolean;
     canManageTrade: boolean; // Default Role-based permission
+    canManageSettings?: boolean; // New: Access to settings page
 }
 
 export interface SystemSettings {

@@ -1,8 +1,8 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { LayoutDashboard, PlusCircle, ListChecks, FileText, Users, LogOut, User as UserIcon, Settings, Bell, BellOff, MessageSquare, X, Check, Container } from 'lucide-react';
+import { LayoutDashboard, PlusCircle, ListChecks, FileText, Users, LogOut, User as UserIcon, Settings, Bell, BellOff, MessageSquare, X, Check, Container, KeyRound, Save } from 'lucide-react';
 import { User, UserRole, AppNotification, SystemSettings } from '../types';
-import { logout, hasPermission, getRolePermissions } from '../services/authService';
+import { logout, hasPermission, getRolePermissions, updateUser } from '../services/authService';
 import { requestNotificationPermission, setNotificationPreference, isNotificationEnabledInApp } from '../services/notificationService';
 import { getSettings } from '../services/storageService';
 
@@ -23,6 +23,11 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab, curr
   const isSecure = window.isSecureContext;
   const notifRef = useRef<HTMLDivElement>(null);
 
+  // Password Change Modal State
+  const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+
   useEffect(() => {
     getSettings().then(setSettings);
     setNotifEnabled(isNotificationEnabledInApp());
@@ -37,9 +42,26 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab, curr
     if (notifEnabled) { setNotifEnabled(false); setNotificationPreference(false); } else { const granted = await requestNotificationPermission(); if (granted) { setNotifEnabled(true); setNotificationPreference(true); new Notification("سیستم دستور پرداخت", { body: "نوتیفیکیشن‌ها فعال شدند.", dir: 'rtl' }); } }
   };
 
+  const handleChangePassword = async (e: React.FormEvent) => {
+      e.preventDefault();
+      if (newPassword !== confirmPassword) { alert('رمز عبور و تکرار آن مطابقت ندارند.'); return; }
+      if (newPassword.length < 4) { alert('رمز عبور باید حداقل ۴ کاراکتر باشد.'); return; }
+      
+      try {
+          await updateUser({ ...currentUser, password: newPassword });
+          alert('رمز عبور با موفقیت تغییر کرد.');
+          setShowPasswordModal(false);
+          setNewPassword('');
+          setConfirmPassword('');
+      } catch (err) {
+          alert('خطا در تغییر رمز عبور');
+      }
+  };
+
   const unreadCount = notifications.filter(n => !n.read).length;
   const perms = settings ? getRolePermissions(currentUser.role, settings, currentUser) : null;
   const canSeeTrade = perms?.canManageTrade ?? false;
+  const canSeeSettings = currentUser.role === UserRole.ADMIN || (perms?.canManageSettings ?? false);
 
   const navItems = [
     { id: 'dashboard', label: 'داشبورد', icon: LayoutDashboard },
@@ -49,13 +71,37 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab, curr
   ];
   if (canSeeTrade) navItems.push({ id: 'trade', label: 'بازرگانی', icon: Container });
   if (hasPermission(currentUser, 'manage_users')) navItems.push({ id: 'users', label: 'مدیریت کاربران', icon: Users });
-  if (currentUser.role === UserRole.ADMIN) navItems.push({ id: 'settings', label: 'تنظیمات سیستم', icon: Settings });
+  if (canSeeSettings) navItems.push({ id: 'settings', label: 'تنظیمات سیستم', icon: Settings });
 
   return (
     <div className="flex min-h-screen bg-gray-50 text-gray-800 font-sans">
+      
+      {/* Change Password Modal */}
+      {showPasswordModal && (
+          <div className="fixed inset-0 bg-black/50 z-[100] flex items-center justify-center p-4">
+              <div className="bg-white rounded-xl shadow-xl w-full max-w-sm p-6">
+                  <div className="flex justify-between items-center mb-4">
+                      <h3 className="font-bold text-lg">تغییر رمز عبور</h3>
+                      <button onClick={() => setShowPasswordModal(false)}><X size={20} className="text-gray-400"/></button>
+                  </div>
+                  <form onSubmit={handleChangePassword} className="space-y-4">
+                      <div><label className="text-sm font-medium text-gray-700 block mb-1">رمز عبور جدید</label><input type="password" required className="w-full border rounded-lg p-2 text-left dir-ltr" value={newPassword} onChange={e => setNewPassword(e.target.value)} /></div>
+                      <div><label className="text-sm font-medium text-gray-700 block mb-1">تکرار رمز عبور جدید</label><input type="password" required className="w-full border rounded-lg p-2 text-left dir-ltr" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} /></div>
+                      <div className="flex justify-end pt-2">
+                          <button type="submit" className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm flex items-center gap-2"><Save size={16}/> ذخیره</button>
+                      </div>
+                  </form>
+              </div>
+          </div>
+      )}
+
       <aside className="w-64 bg-slate-800 text-white flex-shrink-0 hidden md:flex flex-col no-print shadow-xl relative">
         <div className="p-6 border-b border-slate-700 flex items-center gap-3"><div className="bg-blue-500 p-2 rounded-lg"><FileText className="w-6 h-6 text-white" /></div><div><h1 className="text-lg font-bold tracking-wide">سیستم مالی</h1><span className="text-xs text-slate-400">پنل کاربری</span></div></div>
-        <div className="p-4 bg-slate-700/50 mx-4 mt-4 rounded-xl flex items-center gap-3 border border-slate-600"><div className="bg-slate-600 p-2 rounded-full"><UserIcon size={20} className="text-blue-300" /></div><div className="overflow-hidden"><p className="text-sm font-bold truncate">{currentUser.fullName}</p><p className="text-xs text-slate-400 truncate">نقش: {currentUser.role}</p></div></div>
+        <div className="p-4 bg-slate-700/50 mx-4 mt-4 rounded-xl flex items-center gap-3 border border-slate-600 relative group">
+            <div className="bg-slate-600 p-2 rounded-full"><UserIcon size={20} className="text-blue-300" /></div>
+            <div className="overflow-hidden flex-1"><p className="text-sm font-bold truncate">{currentUser.fullName}</p><p className="text-xs text-slate-400 truncate">نقش: {currentUser.role}</p></div>
+            <button onClick={() => setShowPasswordModal(true)} className="absolute right-2 top-2 bg-slate-500 p-1 rounded hover:bg-slate-400 opacity-0 group-hover:opacity-100 transition-opacity" title="تغییر رمز عبور"><KeyRound size={14} /></button>
+        </div>
         <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
           {navItems.map((item) => { const Icon = item.icon; return (<button key={item.id} onClick={() => setActiveTab(item.id)} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 ${activeTab === item.id ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/20' : 'text-slate-300 hover:bg-slate-700 hover:text-white'}`}><Icon size={20} /><span className="font-medium">{item.label}</span></button>); })}
           <div className="pt-4 mt-2 border-t border-slate-700 relative" ref={notifRef}>
