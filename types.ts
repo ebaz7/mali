@@ -205,6 +205,7 @@ export interface InspectionPayment {
 export interface InspectionData {
     inspectionCompany: string;
     certificateNumber: string;
+    totalInvoiceAmount?: number; // مبلغ کل قرارداد/صورتحساب (برای مانده گیری)
     payments: InspectionPayment[];
 }
 
