@@ -193,6 +193,21 @@ export interface InsuranceEndorsement {
     description: string;
 }
 
+export interface InspectionPayment {
+    id: string;
+    part: string; // e.g. "Part 1", "Final"
+    amount: number;
+    bank: string;
+    date: string;
+    description?: string;
+}
+
+export interface InspectionData {
+    inspectionCompany: string;
+    certificateNumber: string;
+    payments: InspectionPayment[];
+}
+
 export interface CurrencyPayment {
     id: string;
     date: string;
@@ -336,6 +351,9 @@ export interface TradeRecord {
         bank: string;
         endorsements?: InsuranceEndorsement[]; // الحاقیه ها
     };
+    
+    // Inspection Details (New)
+    inspectionData?: InspectionData;
     
     // Currency Purchase Details
     currencyPurchaseData?: CurrencyPurchaseData;
