@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { User, TradeRecord, TradeStage, TradeItem, SystemSettings, InsuranceEndorsement, CurrencyPurchaseData, TradeTransaction, CurrencyTranche, TradeStageData, ShippingDocument, ShippingDocType, DocStatus, InvoiceItem } from '../types';
 import { getTradeRecords, saveTradeRecord, updateTradeRecord, deleteTradeRecord, getSettings, uploadFile } from '../services/storageService';
 import { generateUUID, formatCurrency, formatNumberString, deformatNumberString, parsePersianDate, getCurrentShamsiDate } from '../constants';
-import { Container, Plus, Search, CheckCircle2, Circle, Save, Trash2, X, Package, ArrowRight, History, Banknote, Coins, Filter, Wallet, FileSpreadsheet, Shield, LayoutDashboard, Printer, FileDown, PieChart as PieIcon, BarChart3, ListFilter, Paperclip, Upload, Calendar, Building2, Layers, FolderOpen, ChevronLeft, ArrowLeft, Home, Calculator, Ship, FileText, Scale, Stamp, AlertCircle } from 'lucide-react';
+import { Container, Plus, Search, CheckCircle2, Circle, Save, Trash2, X, Package, ArrowRight, History, Banknote, Coins, Filter, Wallet, FileSpreadsheet, Shield, LayoutDashboard, Printer, FileDown, PieChart as PieIcon, BarChart3, ListFilter, Paperclip, Upload, Calendar, Building2, Layers, FolderOpen, ChevronLeft, ArrowLeft, Home, Calculator, Ship, FileText, Scale, Stamp, AlertCircle, Plane } from 'lucide-react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts';
 
 interface TradeModuleProps {
@@ -341,19 +341,41 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
         
         let totalAmount = 0;
         let totalFreight = 0;
-        let allItems: InvoiceItem[] = [];
+        
+        // Aggregation Map for Items (Group by Name)
+        const itemAggregation: Record<string, { weight: number, totalPrice: number, name: string }> = {};
 
         finalInvoices.forEach(inv => {
             totalAmount += (inv.amount || 0);
             totalFreight += (inv.freightCost || 0);
+            
             if (inv.invoiceItems) {
-                allItems = [...allItems, ...inv.invoiceItems];
+                inv.invoiceItems.forEach(item => {
+                    const normalizedName = item.name.trim(); // Can add toLowerCase() if needed for strict matching
+                    if (!itemAggregation[normalizedName]) {
+                        itemAggregation[normalizedName] = {
+                            name: item.name,
+                            weight: 0,
+                            totalPrice: 0
+                        };
+                    }
+                    itemAggregation[normalizedName].weight += item.weight;
+                    itemAggregation[normalizedName].totalPrice += item.totalPrice;
+                });
             }
         });
 
-        // Group items by name (simple aggregation) if needed, or just return flat list
-        // Returning flat list of items for now as "Final Items"
-        return { totalAmount, totalFreight, finalItems: allItems };
+        // Convert Map back to InvoiceItem array
+        const aggregatedItems: InvoiceItem[] = Object.values(itemAggregation).map(agg => ({
+            id: generateUUID(),
+            name: agg.name,
+            weight: agg.weight,
+            totalPrice: agg.totalPrice,
+            // Derived Unit Price
+            unitPrice: agg.weight > 0 ? agg.totalPrice / agg.weight : 0
+        }));
+
+        return { totalAmount, totalFreight, finalItems: aggregatedItems };
     };
 
     const handleUpdateFinalProforma = async () => {
@@ -365,7 +387,7 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
             return;
         }
 
-        if (confirm("آیا مطمئن هستید؟ لیست کالاهای پرونده (پروفرما) و هزینه حمل با اطلاعات جمع‌آوری شده از اینویس‌های نهایی جایگزین خواهد شد.")) {
+        if (confirm("آیا مطمئن هستید؟ لیست کالاهای پرونده (پروفرما) و هزینه حمل با اطلاعات جمع‌آوری شده از اینویس‌های نهایی جایگزین خواهد شد. کالاهای هم‌نام تجمیع می‌شوند.")) {
             // Convert InvoiceItems to TradeItems
             const tradeItems: TradeItem[] = finalItems.map(i => ({
                 id: generateUUID(),
@@ -679,7 +701,7 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
                                     <div className="space-y-1"><label className="text-xs font-bold text-gray-500">مهلت ثبت سفارش</label><input className="w-full border rounded-lg p-2 text-sm dir-ltr" placeholder="YYYY/MM/DD" value={selectedRecord.registrationExpiry || ''} onChange={e => handleUpdateProforma('registrationExpiry', e.target.value)} /></div>
                                     <div className="space-y-1"><label className="text-xs font-bold text-gray-500">بانک عامل</label><select className="w-full border rounded-lg p-2 text-sm" value={selectedRecord.operatingBank || ''} onChange={e => handleUpdateProforma('operatingBank', e.target.value)}><option value="">انتخاب بانک...</option>{availableBanks.map(b => <option key={b} value={b}>{b}</option>)}</select></div>
                                 </div>
-                                <div className="mt-8 border rounded-xl overflow-hidden"><div className="bg-gray-50 p-3 border-b flex justify-between items-center"><h4 className="font-bold text-gray-700 text-sm flex items-center gap-2"><Package size={16}/> لیست اقلام کالا</h4></div><div className="p-3 bg-white border-b grid grid-cols-1 md:grid-cols-5 gap-2 items-end"><div className="md:col-span-2"><input className="w-full border rounded p-1.5 text-sm" placeholder="نام کالا" value={newItem.name} onChange={e => setNewItem({...newItem, name: e.target.value})} /></div><div><input className="w-full border rounded p-1.5 text-sm dir-ltr" placeholder="وزن (KG)" type="number" value={newItem.weight || ''} onChange={e => setNewItem({...newItem, weight: Number(e.target.value)})} /></div><div><input className="w-full border rounded p-1.5 text-sm dir-ltr" placeholder="فی (Currency)" type="number" value={newItem.unitPrice || ''} onChange={e => setNewItem({...newItem, unitPrice: Number(e.target.value)})} /></div><div><button onClick={handleAddItem} className="w-full bg-blue-600 text-white p-1.5 rounded text-sm hover:bg-blue-700">افزودن کالا</button></div></div><table className="w-full text-sm text-right"><thead className="bg-gray-100 text-gray-600"><tr><th className="p-2">ردیف</th><th className="p-2">نام کالا</th><th className="p-2">وزن</th><th className="p-2">فی</th><th className="p-2">قیمت کل</th><th className="p-2 w-10"></th></tr></thead><tbody>{selectedRecord.items.map((item, idx) => (<tr key={item.id || idx} className="border-b"><td className="p-2 text-center w-12">{idx + 1}</td><td className="p-2 font-bold">{item.name}</td><td className="p-2 dir-ltr text-right">{item.weight}</td><td className="p-2 dir-ltr text-right font-mono">{formatNumberString(item.unitPrice.toString())}</td><td className="p-2 dir-ltr text-right font-mono font-bold">{formatNumberString(item.totalPrice.toString())}</td><td className="p-2"><button onClick={() => handleRemoveItem(item.id)} className="text-red-500"><Trash2 size={14}/></button></td></tr>))}{selectedRecord.items.length === 0 && <tr><td colSpan={6} className="p-4 text-center text-gray-400">هیچ کالایی ثبت نشده است</td></tr>}{selectedRecord.items.length > 0 && <tr className="bg-gray-50 font-bold"><td colSpan={4} className="p-2 text-left">جمع کل:</td><td className="p-2 dir-ltr text-right text-blue-600">{formatNumberString(selectedRecord.items.reduce((acc, i) => acc + i.totalPrice, 0).toString())}</td><td></td></tr>}</tbody></table></div>
+                                <div className="mt-8 border rounded-xl overflow-hidden"><div className="bg-gray-50 p-3 border-b flex justify-between items-center"><h4 className="font-bold text-gray-700 text-sm flex items-center gap-2"><Package size={16}/> لیست اقلام کالا</h4></div><div className="p-3 bg-white border-b grid grid-cols-1 md:grid-cols-5 gap-2 items-end"><div className="md:col-span-2"><input className="w-full border rounded p-1.5 text-sm" placeholder="نام کالا" value={newItem.name} onChange={e => setNewItem({...newItem, name: e.target.value})} /></div><div><input className="w-full border rounded p-1.5 text-sm dir-ltr" placeholder="وزن (KG)" type="number" value={newItem.weight || ''} onChange={e => setNewItem({...newItem, weight: Number(e.target.value)})} /></div><div><input className="w-full border rounded p-1.5 text-sm dir-ltr" placeholder="فی (Currency)" type="number" value={newItem.unitPrice || ''} onChange={e => setNewItem({...newItem, unitPrice: Number(e.target.value)})} /></div><div><button onClick={handleAddItem} className="w-full bg-blue-600 text-white p-1.5 rounded text-sm hover:bg-blue-700">افزودن کالا</button></div></div><table className="w-full text-sm text-right"><thead className="bg-gray-100 text-gray-600"><tr><th className="p-2">ردیف</th><th className="p-2">نام کالا</th><th className="p-2">وزن</th><th className="p-2">فی</th><th className="p-2">قیمت کل</th><th className="p-2 w-10"></th></tr></thead><tbody>{selectedRecord.items.map((item, idx) => (<tr key={item.id || idx} className="border-b"><td className="p-2 text-center w-12">{idx + 1}</td><td className="p-2 font-bold">{item.name}</td><td className="p-2 dir-ltr text-right">{item.weight}</td><td className="p-2 dir-ltr text-right font-mono">{formatNumberString(item.unitPrice.toString())}</td><td className="p-2 dir-ltr text-right font-mono font-bold">{formatNumberString(item.totalPrice.toString())}</td><td className="p-2"><button onClick={() => handleRemoveItem(item.id)} className="text-red-500"><Trash2 size={14}/></button></td></tr>))}{selectedRecord.items.length === 0 && <tr><td colSpan={6} className="p-4 text-center text-gray-400">هیچ کالایی ثبت نشده است</td></tr>}{selectedRecord.items.length > 0 && <><tr className="bg-gray-50 font-bold border-t"><td colSpan={4} className="p-2 text-left">جمع اقلام:</td><td className="p-2 dir-ltr text-right text-blue-600">{formatNumberString(selectedRecord.items.reduce((acc, i) => acc + i.totalPrice, 0).toString())}</td><td></td></tr>{selectedRecord.freightCost > 0 && <tr className="bg-gray-50 font-bold text-gray-600"><td colSpan={4} className="p-2 text-left">هزینه حمل:</td><td className="p-2 dir-ltr text-right">{formatNumberString(selectedRecord.freightCost.toString())}</td><td></td></tr>}<tr className="bg-blue-50 font-bold border-t border-blue-100 text-blue-800"><td colSpan={4} className="p-2 text-left">قیمت کل (FOB + Freight):</td><td className="p-2 dir-ltr text-right">{formatNumberString((selectedRecord.items.reduce((acc, i) => acc + i.totalPrice, 0) + (selectedRecord.freightCost || 0)).toString())}</td><td></td></tr></>}</tbody></table></div>
                                 <div className="mt-8"><h4 className="font-bold text-gray-700 mb-3">هزینه‌های مجوز و ثبت سفارش</h4><div className="flex gap-2 mb-4 items-end bg-gray-50 p-3 rounded-lg border"><input className="border rounded px-2 py-1 text-sm w-32 dir-ltr" placeholder="مبلغ (ریال)" value={newLicenseTx.amount || ''} onChange={e => setNewLicenseTx({...newLicenseTx, amount: Number(e.target.value)})} /><input className="border rounded px-2 py-1 text-sm flex-1" placeholder="شرح (مثال: کارمزد ثبت)" value={newLicenseTx.description || ''} onChange={e => setNewLicenseTx({...newLicenseTx, description: e.target.value})} /><div className="flex flex-col"><label className="text-[10px] text-gray-400 mb-1">بانک</label><select className="border rounded px-2 py-1 text-sm w-32" value={newLicenseTx.bank || ''} onChange={e => setNewLicenseTx({...newLicenseTx, bank: e.target.value})}><option value="">انتخاب بانک...</option>{availableBanks.map(b => <option key={b} value={b}>{b}</option>)}</select></div><input className="border rounded px-2 py-1 text-sm w-24" placeholder="تاریخ" value={newLicenseTx.date || ''} onChange={e => setNewLicenseTx({...newLicenseTx, date: e.target.value})} /><button onClick={handleAddLicenseTx} className="bg-amber-600 text-white px-3 py-1 rounded text-sm hover:bg-amber-700">افزودن</button></div><table className="w-full text-sm text-right border"><thead className="bg-gray-100"><tr><th className="p-2 border">شرح</th><th className="p-2 border">بانک</th><th className="p-2 border">تاریخ</th><th className="p-2 border">مبلغ</th><th className="p-2 border w-10"></th></tr></thead><tbody>{selectedRecord.licenseData?.transactions.map(t => (<tr key={t.id}><td className="p-2 border">{t.description}</td><td className="p-2 border">{t.bank}</td><td className="p-2 border">{t.date}</td><td className="p-2 border">{formatCurrency(t.amount)}</td><td className="p-2 border"><button onClick={() => handleRemoveLicenseTx(t.id)} className="text-red-500"><Trash2 size={14}/></button></td></tr>))}<tr className="bg-amber-50 font-bold"><td colSpan={3} className="p-2 border text-left">جمع کل:</td><td className="p-2 border">{formatCurrency(selectedRecord.stages[TradeStage.LICENSES]?.costRial || 0)}</td><td></td></tr></tbody></table></div>
                             </div>
                         )}
@@ -849,71 +871,128 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
                                     </div>
                                 </div>
 
-                                {/* HISTORY TABLE */}
-                                <div className="border rounded-xl overflow-hidden shadow-sm">
-                                    <div className="bg-gray-100 p-3 text-sm font-bold text-gray-700 border-b">سوابق ثبت شده: {activeShippingSubTab === 'Commercial Invoice' ? 'اینویس' : activeShippingSubTab}</div>
-                                    <table className="w-full text-sm text-right">
-                                        <thead className="bg-white text-gray-600">
-                                            <tr>
-                                                {activeShippingSubTab === 'Commercial Invoice' && <th className="p-3 border-b w-20 text-center">وضعیت</th>}
-                                                <th className="p-3 border-b">شماره سند</th>
-                                                <th className="p-3 border-b">تاریخ</th>
-                                                <th className="p-3 border-b">پارت</th>
-                                                {activeShippingSubTab === 'Commercial Invoice' && <th className="p-3 border-b">مبلغ کل (با حمل)</th>}
-                                                {activeShippingSubTab === 'Packing List' && <th className="p-3 border-b">وزن ناخالص / خالص</th>}
-                                                {activeShippingSubTab === 'Certificate of Origin' && <th className="p-3 border-b">صادر کننده</th>}
-                                                {activeShippingSubTab === 'Bill of Lading' && <th className="p-3 border-b">مسیر حمل</th>}
-                                                <th className="p-3 border-b w-24">ضمائم</th>
-                                                <th className="p-3 border-b w-10"></th>
-                                            </tr>
-                                        </thead>
-                                        <tbody className="divide-y">
+                                {/* HISTORY VIEW - Independent Documents Style for Invoice */}
+                                {activeShippingSubTab === 'Commercial Invoice' ? (
+                                    <div className="space-y-4">
+                                        <div className="flex items-center gap-2 mb-2">
+                                            <div className="h-px bg-gray-200 flex-1"></div>
+                                            <span className="text-xs font-bold text-gray-500">لیست اینویس‌های ثبت شده (Invoices)</span>
+                                            <div className="h-px bg-gray-200 flex-1"></div>
+                                        </div>
+                                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                                             {(selectedRecord.shippingDocuments || [])
-                                                .filter(d => d.type === activeShippingSubTab)
+                                                .filter(d => d.type === 'Commercial Invoice')
                                                 .map(doc => (
-                                                <tr key={doc.id} className="bg-white hover:bg-gray-50">
-                                                    {activeShippingSubTab === 'Commercial Invoice' && (
-                                                        <td className="p-3 text-center">
-                                                            <span className={`px-2 py-1 rounded text-xs border ${doc.status === 'Final' ? 'bg-green-100 text-green-700 border-green-200' : 'bg-yellow-100 text-yellow-700 border-yellow-200'}`}>
-                                                                {doc.status === 'Final' ? 'نهایی' : 'اولیه'}
-                                                            </span>
-                                                        </td>
-                                                    )}
-                                                    <td className="p-3 font-medium">{doc.documentNumber}</td>
-                                                    <td className="p-3 text-gray-600 dir-ltr text-right">{doc.documentDate}</td>
-                                                    <td className="p-3 text-gray-500 text-xs">{doc.partNumber || '-'}</td>
-                                                    
-                                                    {activeShippingSubTab === 'Commercial Invoice' && (
-                                                        <td className="p-3 font-mono dir-ltr">{formatNumberString(doc.amount?.toString())} {doc.currency}</td>
-                                                    )}
-                                                    {activeShippingSubTab === 'Packing List' && (
-                                                        <td className="p-3 dir-ltr text-right">{doc.grossWeight} / {doc.netWeight} KG</td>
-                                                    )}
-                                                    {activeShippingSubTab === 'Certificate of Origin' && (
-                                                        <td className="p-3">{doc.chamberOfCommerce}</td>
-                                                    )}
-                                                    {activeShippingSubTab === 'Bill of Lading' && (
-                                                        <td className="p-3 text-xs">{doc.portOfLoading} <ArrowRight size={10} className="inline"/> {doc.portOfDischarge}</td>
-                                                    )}
+                                                <div key={doc.id} className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-shadow relative group">
+                                                    <div className={`p-3 border-b flex justify-between items-center ${doc.status === 'Final' ? 'bg-green-50' : 'bg-yellow-50'}`}>
+                                                        <div className="flex items-center gap-2">
+                                                            <FileText size={18} className={doc.status === 'Final' ? 'text-green-600' : 'text-yellow-600'}/>
+                                                            <span className="font-bold text-gray-800 text-sm">#{doc.documentNumber}</span>
+                                                        </div>
+                                                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${doc.status === 'Final' ? 'bg-white text-green-700 border-green-200' : 'bg-white text-yellow-700 border-yellow-200'}`}>
+                                                            {doc.status === 'Final' ? 'نهایی' : 'اولیه'}
+                                                        </span>
+                                                    </div>
+                                                    <div className="p-3 space-y-2">
+                                                        <div className="flex justify-between text-xs text-gray-500">
+                                                            <span>تاریخ: {doc.documentDate || '-'}</span>
+                                                            <span>پارت: {doc.partNumber || '-'}</span>
+                                                        </div>
+                                                        
+                                                        {/* Items Summary */}
+                                                        <div className="bg-gray-50 rounded p-2 text-xs space-y-1 max-h-24 overflow-y-auto custom-scrollbar">
+                                                            {(doc.invoiceItems || []).map((item, idx) => (
+                                                                <div key={idx} className="flex justify-between items-center border-b border-gray-200 pb-1 last:border-0 last:pb-0">
+                                                                    <span className="truncate max-w-[60%]">{item.name}</span>
+                                                                    <span className="font-mono text-gray-600">{formatNumberString(item.totalPrice.toString())}</span>
+                                                                </div>
+                                                            ))}
+                                                            {(doc.invoiceItems || []).length === 0 && <div className="text-center text-gray-400 italic">بدون کالا</div>}
+                                                        </div>
 
-                                                    <td className="p-3">
+                                                        <div className="pt-2 mt-1 border-t flex justify-between items-end">
+                                                            <div>
+                                                                <div className="text-[10px] text-gray-400">هزینه حمل</div>
+                                                                <div className="text-xs font-mono">{formatNumberString(doc.freightCost?.toString() || '0')}</div>
+                                                            </div>
+                                                            <div className="text-left">
+                                                                <div className="text-[10px] text-gray-400">مبلغ کل (ارزی)</div>
+                                                                <div className="text-sm font-bold font-mono text-blue-700">{formatNumberString(doc.amount?.toString())} {doc.currency}</div>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                    
+                                                    {/* Footer Actions */}
+                                                    <div className="bg-gray-50 p-2 flex justify-between items-center border-t">
                                                         <div className="flex gap-1">
                                                             {doc.attachments.map((a, i) => (
-                                                                <a key={i} href={a.url} target="_blank" className="text-blue-500 hover:text-blue-700 p-1 bg-blue-50 rounded" title={a.fileName}><Paperclip size={14}/></a>
+                                                                <a key={i} href={a.url} target="_blank" className="text-blue-500 hover:text-blue-700 p-1 bg-white border rounded" title={a.fileName}><Paperclip size={12}/></a>
                                                             ))}
                                                         </div>
-                                                    </td>
-                                                    <td className="p-3 text-center">
-                                                        <button onClick={() => handleDeleteShippingDoc(doc.id)} className="text-gray-400 hover:text-red-500"><Trash2 size={16}/></button>
-                                                    </td>
-                                                </tr>
+                                                        <button onClick={() => handleDeleteShippingDoc(doc.id)} className="text-gray-400 hover:text-red-500 p-1"><Trash2 size={16}/></button>
+                                                    </div>
+                                                </div>
                                             ))}
-                                            {(selectedRecord.shippingDocuments || []).filter(d => d.type === activeShippingSubTab).length === 0 && (
-                                                <tr><td colSpan={8} className="p-6 text-center text-gray-400 italic bg-white">هیچ سندی ثبت نشده است.</td></tr>
+                                            {(selectedRecord.shippingDocuments || []).filter(d => d.type === 'Commercial Invoice').length === 0 && (
+                                                <div className="col-span-full py-12 text-center text-gray-400 italic border-2 border-dashed rounded-xl">هیچ اینویسی ثبت نشده است.</div>
                                             )}
-                                        </tbody>
-                                    </table>
-                                </div>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    /* TABLE VIEW for Other Docs */
+                                    <div className="border rounded-xl overflow-hidden shadow-sm">
+                                        <div className="bg-gray-100 p-3 text-sm font-bold text-gray-700 border-b">سوابق ثبت شده: {activeShippingSubTab}</div>
+                                        <table className="w-full text-sm text-right">
+                                            <thead className="bg-white text-gray-600">
+                                                <tr>
+                                                    <th className="p-3 border-b">شماره سند</th>
+                                                    <th className="p-3 border-b">تاریخ</th>
+                                                    <th className="p-3 border-b">پارت</th>
+                                                    {activeShippingSubTab === 'Packing List' && <th className="p-3 border-b">وزن ناخالص / خالص</th>}
+                                                    {activeShippingSubTab === 'Certificate of Origin' && <th className="p-3 border-b">صادر کننده</th>}
+                                                    {activeShippingSubTab === 'Bill of Lading' && <th className="p-3 border-b">مسیر حمل</th>}
+                                                    <th className="p-3 border-b w-24">ضمائم</th>
+                                                    <th className="p-3 border-b w-10"></th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y">
+                                                {(selectedRecord.shippingDocuments || [])
+                                                    .filter(d => d.type === activeShippingSubTab)
+                                                    .map(doc => (
+                                                    <tr key={doc.id} className="bg-white hover:bg-gray-50">
+                                                        <td className="p-3 font-medium">{doc.documentNumber}</td>
+                                                        <td className="p-3 text-gray-600 dir-ltr text-right">{doc.documentDate}</td>
+                                                        <td className="p-3 text-gray-500 text-xs">{doc.partNumber || '-'}</td>
+                                                        
+                                                        {activeShippingSubTab === 'Packing List' && (
+                                                            <td className="p-3 dir-ltr text-right">{doc.grossWeight} / {doc.netWeight} KG</td>
+                                                        )}
+                                                        {activeShippingSubTab === 'Certificate of Origin' && (
+                                                            <td className="p-3">{doc.chamberOfCommerce}</td>
+                                                        )}
+                                                        {activeShippingSubTab === 'Bill of Lading' && (
+                                                            <td className="p-3 text-xs">{doc.portOfLoading} <ArrowRight size={10} className="inline"/> {doc.portOfDischarge}</td>
+                                                        )}
+
+                                                        <td className="p-3">
+                                                            <div className="flex gap-1">
+                                                                {doc.attachments.map((a, i) => (
+                                                                    <a key={i} href={a.url} target="_blank" className="text-blue-500 hover:text-blue-700 p-1 bg-blue-50 rounded" title={a.fileName}><Paperclip size={14}/></a>
+                                                                ))}
+                                                            </div>
+                                                        </td>
+                                                        <td className="p-3 text-center">
+                                                            <button onClick={() => handleDeleteShippingDoc(doc.id)} className="text-gray-400 hover:text-red-500"><Trash2 size={16}/></button>
+                                                        </td>
+                                                    </tr>
+                                                ))}
+                                                {(selectedRecord.shippingDocuments || []).filter(d => d.type === activeShippingSubTab).length === 0 && (
+                                                    <tr><td colSpan={8} className="p-6 text-center text-gray-400 italic bg-white">هیچ سندی ثبت نشده است.</td></tr>
+                                                )}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                )}
                             </div>
                         )}
                     </div>
