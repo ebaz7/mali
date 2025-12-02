@@ -182,7 +182,7 @@ const ChatRoom: React.FC<ChatRoomProps> = ({ currentUser, onNotification }) => {
             recorder.start();
             setIsRecording(true);
         } catch (err) {
-            alert("دسترسی به میکروفون امکان‌پذیر نیست.");
+            alert("برای ضبط صدا، دسترسی به میکروفون الزامی است. (نکته: در آیفون/اندروید باید سایت دارای SSL باشد)");
         }
     };
 
@@ -237,7 +237,7 @@ const ChatRoom: React.FC<ChatRoomProps> = ({ currentUser, onNotification }) => {
                     </div>
                 </div>
                 {activeTab === 'chat' ? (
-                    <><div className="flex-1 overflow-y-auto p-4 space-y-4 bg-gray-50/50">
+                    <><div className="flex-1 overflow-y-auto p-4 space-y-6 bg-gray-50/50">
                         {displayedMessages.map((msg) => { 
                             const isMe = msg.senderUsername === currentUser.username; 
                             const isRecipient = activeChannel.type === 'private' && msg.recipient === currentUser.username; 
@@ -245,15 +245,24 @@ const ChatRoom: React.FC<ChatRoomProps> = ({ currentUser, onNotification }) => {
                             const senderUser = [...users, currentUser].find(u => u.username === msg.senderUsername); 
                             
                             return (
-                            <div key={msg.id} className={`flex flex-col ${isMe ? 'items-end' : 'items-start'} group`}>
+                            <div key={msg.id} className={`flex flex-col ${isMe ? 'items-end' : 'items-start'} group mb-4`}>
                                 <div className={`flex items-end gap-2 max-w-[85%] ${isMe ? 'flex-row-reverse' : ''}`}>
                                     <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 overflow-hidden ${isMe ? 'bg-blue-200' : 'bg-gray-200'}`}>
                                         {senderUser?.avatar ? <img src={senderUser.avatar} className="w-full h-full object-cover"/> : <UserIcon size={14} className="text-gray-700" />}
                                     </div>
                                     <div className="flex flex-col relative">
-                                        {/* Action Buttons OUTSIDE the bubble */}
-                                        <div className={`absolute top-0 ${isMe ? '-left-8' : '-right-8'} flex flex-col gap-1 opacity-0 group-hover:opacity-100 transition-opacity`}>
-                                            <button onClick={() => setReplyingTo(msg)} className="text-gray-400 hover:text-blue-500 p-0.5" title="پاسخ"><Reply size={14} /></button>
+                                        
+                                        {/* Reply Button (Separated) */}
+                                        <button 
+                                            onClick={() => setReplyingTo(msg)} 
+                                            className={`absolute top-1/2 -translate-y-1/2 ${isMe ? '-right-10' : '-left-10'} p-2 rounded-full bg-white shadow-sm border border-gray-100 text-gray-500 hover:text-blue-600 hover:bg-blue-50 transition-all opacity-0 group-hover:opacity-100 z-10 transform hover:scale-110`} 
+                                            title="پاسخ"
+                                        >
+                                            <Reply size={18} />
+                                        </button>
+
+                                        {/* Edit/Delete Buttons (Opposite Side) */}
+                                        <div className={`absolute top-1/2 -translate-y-1/2 ${isMe ? '-left-8' : '-right-8'} flex flex-col gap-1 opacity-0 group-hover:opacity-100 transition-opacity`}>
                                             {isMe && <button onClick={() => handleEditMessage(msg)} className="text-gray-400 hover:text-amber-500 p-0.5" title="ویرایش"><Edit2 size={14} /></button>}
                                             {canDelete && <button onClick={() => handleDeleteMessage(msg.id)} className="text-gray-400 hover:text-red-500 p-0.5" title="حذف"><Trash2 size={14} /></button>}
                                         </div>
