@@ -1,9 +1,9 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { User, TradeRecord, TradeStage, TradeItem, SystemSettings, InsuranceEndorsement, CurrencyPurchaseData, TradeTransaction, CurrencyTranche, TradeStageData, ShippingDocument, ShippingDocType, DocStatus } from '../types';
+import { User, TradeRecord, TradeStage, TradeItem, SystemSettings, InsuranceEndorsement, CurrencyPurchaseData, TradeTransaction, CurrencyTranche, TradeStageData, ShippingDocument, ShippingDocType, DocStatus, InvoiceItem } from '../types';
 import { getTradeRecords, saveTradeRecord, updateTradeRecord, deleteTradeRecord, getSettings, uploadFile } from '../services/storageService';
 import { generateUUID, formatCurrency, formatNumberString, deformatNumberString, parsePersianDate, getCurrentShamsiDate } from '../constants';
-import { Container, Plus, Search, CheckCircle2, Circle, Save, Trash2, X, Package, ArrowRight, History, Banknote, Coins, Filter, Wallet, FileSpreadsheet, Shield, LayoutDashboard, Printer, FileDown, PieChart as PieIcon, BarChart3, ListFilter, Paperclip, Upload, Calendar, Building2, Layers, FolderOpen, ChevronLeft, ArrowLeft, Home, Calculator, Ship, FileText, Scale, Stamp } from 'lucide-react';
+import { Container, Plus, Search, CheckCircle2, Circle, Save, Trash2, X, Package, ArrowRight, History, Banknote, Coins, Filter, Wallet, FileSpreadsheet, Shield, LayoutDashboard, Printer, FileDown, PieChart as PieIcon, BarChart3, ListFilter, Paperclip, Upload, Calendar, Building2, Layers, FolderOpen, ChevronLeft, ArrowLeft, Home, Calculator, Ship, FileText, Scale, Stamp, AlertCircle } from 'lucide-react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts';
 
 interface TradeModuleProps {
@@ -81,8 +81,11 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
         status: 'Draft',
         documentNumber: '',
         documentDate: '',
-        attachments: []
+        attachments: [],
+        invoiceItems: [],
+        freightCost: 0
     });
+    const [newInvoiceItem, setNewInvoiceItem] = useState<Partial<InvoiceItem>>({ name: '', weight: 0, unitPrice: 0, totalPrice: 0 });
     const [uploadingDocFile, setUploadingDocFile] = useState(false);
     const docFileInputRef = useRef<HTMLInputElement>(null);
 
@@ -119,7 +122,8 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
             setNewItem({ name: '', weight: 0, unitPrice: 0, totalPrice: 0 });
 
             // Reset shipping form
-            setShippingDocForm({ status: 'Draft', documentNumber: '', documentDate: '', attachments: [], currency: selectedRecord.mainCurrency || 'EUR' });
+            setShippingDocForm({ status: 'Draft', documentNumber: '', documentDate: '', attachments: [], currency: selectedRecord.mainCurrency || 'EUR', invoiceItems: [], freightCost: 0 });
+            setNewInvoiceItem({ name: '', weight: 0, unitPrice: 0, totalPrice: 0 });
         }
     }, [selectedRecord]);
 
@@ -176,26 +180,90 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
     const handleRemoveTranche = async (id: string) => { if (!selectedRecord) return; if (!confirm('آیا از حذف این پارت خرید ارز مطمئن هستید؟')) return; const updatedTranches = (currencyForm.tranches || []).filter(t => t.id !== id); const totalPurchased = updatedTranches.reduce((acc, t) => acc + t.amount, 0); const totalDelivered = updatedTranches.filter(t => t.isDelivered).reduce((acc, t) => acc + t.amount, 0); const updatedForm = { ...currencyForm, tranches: updatedTranches, purchasedAmount: totalPurchased, deliveredAmount: totalDelivered }; setCurrencyForm(updatedForm); const updatedRecord = { ...selectedRecord, currencyPurchaseData: updatedForm }; await updateTradeRecord(updatedRecord); setSelectedRecord(updatedRecord); }
 
     // --- Shipping Documents Handlers ---
+
+    // Invoice Item Handling
+    const handleAddInvoiceItem = () => {
+        if (!newInvoiceItem.name) return;
+        const newItem: InvoiceItem = {
+            id: generateUUID(),
+            name: newInvoiceItem.name,
+            weight: Number(newInvoiceItem.weight),
+            unitPrice: Number(newInvoiceItem.unitPrice),
+            totalPrice: Number(newInvoiceItem.totalPrice) || (Number(newInvoiceItem.weight) * Number(newInvoiceItem.unitPrice))
+        };
+        const currentItems = shippingDocForm.invoiceItems || [];
+        setShippingDocForm({ ...shippingDocForm, invoiceItems: [...currentItems, newItem] });
+        setNewInvoiceItem({ name: '', weight: 0, unitPrice: 0, totalPrice: 0 });
+    };
+
+    const handleRemoveInvoiceItem = (id: string) => {
+        const currentItems = shippingDocForm.invoiceItems || [];
+        setShippingDocForm({ ...shippingDocForm, invoiceItems: currentItems.filter(i => i.id !== id) });
+    };
+
+    const getInvoiceTotal = (items: InvoiceItem[]) => {
+        return items.reduce((sum, item) => sum + item.totalPrice, 0);
+    };
+
+    const getDocLabel = (type: ShippingDocType, field: 'number' | 'date') => {
+        if (field === 'number') {
+            if (type === 'Commercial Invoice') return 'شماره اینویس';
+            if (type === 'Packing List') return 'شماره پکینگ';
+            if (type === 'Bill of Lading') return 'شماره بارنامه';
+            if (type === 'Certificate of Origin') return 'شماره گواهی مبدا';
+        }
+        if (field === 'date') {
+            if (type === 'Commercial Invoice') return 'تاریخ اینویس';
+            if (type === 'Packing List') return 'تاریخ پکینگ';
+            if (type === 'Bill of Lading') return 'تاریخ صدور';
+            if (type === 'Certificate of Origin') return 'تاریخ صدور';
+        }
+        return '';
+    };
+
     const handleSaveShippingDoc = async () => {
         if (!selectedRecord || !shippingDocForm.documentNumber) { alert("شماره سند الزامی است"); return; }
         
+        // Calculate Total Amount for Invoice
+        let totalAmount = 0;
+        if (activeShippingSubTab === 'Commercial Invoice') {
+            const itemTotal = getInvoiceTotal(shippingDocForm.invoiceItems || []);
+            totalAmount = itemTotal + (Number(shippingDocForm.freightCost) || 0);
+        } else {
+            totalAmount = Number(shippingDocForm.amount) || 0;
+        }
+
         const newDoc: ShippingDocument = {
             id: generateUUID(),
             type: activeShippingSubTab,
-            status: shippingDocForm.status as DocStatus || 'Draft',
+            status: activeShippingSubTab === 'Commercial Invoice' ? (shippingDocForm.status as DocStatus || 'Draft') : 'Final', // Others default to Final/Standard
             documentNumber: shippingDocForm.documentNumber || '',
             documentDate: shippingDocForm.documentDate || '',
             attachments: shippingDocForm.attachments || [],
-            amount: activeShippingSubTab === 'Commercial Invoice' ? Number(shippingDocForm.amount) : undefined,
+            
+            // Shared
+            partNumber: shippingDocForm.partNumber,
+            description: shippingDocForm.description,
+
+            // Invoice Specific
+            invoiceItems: activeShippingSubTab === 'Commercial Invoice' ? shippingDocForm.invoiceItems : undefined,
+            amount: totalAmount,
+            freightCost: activeShippingSubTab === 'Commercial Invoice' ? Number(shippingDocForm.freightCost) : undefined,
             currency: activeShippingSubTab === 'Commercial Invoice' ? shippingDocForm.currency : undefined,
+            
+            // Packing Specific
             netWeight: activeShippingSubTab === 'Packing List' ? Number(shippingDocForm.netWeight) : undefined,
             grossWeight: activeShippingSubTab === 'Packing List' ? Number(shippingDocForm.grossWeight) : undefined,
             packagesCount: activeShippingSubTab === 'Packing List' ? Number(shippingDocForm.packagesCount) : undefined,
+
+            // CO Specific
             chamberOfCommerce: activeShippingSubTab === 'Certificate of Origin' ? shippingDocForm.chamberOfCommerce : undefined,
+
+            // BL Specific
             vesselName: activeShippingSubTab === 'Bill of Lading' ? shippingDocForm.vesselName : undefined,
             portOfLoading: activeShippingSubTab === 'Bill of Lading' ? shippingDocForm.portOfLoading : undefined,
             portOfDischarge: activeShippingSubTab === 'Bill of Lading' ? shippingDocForm.portOfDischarge : undefined,
-            description: shippingDocForm.description,
+            
             createdAt: Date.now(),
             createdBy: currentUser.fullName
         };
@@ -219,7 +287,9 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
             documentNumber: '', 
             documentDate: '', 
             attachments: [], 
+            invoiceItems: [],
             amount: 0, 
+            freightCost: 0,
             netWeight: 0, 
             grossWeight: 0, 
             packagesCount: 0,
@@ -228,8 +298,10 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
             portOfLoading: '',
             portOfDischarge: '',
             description: '',
+            partNumber: '',
             currency: selectedRecord.mainCurrency || 'EUR'
         });
+        setNewInvoiceItem({ name: '', weight: 0, unitPrice: 0, totalPrice: 0 });
     };
 
     const handleDeleteShippingDoc = async (id: string) => {
@@ -260,6 +332,59 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
     const removeDocAttachment = (index: number) => {
         const current = shippingDocForm.attachments || [];
         setShippingDocForm({ ...shippingDocForm, attachments: current.filter((_, i) => i !== index) });
+    };
+
+    // Calculate Final Proforma Aggregation
+    const getFinalAggregation = () => {
+        if (!selectedRecord?.shippingDocuments) return { totalAmount: 0, totalFreight: 0, finalItems: [] };
+        const finalInvoices = selectedRecord.shippingDocuments.filter(d => d.type === 'Commercial Invoice' && d.status === 'Final');
+        
+        let totalAmount = 0;
+        let totalFreight = 0;
+        let allItems: InvoiceItem[] = [];
+
+        finalInvoices.forEach(inv => {
+            totalAmount += (inv.amount || 0);
+            totalFreight += (inv.freightCost || 0);
+            if (inv.invoiceItems) {
+                allItems = [...allItems, ...inv.invoiceItems];
+            }
+        });
+
+        // Group items by name (simple aggregation) if needed, or just return flat list
+        // Returning flat list of items for now as "Final Items"
+        return { totalAmount, totalFreight, finalItems: allItems };
+    };
+
+    const handleUpdateFinalProforma = async () => {
+        if (!selectedRecord) return;
+        const { totalFreight, finalItems } = getFinalAggregation();
+        
+        if (finalItems.length === 0) {
+            alert("هیچ آیتمی در اینویس‌های نهایی یافت نشد.");
+            return;
+        }
+
+        if (confirm("آیا مطمئن هستید؟ لیست کالاهای پرونده (پروفرما) و هزینه حمل با اطلاعات جمع‌آوری شده از اینویس‌های نهایی جایگزین خواهد شد.")) {
+            // Convert InvoiceItems to TradeItems
+            const tradeItems: TradeItem[] = finalItems.map(i => ({
+                id: generateUUID(),
+                name: i.name,
+                weight: i.weight,
+                unitPrice: i.unitPrice,
+                totalPrice: i.totalPrice
+            }));
+
+            const updatedRecord = { 
+                ...selectedRecord, 
+                items: tradeItems,
+                freightCost: totalFreight
+            };
+
+            await updateTradeRecord(updatedRecord);
+            setSelectedRecord(updatedRecord);
+            alert("پروفرما نهایی با موفقیت بروزرسانی شد.");
+        }
     };
 
 
@@ -580,7 +705,7 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
                                 <div className="bg-white border rounded-xl overflow-hidden mb-6 shadow-sm">
                                     <div className="bg-gray-50 p-3 border-b font-bold text-gray-700 flex justify-between items-center"><span>لیست پارت‌های خرید ارز (Tranches)</span><span className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded">ارز پایه: {selectedRecord.mainCurrency}</span></div>
                                     <div className="p-4 grid grid-cols-1 md:grid-cols-6 gap-2 bg-gray-50 border-b items-end"><div className="md:col-span-1"><label className="text-[10px] text-gray-500 block mb-1">مبلغ ارزی</label><input className="w-full border rounded p-1.5 text-sm dir-ltr" placeholder="Amount" value={newCurrencyTranche.amount || ''} onChange={e => setNewCurrencyTranche({...newCurrencyTranche, amount: Number(e.target.value)})} /></div><div className="md:col-span-1"><label className="text-[10px] text-gray-500 block mb-1">نوع ارز</label><select className="w-full border rounded p-1.5 text-sm" value={newCurrencyTranche.currencyType} onChange={e => setNewCurrencyTranche({...newCurrencyTranche, currencyType: e.target.value})}>{CURRENCIES.map(c => <option key={c.code} value={c.code}>{c.label}</option>)}</select></div><div className="md:col-span-1"><label className="text-[10px] text-gray-500 block mb-1">نرخ ریالی</label><input className="w-full border rounded p-1.5 text-sm dir-ltr" placeholder="Rate" value={newCurrencyTranche.rate || ''} onChange={e => setNewCurrencyTranche({...newCurrencyTranche, rate: Number(e.target.value)})} /></div><div className="md:col-span-1"><label className="text-[10px] text-gray-500 block mb-1">صرافی</label><input className="w-full border rounded p-1.5 text-sm" placeholder="Exchange" value={newCurrencyTranche.exchangeName || ''} onChange={e => setNewCurrencyTranche({...newCurrencyTranche, exchangeName: e.target.value})} /></div><div className="md:col-span-1"><label className="text-[10px] text-gray-500 block mb-1">تاریخ</label><input className="w-full border rounded p-1.5 text-sm" placeholder="Date" value={newCurrencyTranche.date || ''} onChange={e => setNewCurrencyTranche({...newCurrencyTranche, date: e.target.value})} /></div><div className="md:col-span-1"><button onClick={handleAddCurrencyTranche} className="w-full bg-green-600 text-white p-1.5 rounded text-sm hover:bg-green-700 h-[34px]">افزودن پارت</button></div></div>
-                                    <table className="w-full text-sm text-right"><thead className="bg-gray-100 text-gray-600"><tr><th className="p-3 border-b">مبلغ</th><th className="p-3 border-b">ارز</th><th className="p-3 border-b">نرخ</th><th className="p-3 border-b">صرافی</th><th className="p-3 border-b">تاریخ خرید</th><th className="p-3 border-b text-center w-24">وضعیت تحویل</th><th className="p-3 border-b w-32">تاریخ تحویل</th><th className="p-3 border-b w-10"></th></tr></thead><tbody className="divide-y">{currencyForm.tranches?.map((t, idx) => (<tr key={t.id || idx}><td className="p-3 font-mono dir-ltr font-bold text-gray-800">{formatNumberString(t.amount.toString())}</td><td className="p-3">{t.currencyType}</td><td className="p-3 font-mono text-gray-500">{formatCurrency(t.rate || 0)}</td><td className="p-3">{t.exchangeName}</td><td className="p-3">{t.date}</td><td className="p-3 text-center"><input type="checkbox" checked={t.isDelivered || false} onChange={e => handleUpdateTrancheDelivery(t.id, e.target.checked, t.deliveryDate)} className="w-4 h-4 text-green-600 rounded cursor-pointer" /></td><td className="p-3"><input disabled={!t.isDelivered} className={`w-full border rounded px-1 py-0.5 text-xs ${!t.isDelivered ? 'bg-gray-100 text-gray-400' : 'bg-white'}`} placeholder="تاریخ..." value={t.deliveryDate || ''} onChange={e => handleUpdateTrancheDelivery(t.id, true, e.target.value)} /></td><td className="p-3 text-center"><button onClick={() => handleRemoveTranche(t.id)} className="text-gray-400 hover:text-red-500"><Trash2 size={16}/></button></td></tr>))}{(!currencyForm.tranches || currencyForm.tranches.length === 0) && (<tr><td colSpan={8} className="p-4 text-center text-gray-400">هیچ پارت ارزی ثبت نشده است.</td></tr>)}</tbody><tfoot className="bg-gray-50 font-bold"><tr><td className="p-3 border-t">جمع کل:</td><td className="p-3 border-t font-mono dir-ltr text-blue-600" colSpan={7}>{formatNumberString(currencyForm.purchasedAmount.toString())} {selectedRecord.mainCurrency}</td></tr></tfoot></table>
+                                    <table className="w-full text-sm text-right"><thead className="bg-gray-100 text-gray-600"><tr><th className="p-3 border-b">مبلغ</th><th className="p-3 border-b">ارز</th><th className="p-3 border-b">نرخ</th><th className="p-3 border-b">صرافی</th><th className="p-3 border-b">تاریخ خرید</th><th className="p-3 border-b text-center w-24">وضعیت تحویل</th><th className="p-3 border-b w-32">تاریخ تحویل</th><th className="p-3 border-b w-10"></th></tr></thead><tbody className="divide-y">{currencyForm.tranches?.map((t, idx) => (<tr key={t.id || idx}><td className="p-3 font-mono dir-ltr font-bold text-gray-800">{formatNumberString(t.amount.toString())}</td><td className="p-3">{t.currencyType}</td><td className="p-3 font-mono text-gray-500">{formatCurrency(t.rate || 0)}</td><td className="p-3 text-center font-mono font-bold text-gray-700">{formatCurrency((t.rate || 0) * t.amount)}</td><td className="p-3">{t.exchangeName} / {t.brokerName}</td><td className="p-3">{t.date}</td><td className="p-3 text-center"><span className={`px-2 py-1 rounded text-xs ${t.isDelivered ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>{t.isDelivered ? `تحویل شده: ${t.deliveryDate}` : 'تحویل نشده'}</span></td><td className="p-3"><input disabled={!t.isDelivered} className={`w-full border rounded px-1 py-0.5 text-xs ${!t.isDelivered ? 'bg-gray-100 text-gray-400' : 'bg-white'}`} placeholder="تاریخ..." value={t.deliveryDate || ''} onChange={e => handleUpdateTrancheDelivery(t.id, true, e.target.value)} /></td><td className="p-3 text-center"><button onClick={() => handleRemoveTranche(t.id)} className="text-gray-400 hover:text-red-500"><Trash2 size={16}/></button></td></tr>))}{(!currencyForm.tranches || currencyForm.tranches.length === 0) && (<tr><td colSpan={8} className="p-4 text-center text-gray-400">هیچ پارت ارزی ثبت نشده است.</td></tr>)}</tbody><tfoot className="bg-gray-50 font-bold"><tr><td className="p-3 border-t">جمع کل:</td><td className="p-3 border-t font-mono dir-ltr text-blue-600" colSpan={7}>{formatNumberString(currencyForm.purchasedAmount.toString())} {selectedRecord.mainCurrency}</td></tr></tfoot></table>
                                 </div>
                             </div>
                         )}
@@ -590,30 +715,54 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
                                 <h3 className="text-lg font-bold text-gray-800 border-b pb-2 mb-4 flex items-center gap-2"><Container size={20} className="text-cyan-600"/> مدیریت اسناد حمل</h3>
                                 
                                 <div className="flex bg-gray-100 p-1 rounded-xl mb-6">
-                                    <button onClick={() => { setActiveShippingSubTab('Commercial Invoice'); setShippingDocForm({ ...shippingDocForm, status: 'Draft', currency: selectedRecord.mainCurrency || 'EUR' }); }} className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-sm font-bold transition-all ${activeShippingSubTab === 'Commercial Invoice' ? 'bg-white shadow text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}><FileText size={16}/> اینفویس</button>
+                                    <button onClick={() => { setActiveShippingSubTab('Commercial Invoice'); setShippingDocForm({ ...shippingDocForm, status: 'Draft', currency: selectedRecord.mainCurrency || 'EUR' }); }} className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-sm font-bold transition-all ${activeShippingSubTab === 'Commercial Invoice' ? 'bg-white shadow text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}><FileText size={16}/> اینویس</button>
                                     <button onClick={() => { setActiveShippingSubTab('Packing List'); setShippingDocForm({ ...shippingDocForm, status: 'Draft' }); }} className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-sm font-bold transition-all ${activeShippingSubTab === 'Packing List' ? 'bg-white shadow text-amber-600' : 'text-gray-500 hover:text-gray-700'}`}><Package size={16}/> پکینگ</button>
                                     <button onClick={() => { setActiveShippingSubTab('Certificate of Origin'); setShippingDocForm({ ...shippingDocForm, status: 'Draft' }); }} className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-sm font-bold transition-all ${activeShippingSubTab === 'Certificate of Origin' ? 'bg-white shadow text-purple-600' : 'text-gray-500 hover:text-gray-700'}`}><Stamp size={16}/> گواهی مبدا</button>
                                     <button onClick={() => { setActiveShippingSubTab('Bill of Lading'); setShippingDocForm({ ...shippingDocForm, status: 'Draft' }); }} className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-sm font-bold transition-all ${activeShippingSubTab === 'Bill of Lading' ? 'bg-white shadow text-cyan-600' : 'text-gray-500 hover:text-gray-700'}`}><Ship size={16}/> بارنامه</button>
                                 </div>
 
+                                {/* Aggregation Summary for Invoices */}
+                                {activeShippingSubTab === 'Commercial Invoice' && (
+                                    <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-6 flex justify-between items-center">
+                                        <div>
+                                            <h4 className="font-bold text-blue-800 text-sm mb-1">وضعیت نهایی پرونده (بر اساس اینویس‌های نهایی)</h4>
+                                            <div className="text-xs text-blue-600">مجموع اقلام و هزینه‌های اینویس‌های نهایی، مبنای محاسبه قیمت تمام شده خواهد بود.</div>
+                                        </div>
+                                        <div className="flex gap-4 items-center">
+                                            <div className="text-right">
+                                                <span className="block text-xs text-blue-500">جمع کل مبلغ (ارزی)</span>
+                                                <span className="font-mono font-bold text-lg dir-ltr text-blue-700">
+                                                    {formatNumberString(getFinalAggregation().totalAmount.toString())} {selectedRecord.mainCurrency}
+                                                </span>
+                                            </div>
+                                            <button onClick={handleUpdateFinalProforma} className="bg-white border border-blue-300 text-blue-700 px-3 py-2 rounded-lg text-sm hover:bg-blue-100 flex items-center gap-2 shadow-sm">
+                                                <Calculator size={16}/> بروزرسانی پروفرما نهایی
+                                            </button>
+                                        </div>
+                                    </div>
+                                )}
+
                                 {/* INPUT FORM */}
                                 <div className="bg-gray-50 border border-gray-200 rounded-xl p-4">
                                     <h4 className="font-bold text-gray-700 mb-4 flex justify-between items-center">
-                                        <span>ثبت {activeShippingSubTab === 'Commercial Invoice' ? 'کامرشیال اینفویس' : activeShippingSubTab === 'Packing List' ? 'پکینگ لیست' : activeShippingSubTab === 'Certificate of Origin' ? 'گواهی مبدا' : 'بارنامه'} جدید</span>
-                                        <div className="flex bg-white rounded border p-0.5">
-                                            <button onClick={() => setShippingDocForm({ ...shippingDocForm, status: 'Draft' })} className={`px-3 py-0.5 text-xs rounded ${shippingDocForm.status === 'Draft' ? 'bg-yellow-100 text-yellow-700 font-bold' : 'text-gray-500'}`}>اولیه (Draft)</button>
-                                            <button onClick={() => setShippingDocForm({ ...shippingDocForm, status: 'Final' })} className={`px-3 py-0.5 text-xs rounded ${shippingDocForm.status === 'Final' ? 'bg-green-100 text-green-700 font-bold' : 'text-gray-500'}`}>نهایی (Final)</button>
-                                        </div>
+                                        <span>ثبت {activeShippingSubTab === 'Commercial Invoice' ? 'کامرشیال اینویس' : activeShippingSubTab === 'Packing List' ? 'پکینگ لیست' : activeShippingSubTab === 'Certificate of Origin' ? 'گواهی مبدا' : 'بارنامه'} جدید</span>
+                                        {activeShippingSubTab === 'Commercial Invoice' && (
+                                            <div className="flex bg-white rounded border p-0.5">
+                                                <button onClick={() => setShippingDocForm({ ...shippingDocForm, status: 'Draft' })} className={`px-3 py-0.5 text-xs rounded ${shippingDocForm.status === 'Draft' ? 'bg-yellow-100 text-yellow-700 font-bold' : 'text-gray-500'}`}>اولیه (Draft)</button>
+                                                <button onClick={() => setShippingDocForm({ ...shippingDocForm, status: 'Final' })} className={`px-3 py-0.5 text-xs rounded ${shippingDocForm.status === 'Final' ? 'bg-green-100 text-green-700 font-bold' : 'text-gray-500'}`}>نهایی (Final)</button>
+                                            </div>
+                                        )}
                                     </h4>
                                     
                                     <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
-                                        <div><label className="text-[10px] text-gray-500 block mb-1">شماره سند</label><input className="w-full border rounded p-2 text-sm" value={shippingDocForm.documentNumber || ''} onChange={e => setShippingDocForm({...shippingDocForm, documentNumber: e.target.value})} /></div>
-                                        <div><label className="text-[10px] text-gray-500 block mb-1">تاریخ سند</label><input className="w-full border rounded p-2 text-sm dir-ltr" placeholder="YYYY/MM/DD" value={shippingDocForm.documentDate || ''} onChange={e => setShippingDocForm({...shippingDocForm, documentDate: e.target.value})} /></div>
+                                        <div><label className="text-[10px] text-gray-500 block mb-1">{getDocLabel(activeShippingSubTab, 'number')}</label><input className="w-full border rounded p-2 text-sm" value={shippingDocForm.documentNumber || ''} onChange={e => setShippingDocForm({...shippingDocForm, documentNumber: e.target.value})} /></div>
+                                        <div><label className="text-[10px] text-gray-500 block mb-1">{getDocLabel(activeShippingSubTab, 'date')}</label><input className="w-full border rounded p-2 text-sm dir-ltr" placeholder="YYYY/MM/DD" value={shippingDocForm.documentDate || ''} onChange={e => setShippingDocForm({...shippingDocForm, documentDate: e.target.value})} /></div>
+                                        <div className="md:col-span-1"><label className="text-[10px] text-gray-500 block mb-1">شماره پارت (Part No)</label><input className="w-full border rounded p-2 text-sm" placeholder="مثال: Part 1" value={shippingDocForm.partNumber || ''} onChange={e => setShippingDocForm({...shippingDocForm, partNumber: e.target.value})} /></div>
                                         
                                         {/* Dynamic Fields */}
                                         {activeShippingSubTab === 'Commercial Invoice' && (
                                             <>
-                                                <div><label className="text-[10px] text-gray-500 block mb-1">مبلغ</label><input type="number" className="w-full border rounded p-2 text-sm dir-ltr" value={shippingDocForm.amount || ''} onChange={e => setShippingDocForm({...shippingDocForm, amount: Number(e.target.value)})} /></div>
+                                                <div><label className="text-[10px] text-gray-500 block mb-1">هزینه حمل کل (ارزی)</label><input type="number" className="w-full border rounded p-2 text-sm dir-ltr" value={shippingDocForm.freightCost || ''} onChange={e => setShippingDocForm({...shippingDocForm, freightCost: Number(e.target.value)})} /></div>
                                                 <div><label className="text-[10px] text-gray-500 block mb-1">ارز</label><select className="w-full border rounded p-2 text-sm" value={shippingDocForm.currency} onChange={e => setShippingDocForm({...shippingDocForm, currency: e.target.value})}>{CURRENCIES.map(c => <option key={c.code} value={c.code}>{c.label}</option>)}</select></div>
                                             </>
                                         )}
@@ -638,6 +787,43 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
                                             </>
                                         )}
                                     </div>
+
+                                    {/* Invoice Items Grid */}
+                                    {activeShippingSubTab === 'Commercial Invoice' && (
+                                        <div className="mb-4 bg-white border rounded-lg overflow-hidden">
+                                            <div className="bg-gray-100 px-3 py-2 text-xs font-bold text-gray-700 border-b">اقلام اینویس</div>
+                                            <div className="p-2 grid grid-cols-1 md:grid-cols-5 gap-2 items-end border-b bg-gray-50">
+                                                <div className="md:col-span-2"><input className="w-full border rounded p-1.5 text-xs" placeholder="نام کالا" value={newInvoiceItem.name} onChange={e => setNewInvoiceItem({...newInvoiceItem, name: e.target.value})} /></div>
+                                                <div><input type="number" className="w-full border rounded p-1.5 text-xs dir-ltr" placeholder="وزن (KG)" value={newInvoiceItem.weight || ''} onChange={e => setNewInvoiceItem({...newInvoiceItem, weight: Number(e.target.value)})} /></div>
+                                                <div><input type="number" className="w-full border rounded p-1.5 text-xs dir-ltr" placeholder="فی (Unit)" value={newInvoiceItem.unitPrice || ''} onChange={e => setNewInvoiceItem({...newInvoiceItem, unitPrice: Number(e.target.value)})} /></div>
+                                                <div><button onClick={handleAddInvoiceItem} className="w-full bg-blue-600 text-white p-1.5 rounded text-xs hover:bg-blue-700">افزودن کالا</button></div>
+                                            </div>
+                                            <table className="w-full text-xs text-right">
+                                                <thead className="bg-gray-50 text-gray-500"><tr><th className="p-2">کالا</th><th className="p-2">وزن</th><th className="p-2">فی</th><th className="p-2">جمع</th><th className="w-8"></th></tr></thead>
+                                                <tbody className="divide-y">
+                                                    {(shippingDocForm.invoiceItems || []).map(item => (
+                                                        <tr key={item.id}>
+                                                            <td className="p-2">{item.name}</td>
+                                                            <td className="p-2 dir-ltr">{item.weight}</td>
+                                                            <td className="p-2 dir-ltr">{formatNumberString(item.unitPrice.toString())}</td>
+                                                            <td className="p-2 dir-ltr font-bold">{formatNumberString(item.totalPrice.toString())}</td>
+                                                            <td className="p-2 text-center"><button onClick={() => handleRemoveInvoiceItem(item.id)} className="text-red-500"><X size={12}/></button></td>
+                                                        </tr>
+                                                    ))}
+                                                    {(shippingDocForm.invoiceItems || []).length === 0 && <tr><td colSpan={5} className="p-2 text-center text-gray-400">بدون کالا</td></tr>}
+                                                </tbody>
+                                                <tfoot className="bg-gray-100 font-bold">
+                                                    <tr>
+                                                        <td colSpan={3} className="p-2 text-left">جمع اقلام + هزینه حمل ({formatNumberString(shippingDocForm.freightCost?.toString() || '0')}):</td>
+                                                        <td className="p-2 dir-ltr text-blue-700">
+                                                            {formatNumberString((getInvoiceTotal(shippingDocForm.invoiceItems || []) + (Number(shippingDocForm.freightCost) || 0)).toString())}
+                                                        </td>
+                                                        <td></td>
+                                                    </tr>
+                                                </tfoot>
+                                            </table>
+                                        </div>
+                                    )}
                                     
                                     <div className="mb-4">
                                         <label className="text-[10px] text-gray-500 block mb-1">توضیحات تکمیلی</label>
@@ -665,14 +851,15 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
 
                                 {/* HISTORY TABLE */}
                                 <div className="border rounded-xl overflow-hidden shadow-sm">
-                                    <div className="bg-gray-100 p-3 text-sm font-bold text-gray-700 border-b">سوابق ثبت شده: {activeShippingSubTab}</div>
+                                    <div className="bg-gray-100 p-3 text-sm font-bold text-gray-700 border-b">سوابق ثبت شده: {activeShippingSubTab === 'Commercial Invoice' ? 'اینویس' : activeShippingSubTab}</div>
                                     <table className="w-full text-sm text-right">
                                         <thead className="bg-white text-gray-600">
                                             <tr>
-                                                <th className="p-3 border-b w-20 text-center">وضعیت</th>
+                                                {activeShippingSubTab === 'Commercial Invoice' && <th className="p-3 border-b w-20 text-center">وضعیت</th>}
                                                 <th className="p-3 border-b">شماره سند</th>
                                                 <th className="p-3 border-b">تاریخ</th>
-                                                {activeShippingSubTab === 'Commercial Invoice' && <th className="p-3 border-b">مبلغ</th>}
+                                                <th className="p-3 border-b">پارت</th>
+                                                {activeShippingSubTab === 'Commercial Invoice' && <th className="p-3 border-b">مبلغ کل (با حمل)</th>}
                                                 {activeShippingSubTab === 'Packing List' && <th className="p-3 border-b">وزن ناخالص / خالص</th>}
                                                 {activeShippingSubTab === 'Certificate of Origin' && <th className="p-3 border-b">صادر کننده</th>}
                                                 {activeShippingSubTab === 'Bill of Lading' && <th className="p-3 border-b">مسیر حمل</th>}
@@ -685,13 +872,16 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
                                                 .filter(d => d.type === activeShippingSubTab)
                                                 .map(doc => (
                                                 <tr key={doc.id} className="bg-white hover:bg-gray-50">
-                                                    <td className="p-3 text-center">
-                                                        <span className={`px-2 py-1 rounded text-xs border ${doc.status === 'Final' ? 'bg-green-100 text-green-700 border-green-200' : 'bg-yellow-100 text-yellow-700 border-yellow-200'}`}>
-                                                            {doc.status === 'Final' ? 'نهایی' : 'اولیه'}
-                                                        </span>
-                                                    </td>
+                                                    {activeShippingSubTab === 'Commercial Invoice' && (
+                                                        <td className="p-3 text-center">
+                                                            <span className={`px-2 py-1 rounded text-xs border ${doc.status === 'Final' ? 'bg-green-100 text-green-700 border-green-200' : 'bg-yellow-100 text-yellow-700 border-yellow-200'}`}>
+                                                                {doc.status === 'Final' ? 'نهایی' : 'اولیه'}
+                                                            </span>
+                                                        </td>
+                                                    )}
                                                     <td className="p-3 font-medium">{doc.documentNumber}</td>
                                                     <td className="p-3 text-gray-600 dir-ltr text-right">{doc.documentDate}</td>
+                                                    <td className="p-3 text-gray-500 text-xs">{doc.partNumber || '-'}</td>
                                                     
                                                     {activeShippingSubTab === 'Commercial Invoice' && (
                                                         <td className="p-3 font-mono dir-ltr">{formatNumberString(doc.amount?.toString())} {doc.currency}</td>
@@ -719,7 +909,7 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
                                                 </tr>
                                             ))}
                                             {(selectedRecord.shippingDocuments || []).filter(d => d.type === activeShippingSubTab).length === 0 && (
-                                                <tr><td colSpan={7} className="p-6 text-center text-gray-400 italic bg-white">هیچ سندی ثبت نشده است.</td></tr>
+                                                <tr><td colSpan={8} className="p-6 text-center text-gray-400 italic bg-white">هیچ سندی ثبت نشده است.</td></tr>
                                             )}
                                         </tbody>
                                     </table>

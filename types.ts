@@ -259,15 +259,26 @@ export interface CurrencyPurchaseData {
 export type ShippingDocType = 'Commercial Invoice' | 'Packing List' | 'Certificate of Origin' | 'Bill of Lading';
 export type DocStatus = 'Draft' | 'Final';
 
+export interface InvoiceItem {
+    id: string;
+    name: string;
+    weight: number;
+    unitPrice: number;
+    totalPrice: number;
+}
+
 export interface ShippingDocument {
     id: string;
     type: ShippingDocType;
     status: DocStatus; // Initial/Draft or Final
     documentNumber: string;
     documentDate: string;
+    partNumber?: string; // For partial shipments
     
     // Invoice Specific
-    amount?: number;
+    invoiceItems?: InvoiceItem[];
+    amount?: number; // Total amount (calculated or manual)
+    freightCost?: number; // Cost of shipping for this invoice
     currency?: string;
     
     // Packing Specific
