@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { PaymentMethod, OrderStatus, PaymentOrder, User, PaymentDetail, SystemSettings } from '../types';
 import { saveOrder, getNextTrackingNumber, uploadFile, getSettings, saveSettings } from '../services/storageService';
@@ -37,14 +36,17 @@ const CreateOrder: React.FC<CreateOrderProps> = ({ onSuccess, currentUser }) => 
       // Initial fetch
       getNextTrackingNumber().then(num => setTrackingNumber(num.toString()));
 
-      // Poll for tracking number updates every 3 seconds to handle concurrent users
+      // Poll for tracking number updates every 3 seconds to handle concurrent users or gap fills
       const interval = setInterval(async () => {
           try {
               const num = await getNextTrackingNumber();
               setTrackingNumber(prev => {
-                  // If the server number has moved ahead of what we see, update it.
+                  // If the user hasn't manually edited it to something else, keep it in sync
+                  // Or simply check if the server suggests a DIFFERENT number than what we have (and user hasn't started typing other stuff)
                   const current = Number(prev);
-                  if (current < num) {
+                  if (current !== num) {
+                      // Only update if the server number is "better" (e.g. gap fill or next increment)
+                      // We'll trust the server's judgment here.
                       return num.toString();
                   }
                   return prev;

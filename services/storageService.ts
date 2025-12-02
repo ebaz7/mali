@@ -1,4 +1,3 @@
-
 import { PaymentOrder, User, UserRole, OrderStatus, SystemSettings, ChatMessage, ChatGroup, GroupTask, TradeRecord } from '../types';
 import { apiCall } from './apiService';
 
@@ -48,10 +47,12 @@ export const saveSettings = async (settings: SystemSettings): Promise<SystemSett
 
 export const getNextTrackingNumber = async (): Promise<number> => {
     try {
+        const response = await apiCall<{ nextTrackingNumber: number }>('/next-tracking-number');
+        return response.nextTrackingNumber;
+    } catch (e) {
+        // Fallback for offline mode if API fails
         const settings = await getSettings();
         return settings.currentTrackingNumber + 1;
-    } catch (e) {
-        return Math.floor(1000 + Math.random() * 9000);
     }
 };
 

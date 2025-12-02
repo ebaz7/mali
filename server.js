@@ -1,4 +1,3 @@
-
 import express from 'express';
 import cors from 'cors';
 import fs from 'fs';
@@ -98,6 +97,27 @@ const performAutoBackup = () => {
 // Backup every 30 minutes (1800000 ms)
 setInterval(performAutoBackup, 1800000);
 performAutoBackup();
+
+// --- SMART TRACKING NUMBER LOGIC ---
+const findNextAvailableTrackingNumber = (db) => {
+    const existingNumbers = db.orders.map(o => o.trackingNumber).sort((a, b) => a - b);
+    let nextNum = 1000; // Default start
+    
+    // Check if user changed the base in settings
+    if (db.settings.currentTrackingNumber && db.settings.currentTrackingNumber > 1000 && existingNumbers.length === 0) {
+        return db.settings.currentTrackingNumber + 1;
+    }
+
+    for (const num of existingNumbers) {
+        if (num === nextNum) {
+            nextNum++;
+        } else if (num > nextNum) {
+            // Found a gap
+            return nextNum;
+        }
+    }
+    return nextNum;
+};
 
 app.post('/api/login', (req, res) => {
     const { username, password } = req.body;
@@ -233,26 +253,32 @@ app.post('/api/upload', (req, res) => {
     }
 });
 
+// New Endpoint to get next available number (filling gaps)
+app.get('/api/next-tracking-number', (req, res) => {
+    const db = getDb();
+    const nextNum = findNextAvailableTrackingNumber(db);
+    res.json({ nextTrackingNumber: nextNum });
+});
+
 app.get('/api/orders', (req, res) => { res.json(getDb().orders); });
 app.post('/api/orders', (req, res) => {
     const db = getDb();
     const newOrder = req.body;
     
-    // Concurrency Check: If tracking number exists, increment it
+    // Concurrency & Gap Filling Check
+    // If the user submits a number, check if it's taken.
+    // If taken, find the next available spot.
     let assignedTrackingNumber = newOrder.trackingNumber;
-    const existing = db.orders.find(o => o.trackingNumber === assignedTrackingNumber);
     
-    if (existing) {
-        // Find the absolute max tracking number in the system
-        const maxOrderNum = db.orders.reduce((max, o) => o.trackingNumber > max ? o.trackingNumber : max, 0);
-        const maxSettingNum = db.settings.currentTrackingNumber;
-        assignedTrackingNumber = Math.max(maxOrderNum, maxSettingNum) + 1;
+    const isTaken = db.orders.some(o => o.trackingNumber === assignedTrackingNumber);
+    if (isTaken) {
+        assignedTrackingNumber = findNextAvailableTrackingNumber(db);
         newOrder.trackingNumber = assignedTrackingNumber;
     }
 
     db.orders.unshift(newOrder);
     
-    // Always update the setting if we moved past it
+    // Update setting if we exceeded it (to keep track of high watermark)
     if (assignedTrackingNumber > db.settings.currentTrackingNumber) {
         db.settings.currentTrackingNumber = assignedTrackingNumber;
     }
@@ -265,6 +291,12 @@ app.put('/api/orders/:id', (req, res) => {
     const updatedOrder = req.body;
     const index = db.orders.findIndex(o => o.id === req.params.id);
     if (index !== -1) {
+        // Prevent duplicate tracking numbers during edit (unless it's the same order)
+        const duplicate = db.orders.find(o => o.trackingNumber === updatedOrder.trackingNumber && o.id !== updatedOrder.id);
+        if (duplicate) {
+             return res.status(400).json({ message: 'Tracking number already exists' });
+        }
+
         db.orders[index] = updatedOrder;
         saveDb(db);
         res.json(db.orders);
