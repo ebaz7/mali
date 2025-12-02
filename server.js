@@ -1,3 +1,4 @@
+
 import express from 'express';
 import cors from 'cors';
 import fs from 'fs';
@@ -26,7 +27,7 @@ const getDb = () => {
     if (!fs.existsSync(DB_FILE)) {
         const initialData = {
             settings: {
-                currentTrackingNumber: 1000,
+                currentTrackingNumber: 1602, // Default so next is 1603
                 companyNames: [],
                 defaultCompany: '',
                 bankNames: [],
@@ -101,14 +102,10 @@ performAutoBackup();
 // --- SMART TRACKING NUMBER LOGIC ---
 const findNextAvailableTrackingNumber = (db) => {
     const existingNumbers = db.orders.map(o => o.trackingNumber).sort((a, b) => a - b);
-    let nextNum = 1000; // Default start
-    
-    // Check if user changed the base in settings
-    if (db.settings.currentTrackingNumber && db.settings.currentTrackingNumber > 1000 && existingNumbers.length === 0) {
-        return db.settings.currentTrackingNumber + 1;
-    }
+    let nextNum = 1603; // Start from 1603 as requested
 
     for (const num of existingNumbers) {
+        if (num < nextNum) continue; // Ignore numbers smaller than 1603
         if (num === nextNum) {
             nextNum++;
         } else if (num > nextNum) {
@@ -266,8 +263,6 @@ app.post('/api/orders', (req, res) => {
     const newOrder = req.body;
     
     // Concurrency & Gap Filling Check
-    // If the user submits a number, check if it's taken.
-    // If taken, find the next available spot.
     let assignedTrackingNumber = newOrder.trackingNumber;
     
     const isTaken = db.orders.some(o => o.trackingNumber === assignedTrackingNumber);

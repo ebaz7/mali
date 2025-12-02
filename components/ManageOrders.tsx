@@ -65,10 +65,10 @@ const ManageOrders: React.FC<ManageOrdersProps> = ({ orders, refreshData, curren
       if (order.status === OrderStatus.APPROVED_CEO && currentUser.role !== UserRole.ADMIN) return false;
       if (currentUser.role === UserRole.ADMIN) return true;
       if (currentUser.role === UserRole.USER) {
-          return permissions.canEditOwn && order.requester === currentUser.fullName && order.status === OrderStatus.PENDING;
+          return permissions.canEditOwn && order.requester === currentUser.fullName && (order.status === OrderStatus.PENDING || order.status === OrderStatus.REJECTED);
       }
       if (permissions.canEditAll) return true;
-      if (permissions.canEditOwn && order.requester === currentUser.fullName && order.status === OrderStatus.PENDING) return true;
+      if (permissions.canEditOwn && order.requester === currentUser.fullName && (order.status === OrderStatus.PENDING || order.status === OrderStatus.REJECTED)) return true;
       return false;
   };
 
@@ -76,10 +76,10 @@ const ManageOrders: React.FC<ManageOrdersProps> = ({ orders, refreshData, curren
       if (currentUser.role === UserRole.ADMIN) return true;
       if (order.status === OrderStatus.APPROVED_CEO) return false;
       if (currentUser.role === UserRole.USER) {
-          return permissions.canDeleteOwn && order.requester === currentUser.fullName && order.status === OrderStatus.PENDING;
+          return permissions.canDeleteOwn && order.requester === currentUser.fullName && (order.status === OrderStatus.PENDING || order.status === OrderStatus.REJECTED);
       }
       if (permissions.canDeleteAll) return true;
-      if (permissions.canDeleteOwn && order.requester === currentUser.fullName && order.status === OrderStatus.PENDING) return true;
+      if (permissions.canDeleteOwn && order.requester === currentUser.fullName && (order.status === OrderStatus.PENDING || order.status === OrderStatus.REJECTED)) return true;
       return false;
   };
 
@@ -238,9 +238,14 @@ const ManageOrders: React.FC<ManageOrdersProps> = ({ orders, refreshData, curren
                             ))}
                         </td>
                         <td className="px-6 py-4 font-bold text-gray-900">{formatCurrency(order.totalAmount)}</td>
-                        <td className="px-6 py-4"><span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium border ${order.status === OrderStatus.APPROVED_CEO ? 'bg-green-50 text-green-700 border-green-200' : order.status === OrderStatus.REJECTED ? 'bg-red-50 text-red-700 border-red-200' : 'bg-yellow-50 text-yellow-700 border-yellow-200'}`}>{getStatusLabel(order.status)}</span></td>
+                        <td className="px-6 py-4">
+                            <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium border ${order.status === OrderStatus.APPROVED_CEO ? 'bg-green-50 text-green-700 border-green-200' : order.status === OrderStatus.REJECTED ? 'bg-red-50 text-red-700 border-red-200' : 'bg-yellow-50 text-yellow-700 border-yellow-200'}`}>{getStatusLabel(order.status)}</span>
+                            {order.status === OrderStatus.REJECTED && order.rejectionReason && (
+                                <div className="text-[10px] text-red-500 mt-1 max-w-[140px] truncate" title={order.rejectionReason}>دلیل: {order.rejectionReason}</div>
+                            )}
+                        </td>
                         <td className="px-6 py-4"><div className="flex justify-center items-center gap-2">
-                            {canEdit(order) && <button onClick={() => setEditingOrder(order)} className="p-1.5 text-amber-600 hover:bg-amber-100 rounded"><Pencil size={18}/></button>}
+                            {canEdit(order) && <button onClick={() => setEditingOrder(order)} className="p-1.5 text-amber-600 hover:bg-amber-100 rounded" title={order.status === OrderStatus.REJECTED ? "اصلاح درخواست رد شده" : "ویرایش"}><Pencil size={18}/></button>}
                             {canApprove(order) && <><button onClick={() => handleApprove(order.id, order.status)} className="p-1.5 text-green-600 hover:bg-green-100 rounded"><Check size={18}/></button><button onClick={() => handleReject(order.id)} className="p-1.5 text-red-600 hover:bg-red-100 rounded"><X size={18}/></button></>}
                             <button onClick={() => setPrintOrder(order)} className="p-1.5 text-blue-600 hover:bg-blue-100 rounded"><Printer size={18}/></button>
                             {canDelete(order) && <button onClick={() => handleDelete(order.id)} className="p-1.5 text-gray-400 hover:text-red-500"><Trash2 size={18}/></button>}

@@ -1,9 +1,10 @@
+
 import React, { useState, useEffect } from 'react';
-import { PaymentMethod, PaymentOrder, PaymentDetail, SystemSettings } from '../types';
+import { PaymentMethod, PaymentOrder, PaymentDetail, SystemSettings, OrderStatus } from '../types';
 import { editOrder, uploadFile, getSettings, saveSettings } from '../services/storageService';
 import { enhanceDescription } from '../services/geminiService';
 import { jalaliToGregorian, getShamsiDateFromIso, formatCurrency, generateUUID, normalizeInputNumber, formatNumberString, deformatNumberString } from '../constants';
-import { Wand2, Save, Loader2, X, Calendar, Plus, Trash2, Paperclip, Hash } from 'lucide-react';
+import { Wand2, Save, Loader2, X, Calendar, Plus, Trash2, Paperclip, Hash, AlertTriangle } from 'lucide-react';
 
 interface EditOrderModalProps {
   order: PaymentOrder;
@@ -108,8 +109,33 @@ const EditOrderModal: React.FC<EditOrderModalProps> = ({ order, onClose, onSave 
     if (remaining !== 0) { alert("جمع اقلام پرداخت با مبلغ کل سفارش برابر نیست!"); return; }
     if (!formData.trackingNumber) { alert("شماره دستور پرداخت الزامی است."); return; }
     
+    // When saving an edited order, if it was REJECTED, reset it to PENDING so it can be reviewed again
+    let newStatus = order.status;
+    let updates: Partial<PaymentOrder> = {};
+    if (order.status === OrderStatus.REJECTED) {
+        newStatus = OrderStatus.PENDING;
+        updates = { 
+            status: OrderStatus.PENDING, 
+            rejectionReason: undefined, // Clear the rejection reason
+            approverFinancial: undefined, 
+            approverManager: undefined, 
+            approverCeo: undefined 
+        };
+    }
+    
     setIsSubmitting(true);
-    const updatedOrder: PaymentOrder = { ...order, trackingNumber: Number(formData.trackingNumber), date: getIsoDate(), payee: formData.payee, totalAmount: totalRequired, description: formData.description, paymentDetails: paymentLines, attachments: attachments, payingCompany: payingCompany };
+    const updatedOrder: PaymentOrder = { 
+        ...order, 
+        ...updates,
+        trackingNumber: Number(formData.trackingNumber), 
+        date: getIsoDate(), 
+        payee: formData.payee, 
+        totalAmount: totalRequired, 
+        description: formData.description, 
+        paymentDetails: paymentLines, 
+        attachments: attachments, 
+        payingCompany: payingCompany 
+    };
     try { await editOrder(updatedOrder); onSave(); onClose(); } catch (error) { alert("خطا در ذخیره تغییرات"); } finally { setIsSubmitting(false); }
   };
 
@@ -121,6 +147,22 @@ const EditOrderModal: React.FC<EditOrderModalProps> = ({ order, onClose, onSave 
         <div className="bg-white rounded-2xl shadow-xl w-full max-w-3xl max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between p-6 border-b sticky top-0 bg-white z-10"><div className="flex items-center gap-3"><div className="bg-blue-50 p-2 rounded-lg text-blue-600"><Save size={20} /></div><h2 className="text-xl font-bold text-gray-800">ویرایش دستور پرداخت</h2></div><button onClick={onClose} className="text-gray-400 hover:text-red-500 transition-colors"><X size={24} /></button></div>
             <form onSubmit={handleSubmit} className="p-6 space-y-6">
+                
+                {/* Rejection Alert Box */}
+                {order.status === OrderStatus.REJECTED && order.rejectionReason && (
+                    <div className="bg-red-50 border-r-4 border-red-500 p-4 rounded-lg flex gap-3 animate-fade-in">
+                        <div className="text-red-500 mt-0.5"><AlertTriangle size={20}/></div>
+                        <div>
+                            <h4 className="text-red-800 font-bold text-sm mb-1">این درخواست رد شده است</h4>
+                            <p className="text-red-700 text-sm leading-relaxed">
+                                <span className="font-bold">دلیل رد شدن: </span>
+                                {order.rejectionReason}
+                            </p>
+                            <p className="text-red-500 text-xs mt-2">با ذخیره تغییرات، درخواست مجدداً به وضعیت «در انتظار بررسی» تغییر خواهد کرد.</p>
+                        </div>
+                    </div>
+                )}
+
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="space-y-2"><label className="text-sm font-medium text-gray-700 flex items-center gap-2"><Hash size={16}/> شماره دستور پرداخت</label><input required type="number" className="w-full border rounded-xl px-4 py-3 bg-white font-mono font-bold text-blue-600 dir-ltr text-left" value={formData.trackingNumber} onChange={e => setFormData({ ...formData, trackingNumber: e.target.value })} /></div>
                 <div className="space-y-2"><label className="text-sm font-medium text-gray-700">گیرنده وجه</label><input required type="text" className="w-full border rounded-xl px-4 py-3 bg-gray-50" value={formData.payee} onChange={e => setFormData({ ...formData, payee: e.target.value })} /></div>
