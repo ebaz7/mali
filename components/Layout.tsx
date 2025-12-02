@@ -1,10 +1,10 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { LayoutDashboard, PlusCircle, ListChecks, FileText, Users, LogOut, User as UserIcon, Settings, Bell, BellOff, MessageSquare, X, Check, Container, KeyRound, Save } from 'lucide-react';
+import { LayoutDashboard, PlusCircle, ListChecks, FileText, Users, LogOut, User as UserIcon, Settings, Bell, BellOff, MessageSquare, X, Check, Container, KeyRound, Save, Upload, Camera } from 'lucide-react';
 import { User, UserRole, AppNotification, SystemSettings } from '../types';
 import { logout, hasPermission, getRolePermissions, updateUser } from '../services/authService';
 import { requestNotificationPermission, setNotificationPreference, isNotificationEnabledInApp } from '../services/notificationService';
-import { getSettings } from '../services/storageService';
+import { getSettings, uploadFile } from '../services/storageService';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -23,10 +23,12 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab, curr
   const isSecure = window.isSecureContext;
   const notifRef = useRef<HTMLDivElement>(null);
 
-  // Password Change Modal State
-  const [showPasswordModal, setShowPasswordModal] = useState(false);
+  // Profile/Password Modal State
+  const [showProfileModal, setShowProfileModal] = useState(false);
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const avatarInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     getSettings().then(setSettings);
@@ -42,20 +44,54 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab, curr
     if (notifEnabled) { setNotifEnabled(false); setNotificationPreference(false); } else { const granted = await requestNotificationPermission(); if (granted) { setNotifEnabled(true); setNotificationPreference(true); new Notification("سیستم دستور پرداخت", { body: "نوتیفیکیشن‌ها فعال شدند.", dir: 'rtl' }); } }
   };
 
-  const handleChangePassword = async (e: React.FormEvent) => {
+  const handleUpdateProfile = async (e: React.FormEvent) => {
       e.preventDefault();
-      if (newPassword !== confirmPassword) { alert('رمز عبور و تکرار آن مطابقت ندارند.'); return; }
-      if (newPassword.length < 4) { alert('رمز عبور باید حداقل ۴ کاراکتر باشد.'); return; }
       
-      try {
-          await updateUser({ ...currentUser, password: newPassword });
-          alert('رمز عبور با موفقیت تغییر کرد.');
-          setShowPasswordModal(false);
-          setNewPassword('');
-          setConfirmPassword('');
-      } catch (err) {
-          alert('خطا در تغییر رمز عبور');
+      const updates: Partial<User> = {};
+      
+      if (newPassword) {
+          if (newPassword !== confirmPassword) { alert('رمز عبور و تکرار آن مطابقت ندارند.'); return; }
+          if (newPassword.length < 4) { alert('رمز عبور باید حداقل ۴ کاراکتر باشد.'); return; }
+          updates.password = newPassword;
       }
+
+      try {
+          if (Object.keys(updates).length > 0) {
+            await updateUser({ ...currentUser, ...updates });
+            alert('اطلاعات با موفقیت بروزرسانی شد.');
+            setNewPassword('');
+            setConfirmPassword('');
+          }
+          setShowProfileModal(false);
+      } catch (err) {
+          alert('خطا در بروزرسانی اطلاعات');
+      }
+  };
+
+  const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      if (file.size > 2 * 1024 * 1024) { alert('حجم تصویر نباید بیشتر از 2 مگابایت باشد.'); return; }
+      
+      setUploadingAvatar(true);
+      const reader = new FileReader();
+      reader.onload = async (ev) => {
+          const base64 = ev.target?.result as string;
+          try {
+              const result = await uploadFile(file.name, base64);
+              await updateUser({ ...currentUser, avatar: result.url });
+              // Force reload or update state to reflect image immediately? 
+              // Since currentUser comes from parent prop, we might need to rely on parent updating or reload. 
+              // Ideally App.tsx should refresh user, but for now simple alert:
+              // For better UX, we can just update the local currentUser prop visually if we could, but here we trigger reload or callback
+              window.location.reload(); 
+          } catch (error) {
+              alert('خطا در آپلود تصویر');
+          } finally {
+              setUploadingAvatar(false);
+          }
+      };
+      reader.readAsDataURL(file);
   };
 
   const unreadCount = notifications.filter(n => !n.read).length;
@@ -76,19 +112,38 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab, curr
   return (
     <div className="flex min-h-screen bg-gray-50 text-gray-800 font-sans">
       
-      {/* Change Password Modal */}
-      {showPasswordModal && (
+      {/* Profile/Password Modal */}
+      {showProfileModal && (
           <div className="fixed inset-0 bg-black/50 z-[100] flex items-center justify-center p-4">
               <div className="bg-white rounded-xl shadow-xl w-full max-w-sm p-6">
                   <div className="flex justify-between items-center mb-4">
-                      <h3 className="font-bold text-lg">تغییر رمز عبور</h3>
-                      <button onClick={() => setShowPasswordModal(false)}><X size={20} className="text-gray-400"/></button>
+                      <h3 className="font-bold text-lg">تنظیمات کاربری</h3>
+                      <button onClick={() => setShowProfileModal(false)}><X size={20} className="text-gray-400"/></button>
                   </div>
-                  <form onSubmit={handleChangePassword} className="space-y-4">
-                      <div><label className="text-sm font-medium text-gray-700 block mb-1">رمز عبور جدید</label><input type="password" required className="w-full border rounded-lg p-2 text-left dir-ltr" value={newPassword} onChange={e => setNewPassword(e.target.value)} /></div>
-                      <div><label className="text-sm font-medium text-gray-700 block mb-1">تکرار رمز عبور جدید</label><input type="password" required className="w-full border rounded-lg p-2 text-left dir-ltr" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} /></div>
+                  
+                  <div className="flex flex-col items-center mb-6">
+                      <div className="w-20 h-20 rounded-full bg-gray-200 mb-2 relative overflow-hidden group">
+                          {currentUser.avatar ? (
+                              <img src={currentUser.avatar} alt="Profile" className="w-full h-full object-cover" />
+                          ) : (
+                              <div className="w-full h-full flex items-center justify-center text-gray-400"><UserIcon size={40} /></div>
+                          )}
+                          <div className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer" onClick={() => avatarInputRef.current?.click()}>
+                              <Camera className="text-white" size={24} />
+                          </div>
+                      </div>
+                      <input type="file" ref={avatarInputRef} className="hidden" accept="image/*" onChange={handleAvatarChange} />
+                      <button type="button" onClick={() => avatarInputRef.current?.click()} className="text-xs text-blue-600 hover:underline" disabled={uploadingAvatar}>
+                          {uploadingAvatar ? 'در حال آپلود...' : 'تغییر تصویر پروفایل'}
+                      </button>
+                  </div>
+
+                  <form onSubmit={handleUpdateProfile} className="space-y-4 border-t pt-4">
+                      <p className="text-xs text-gray-500 font-bold mb-2">تغییر رمز عبور (اختیاری)</p>
+                      <div><label className="text-sm font-medium text-gray-700 block mb-1">رمز عبور جدید</label><input type="password" className="w-full border rounded-lg p-2 text-left dir-ltr" value={newPassword} onChange={e => setNewPassword(e.target.value)} /></div>
+                      <div><label className="text-sm font-medium text-gray-700 block mb-1">تکرار رمز عبور جدید</label><input type="password" className="w-full border rounded-lg p-2 text-left dir-ltr" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} /></div>
                       <div className="flex justify-end pt-2">
-                          <button type="submit" className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm flex items-center gap-2"><Save size={16}/> ذخیره</button>
+                          <button type="submit" className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm flex items-center gap-2"><Save size={16}/> ذخیره تغییرات</button>
                       </div>
                   </form>
               </div>
@@ -98,9 +153,11 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab, curr
       <aside className="w-64 bg-slate-800 text-white flex-shrink-0 hidden md:flex flex-col no-print shadow-xl relative">
         <div className="p-6 border-b border-slate-700 flex items-center gap-3"><div className="bg-blue-500 p-2 rounded-lg"><FileText className="w-6 h-6 text-white" /></div><div><h1 className="text-lg font-bold tracking-wide">سیستم مالی</h1><span className="text-xs text-slate-400">پنل کاربری</span></div></div>
         <div className="p-4 bg-slate-700/50 mx-4 mt-4 rounded-xl flex items-center gap-3 border border-slate-600 relative group">
-            <div className="bg-slate-600 p-2 rounded-full"><UserIcon size={20} className="text-blue-300" /></div>
+            <div className="w-10 h-10 rounded-full bg-slate-600 flex items-center justify-center overflow-hidden shrink-0">
+                {currentUser.avatar ? <img src={currentUser.avatar} alt="" className="w-full h-full object-cover"/> : <UserIcon size={20} className="text-blue-300" />}
+            </div>
             <div className="overflow-hidden flex-1"><p className="text-sm font-bold truncate">{currentUser.fullName}</p><p className="text-xs text-slate-400 truncate">نقش: {currentUser.role}</p></div>
-            <button onClick={() => setShowPasswordModal(true)} className="absolute right-2 top-2 bg-slate-500 p-1 rounded hover:bg-slate-400 opacity-0 group-hover:opacity-100 transition-opacity" title="تغییر رمز عبور"><KeyRound size={14} /></button>
+            <button onClick={() => setShowProfileModal(true)} className="absolute right-2 top-2 bg-slate-500 p-1 rounded hover:bg-slate-400 opacity-0 group-hover:opacity-100 transition-opacity" title="تنظیمات کاربری"><Settings size={14} /></button>
         </div>
         <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
           {navItems.map((item) => { const Icon = item.icon; return (<button key={item.id} onClick={() => setActiveTab(item.id)} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 ${activeTab === item.id ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/20' : 'text-slate-300 hover:bg-slate-700 hover:text-white'}`}><Icon size={20} /><span className="font-medium">{item.label}</span></button>); })}

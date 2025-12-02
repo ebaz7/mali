@@ -29,6 +29,7 @@ export interface User {
   fullName: string;
   role: UserRole;
   canManageTrade?: boolean; // Specific permission override
+  avatar?: string; // Profile picture URL
 }
 
 export interface PaymentDetail {
@@ -113,6 +114,11 @@ export interface ChatMessage {
         fileName: string;
         url: string;
     };
+    replyTo?: {
+        id: string;
+        sender: string;
+        message: string;
+    };
 }
 
 export interface ChatGroup {
@@ -120,6 +126,7 @@ export interface ChatGroup {
     name: string;
     members: string[]; 
     createdBy: string;
+    icon?: string; // Group icon URL
 }
 
 export interface GroupTask {

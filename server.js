@@ -184,6 +184,15 @@ app.post('/api/groups', (req, res) => {
     saveDb(db);
     res.json(db.groups);
 });
+app.put('/api/groups/:id', (req, res) => {
+    const db = getDb();
+    const idx = db.groups.findIndex(g => g.id === req.params.id);
+    if (idx !== -1) {
+        db.groups[idx] = { ...db.groups[idx], ...req.body };
+        saveDb(db);
+        res.json(db.groups);
+    } else res.status(404).json({ message: 'Group not found' });
+});
 app.delete('/api/groups/:id', (req, res) => {
     const db = getDb();
     db.groups = db.groups.filter(g => g.id !== req.params.id);

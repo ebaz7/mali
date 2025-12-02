@@ -118,6 +118,35 @@ export const apiCall = async <T>(endpoint: string, method: string = 'GET', body?
             if (method === 'POST') { setLocalData(LS_KEYS.SETTINGS, body); return body as unknown as T; }
         }
 
+        // --- CHAT GROUPS (UPDATED) ---
+        if (endpoint === '/groups' && method === 'GET') {
+            return getLocalData<ChatGroup[]>(LS_KEYS.GROUPS, []) as unknown as T;
+        }
+        if (endpoint === '/groups' && method === 'POST') {
+            const groups = getLocalData<ChatGroup[]>(LS_KEYS.GROUPS, []);
+            groups.push(body);
+            setLocalData(LS_KEYS.GROUPS, groups);
+            return groups as unknown as T;
+        }
+        if (endpoint.startsWith('/groups/')) {
+            const id = endpoint.split('/').pop();
+            let groups = getLocalData<ChatGroup[]>(LS_KEYS.GROUPS, []);
+            if (method === 'PUT') {
+                const idx = groups.findIndex(g => g.id === id);
+                if (idx !== -1) { groups[idx] = body; setLocalData(LS_KEYS.GROUPS, groups); }
+                return groups as unknown as T;
+            }
+            if (method === 'DELETE') {
+                groups = groups.filter(g => g.id !== id);
+                setLocalData(LS_KEYS.GROUPS, groups);
+                // Clean up related data (optional but good practice)
+                // Note: Messages and tasks cleanup is usually handled in logic or server, 
+                // but doing it here for mock completeness if needed, or rely on logic in `server.js` equivalent
+                return groups as unknown as T;
+            }
+        }
+
+
         // --- UPLOAD (Mock) ---
         if (endpoint === '/upload' && method === 'POST') {
             return { fileName: body.fileName, url: body.fileData } as unknown as T;
