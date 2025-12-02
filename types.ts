@@ -1,4 +1,5 @@
 
+
 export enum PaymentMethod {
   CASH = 'نقد',
   CHEQUE = 'چک',
@@ -93,6 +94,7 @@ export interface SystemSettings {
   bankNames: string[]; // List of available banks
   commodityGroups: string[]; // Trade: Commodity Groups
   rolePermissions: Record<string, RolePermissions>; // Dynamic permissions
+  pwaIcon?: string; // Custom PWA Icon URL
 }
 
 export interface DashboardStats {

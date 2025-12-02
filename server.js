@@ -1,4 +1,5 @@
 
+
 import express from 'express';
 import cors from 'cors';
 import fs from 'fs';
@@ -121,6 +122,36 @@ const findNextAvailableTrackingNumber = (db) => {
     }
     return nextNum;
 };
+
+// --- DYNAMIC MANIFEST ENDPOINT ---
+app.get('/api/manifest', (req, res) => {
+    const db = getDb();
+    const settings = db.settings || {};
+    const iconSrc = settings.pwaIcon || "https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/png/google-keep.png";
+    
+    const manifest = {
+      "name": "Payment Order System",
+      "short_name": "PaymentSys",
+      "start_url": "/",
+      "display": "standalone",
+      "background_color": "#f3f4f6",
+      "theme_color": "#2563eb",
+      "orientation": "portrait-primary",
+      "icons": [
+        {
+          "src": iconSrc,
+          "sizes": "192x192",
+          "type": "image/png"
+        },
+        {
+          "src": iconSrc,
+          "sizes": "512x512",
+          "type": "image/png"
+        }
+      ]
+    };
+    res.json(manifest);
+});
 
 app.post('/api/login', (req, res) => {
     const { username, password } = req.body;

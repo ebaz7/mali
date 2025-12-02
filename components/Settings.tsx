@@ -1,23 +1,26 @@
 
+
 import React, { useState, useEffect, useRef } from 'react';
-import { getSettings, saveSettings, restoreSystemData } from '../services/storageService';
+import { getSettings, saveSettings, restoreSystemData, uploadFile } from '../services/storageService';
 import { SystemSettings, UserRole, RolePermissions } from '../types';
-import { Settings as SettingsIcon, Save, Loader2, Download, UploadCloud, Database, AlertTriangle, Bell, Info, Plus, Trash2, Building, ShieldCheck, Landmark, Package } from 'lucide-react';
+import { Settings as SettingsIcon, Save, Loader2, Download, UploadCloud, Database, AlertTriangle, Bell, Info, Plus, Trash2, Building, ShieldCheck, Landmark, Package, AppWindow } from 'lucide-react';
 import { apiCall } from '../services/apiService';
 
 const Settings: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'general' | 'permissions'>('general');
-  const [settings, setSettings] = useState<SystemSettings>({ currentTrackingNumber: 1000, companyNames: [], defaultCompany: '', bankNames: [], commodityGroups: [], rolePermissions: {} as any });
+  const [settings, setSettings] = useState<SystemSettings>({ currentTrackingNumber: 1000, companyNames: [], defaultCompany: '', bankNames: [], commodityGroups: [], rolePermissions: {} as any, pwaIcon: '' });
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
   const [newCompany, setNewCompany] = useState('');
   const [newBank, setNewBank] = useState('');
   const [newCommodity, setNewCommodity] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const iconInputRef = useRef<HTMLInputElement>(null);
+  const [uploadingIcon, setUploadingIcon] = useState(false);
 
   useEffect(() => { loadSettings(); }, []);
 
-  const loadSettings = async () => { try { const data = await getSettings(); const safeData = { ...data, companyNames: data.companyNames || [], defaultCompany: data.defaultCompany || '', bankNames: data.bankNames || [], commodityGroups: data.commodityGroups || [], rolePermissions: data.rolePermissions || {} }; setSettings(safeData); } catch (e) { console.error("Failed to load settings"); } };
+  const loadSettings = async () => { try { const data = await getSettings(); const safeData = { ...data, companyNames: data.companyNames || [], defaultCompany: data.defaultCompany || '', bankNames: data.bankNames || [], commodityGroups: data.commodityGroups || [], rolePermissions: data.rolePermissions || {}, pwaIcon: data.pwaIcon || '' }; setSettings(safeData); } catch (e) { console.error("Failed to load settings"); } };
   const handleSave = async (e: React.FormEvent) => { e.preventDefault(); setLoading(true); try { await saveSettings(settings); setMessage('تنظیمات با موفقیت ذخیره شد.'); setTimeout(() => setMessage(''), 3000); } catch (e) { setMessage('خطا در ذخیره تنظیمات.'); } finally { setLoading(false); } };
   const handleAddCompany = () => { if (newCompany.trim() && !settings.companyNames.includes(newCompany.trim())) { setSettings({ ...settings, companyNames: [...settings.companyNames, newCompany.trim()] }); setNewCompany(''); } };
   const handleRemoveCompany = (name: string) => { setSettings({ ...settings, companyNames: settings.companyNames.filter(c => c !== name) }); };
@@ -30,6 +33,21 @@ const Settings: React.FC = () => {
   const handleRestoreClick = () => { if (window.confirm('هشدار مهم: با بازگردانی فایل پشتیبان، تمام اطلاعات فعلی سیستم (کاربران و دستورها) حذف و با اطلاعات فایل جایگزین می‌شود. آیا مطمئن هستید؟')) { fileInputRef.current?.click(); } };
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => { const file = event.target.files?.[0]; if (!file) return; const reader = new FileReader(); reader.onload = async (e) => { try { const content = e.target?.result as string; const json = JSON.parse(content); if (!json.orders || !json.users) { throw new Error("Invalid format"); } setLoading(true); await restoreSystemData(json); setMessage('اطلاعات با موفقیت بازگردانی شد. لطفا صفحه را رفرش کنید.'); if (fileInputRef.current) fileInputRef.current.value = ''; setTimeout(() => { window.location.reload(); }, 2000); } catch (error) { alert('فایل انتخاب شده نامعتبر است یا فرمت صحیح ندارد.'); setLoading(false); } }; reader.readAsText(file); };
 
+  const handleIconChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0]; if (!file) return;
+      if (file.size > 2 * 1024 * 1024) { alert("حجم فایل نباید بیشتر از 2 مگابایت باشد"); return; }
+      setUploadingIcon(true);
+      const reader = new FileReader();
+      reader.onload = async (ev) => {
+          const base64 = ev.target?.result as string;
+          try {
+              const result = await uploadFile(file.name, base64);
+              setSettings({ ...settings, pwaIcon: result.url });
+          } catch (error) { alert('خطا در آپلود آیکون'); } finally { setUploadingIcon(false); }
+      };
+      reader.readAsDataURL(file);
+  };
+
   const roles = [ { id: UserRole.USER, label: 'کاربر عادی' }, { id: UserRole.FINANCIAL, label: 'مدیر مالی' }, { id: UserRole.MANAGER, label: 'مدیر داخلی' }, { id: UserRole.CEO, label: 'مدیر عامل' }, { id: UserRole.ADMIN, label: 'مدیر سیستم' }, ];
   const permissions = [ { id: 'canViewAll', label: 'مشاهده تمام دستورات' }, { id: 'canEditOwn', label: 'ویرایش دستور خود (در صورت عدم تایید)' }, { id: 'canDeleteOwn', label: 'حذف دستور خود (در صورت عدم تایید)' }, { id: 'canEditAll', label: 'ویرایش تمام دستورات' }, { id: 'canDeleteAll', label: 'حذف تمام دستورات' }, { id: 'canApproveFinancial', label: 'تایید مرحله مالی' }, { id: 'canApproveManager', label: 'تایید مرحله مدیریت' }, { id: 'canApproveCeo', label: 'تایید مرحله نهایی' }, { id: 'canManageTrade', label: 'دسترسی به بخش بازرگانی' }, { id: 'canManageSettings', label: 'دسترسی به تنظیمات سیستم' } ];
 
@@ -40,6 +58,22 @@ const Settings: React.FC = () => {
             {activeTab === 'general' ? (
                 <>
                 <div className="space-y-2"><label className="text-sm font-bold text-gray-700">شماره شروع دستور پرداخت (کف)</label><p className="text-xs text-gray-500 mb-2">سیستم جاهای خالی بالاتر از این شماره را پر می‌کند.</p><input type="number" className="w-full border border-gray-300 rounded-xl px-4 py-3 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dir-ltr text-left" value={settings.currentTrackingNumber} onChange={(e) => setSettings({...settings, currentTrackingNumber: Number(e.target.value)})} /></div>
+                
+                {/* PWA Icon Upload */}
+                <div className="space-y-4 border-t pt-6">
+                    <div className="flex items-center gap-2 mb-2"><AppWindow className="text-pink-600" size={20} /><h3 className="font-bold text-gray-800">آیکون برنامه (PWA)</h3></div>
+                    <div className="bg-pink-50 p-4 rounded-xl border border-pink-100 flex items-center gap-4">
+                        <div className="w-16 h-16 rounded-xl bg-white border flex items-center justify-center overflow-hidden shrink-0">
+                            {settings.pwaIcon ? <img src={settings.pwaIcon} alt="App Icon" className="w-full h-full object-contain" /> : <div className="text-gray-300 text-xs text-center p-1">پیش‌فرض</div>}
+                        </div>
+                        <div className="flex-1">
+                             <p className="text-xs text-gray-600 mb-2">تصویر آیکون برنامه برای نمایش در صفحه اصلی موبایل (Android/iOS). فرمت پیشنهادی PNG مربع.</p>
+                             <input type="file" ref={iconInputRef} className="hidden" accept="image/png,image/jpeg" onChange={handleIconChange} />
+                             <button type="button" onClick={() => iconInputRef.current?.click()} disabled={uploadingIcon} className="bg-white text-pink-600 border border-pink-200 px-3 py-1.5 rounded-lg text-xs hover:bg-pink-100">{uploadingIcon ? 'در حال آپلود...' : 'تغییر آیکون'}</button>
+                        </div>
+                    </div>
+                </div>
+
                 <div className="space-y-4 border-t pt-6"><div className="flex items-center gap-2 mb-2"><Building className="text-blue-600" size={20} /><h3 className="font-bold text-gray-800">مدیریت شرکت‌ها (سربرگ)</h3></div><div className="bg-gray-50 p-4 rounded-xl border border-gray-200 space-y-4"><div className="space-y-2"><label className="text-xs font-bold text-gray-600">شرکت پیش‌فرض</label><select className="w-full border rounded-lg p-2 text-sm bg-white" value={settings.defaultCompany} onChange={(e) => setSettings({...settings, defaultCompany: e.target.value})}><option value="">-- انتخاب کنید --</option>{settings.companyNames.map(c => <option key={c} value={c}>{c}</option>)}</select></div><div className="space-y-2"><label className="text-xs font-bold text-gray-600">افزودن نام شرکت جدید</label><div className="flex gap-2"><input className="flex-1 border rounded-lg p-2 text-sm" placeholder="نام شرکت..." value={newCompany} onChange={e => setNewCompany(e.target.value)} /><button type="button" onClick={handleAddCompany} className="bg-green-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-green-700"><Plus size={16} /></button></div></div><div className="space-y-2"><label className="text-xs font-bold text-gray-600">لیست شرکت‌های موجود</label><div className="space-y-1 max-h-40 overflow-y-auto">{settings.companyNames.map(c => (<div key={c} className="flex justify-between items-center bg-white border border-gray-200 p-2 rounded text-sm"><span>{c}</span><button type="button" onClick={() => handleRemoveCompany(c)} className="text-red-500 hover:text-red-700"><Trash2 size={14} /></button></div>))}{settings.companyNames.length === 0 && <span className="text-xs text-gray-400">لیست خالی است</span>}</div></div></div></div>
                 <div className="space-y-4 border-t pt-6"><div className="flex items-center gap-2 mb-2"><Landmark className="text-teal-600" size={20} /><h3 className="font-bold text-gray-800">مدیریت نام بانک‌ها</h3></div><div className="bg-gray-50 p-4 rounded-xl border border-gray-200 space-y-4"><div className="space-y-2"><label className="text-xs font-bold text-gray-600">افزودن نام بانک جدید</label><div className="flex gap-2"><input className="flex-1 border rounded-lg p-2 text-sm" placeholder="نام بانک..." value={newBank} onChange={e => setNewBank(e.target.value)} /><button type="button" onClick={handleAddBank} className="bg-teal-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-teal-700"><Plus size={16} /></button></div></div><div className="space-y-2"><label className="text-xs font-bold text-gray-600">لیست بانک‌های موجود</label><div className="space-y-1 max-h-40 overflow-y-auto">{settings.bankNames.map(b => (<div key={b} className="flex justify-between items-center bg-white border border-gray-200 p-2 rounded text-sm"><span>{b}</span><button type="button" onClick={() => handleRemoveBank(b)} className="text-red-500 hover:text-red-700"><Trash2 size={14} /></button></div>))}{settings.bankNames.length === 0 && <span className="text-xs text-gray-400">لیست خالی است</span>}</div></div></div></div>
                 <div className="space-y-4 border-t pt-6"><div className="flex items-center gap-2 mb-2"><Package className="text-amber-600" size={20} /><h3 className="font-bold text-gray-800">مدیریت گروه‌های کالایی (بازرگانی)</h3></div><div className="bg-gray-50 p-4 rounded-xl border border-gray-200 space-y-4"><div className="space-y-2"><label className="text-xs font-bold text-gray-600">افزودن گروه کالایی جدید</label><div className="flex gap-2"><input className="flex-1 border rounded-lg p-2 text-sm" placeholder="مثال: مواد اولیه، قطعات یدکی..." value={newCommodity} onChange={e => setNewCommodity(e.target.value)} /><button type="button" onClick={handleAddCommodity} className="bg-amber-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-amber-700"><Plus size={16} /></button></div></div><div className="space-y-2"><label className="text-xs font-bold text-gray-600">لیست گروه‌های موجود</label><div className="space-y-1 max-h-40 overflow-y-auto">{settings.commodityGroups.map(c => (<div key={c} className="flex justify-between items-center bg-white border border-gray-200 p-2 rounded text-sm"><span>{c}</span><button type="button" onClick={() => handleRemoveCommodity(c)} className="text-red-500 hover:text-red-700"><Trash2 size={14} /></button></div>))}{(!settings.commodityGroups || settings.commodityGroups.length === 0) && <span className="text-xs text-gray-400">لیست خالی است</span>}</div></div></div></div>

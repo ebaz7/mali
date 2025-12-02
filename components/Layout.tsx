@@ -1,4 +1,5 @@
 
+
 import React, { useState, useEffect, useRef } from 'react';
 import { LayoutDashboard, PlusCircle, ListChecks, FileText, Users, LogOut, User as UserIcon, Settings, Bell, BellOff, MessageSquare, X, Check, Container, KeyRound, Save, Upload, Camera } from 'lucide-react';
 import { User, UserRole, AppNotification, SystemSettings } from '../types';
@@ -32,7 +33,14 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab, curr
   const avatarInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    getSettings().then(setSettings);
+    getSettings().then(data => {
+        setSettings(data);
+        if (data.pwaIcon) {
+            // Try to update apple-touch-icon dynamically if possible
+            const link = document.querySelector("link[rel*='apple-touch-icon']") as HTMLLinkElement;
+            if (link) link.href = data.pwaIcon;
+        }
+    });
     setNotifEnabled(isNotificationEnabledInApp());
     const handleClickOutside = (event: MouseEvent) => { 
         if (notifRef.current && !notifRef.current.contains(event.target as Node)) setShowNotifDropdown(false); 
@@ -75,7 +83,8 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab, curr
   const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
       if (!file) return;
-      if (file.size > 2 * 1024 * 1024) { alert('حجم تصویر نباید بیشتر از 2 مگابایت باشد.'); return; }
+      // Increased limit to 10MB to support high-res phone photos
+      if (file.size > 10 * 1024 * 1024) { alert('حجم تصویر نباید بیشتر از 10 مگابایت باشد.'); return; }
       
       setUploadingAvatar(true);
       const reader = new FileReader();
@@ -84,10 +93,6 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab, curr
           try {
               const result = await uploadFile(file.name, base64);
               await updateUser({ ...currentUser, avatar: result.url });
-              // Force reload or update state to reflect image immediately? 
-              // Since currentUser comes from parent prop, we might need to rely on parent updating or reload. 
-              // Ideally App.tsx should refresh user, but for now simple alert:
-              // For better UX, we can just update the local currentUser prop visually if we could, but here we trigger reload or callback
               window.location.reload(); 
           } catch (error) {
               alert('خطا در آپلود تصویر');
@@ -185,13 +190,20 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab, curr
       {/* Desktop Sidebar */}
       <aside className="w-64 bg-slate-800 text-white flex-shrink-0 hidden md:flex flex-col no-print shadow-xl relative">
         <div className="p-6 border-b border-slate-700 flex items-center gap-3"><div className="bg-blue-500 p-2 rounded-lg"><FileText className="w-6 h-6 text-white" /></div><div><h1 className="text-lg font-bold tracking-wide">سیستم مالی</h1><span className="text-xs text-slate-400">پنل کاربری</span></div></div>
-        <div className="p-4 bg-slate-700/50 mx-4 mt-4 rounded-xl flex items-center gap-3 border border-slate-600 relative group">
+        
+        {/* Clickable User Info Section */}
+        <div 
+            className="p-4 bg-slate-700/50 mx-4 mt-4 rounded-xl flex items-center gap-3 border border-slate-600 relative group cursor-pointer hover:bg-slate-600 transition-colors"
+            onClick={() => setShowProfileModal(true)}
+            title="تنظیمات کاربری"
+        >
             <div className="w-10 h-10 rounded-full bg-slate-600 flex items-center justify-center overflow-hidden shrink-0">
                 {currentUser.avatar ? <img src={currentUser.avatar} alt="" className="w-full h-full object-cover"/> : <UserIcon size={20} className="text-blue-300" />}
             </div>
             <div className="overflow-hidden flex-1"><p className="text-sm font-bold truncate">{currentUser.fullName}</p><p className="text-xs text-slate-400 truncate">نقش: {currentUser.role}</p></div>
-            <button onClick={() => setShowProfileModal(true)} className="absolute right-2 top-2 bg-slate-500 p-1 rounded hover:bg-slate-400 opacity-0 group-hover:opacity-100 transition-opacity" title="تنظیمات کاربری"><Settings size={14} /></button>
+            <div className="absolute right-2 top-2 bg-slate-500 p-1 rounded opacity-0 group-hover:opacity-100 transition-opacity"><Settings size={14} /></div>
         </div>
+
         <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
           {navItems.map((item) => { const Icon = item.icon; return (<button key={item.id} onClick={() => setActiveTab(item.id)} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 ${activeTab === item.id ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/20' : 'text-slate-300 hover:bg-slate-700 hover:text-white'}`}><Icon size={20} /><span className="font-medium">{item.label}</span></button>); })}
           <div className="pt-4 mt-2 border-t border-slate-700 relative" ref={notifRef}>
