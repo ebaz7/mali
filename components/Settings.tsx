@@ -1,15 +1,17 @@
 
 
+
+
 import React, { useState, useEffect, useRef } from 'react';
 import { getSettings, saveSettings, restoreSystemData, uploadFile } from '../services/storageService';
 import { SystemSettings, UserRole, RolePermissions } from '../types';
-import { Settings as SettingsIcon, Save, Loader2, Download, UploadCloud, Database, AlertTriangle, Bell, Info, Plus, Trash2, Building, ShieldCheck, Landmark, Package, AppWindow, BellRing, BellOff } from 'lucide-react';
+import { Settings as SettingsIcon, Save, Loader2, Download, UploadCloud, Database, AlertTriangle, Bell, Info, Plus, Trash2, Building, ShieldCheck, Landmark, Package, AppWindow, BellRing, BellOff, Send } from 'lucide-react';
 import { apiCall } from '../services/apiService';
 import { requestNotificationPermission, setNotificationPreference, isNotificationEnabledInApp } from '../services/notificationService';
 
 const Settings: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'general' | 'permissions'>('general');
-  const [settings, setSettings] = useState<SystemSettings>({ currentTrackingNumber: 1000, companyNames: [], defaultCompany: '', bankNames: [], commodityGroups: [], rolePermissions: {} as any, pwaIcon: '' });
+  const [settings, setSettings] = useState<SystemSettings>({ currentTrackingNumber: 1000, companyNames: [], defaultCompany: '', bankNames: [], commodityGroups: [], rolePermissions: {} as any, pwaIcon: '', telegramBotToken: '' });
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
   const [newCompany, setNewCompany] = useState('');
@@ -23,7 +25,7 @@ const Settings: React.FC = () => {
 
   useEffect(() => { loadSettings(); setNotificationsEnabled(isNotificationEnabledInApp()); }, []);
 
-  const loadSettings = async () => { try { const data = await getSettings(); const safeData = { ...data, companyNames: data.companyNames || [], defaultCompany: data.defaultCompany || '', bankNames: data.bankNames || [], commodityGroups: data.commodityGroups || [], rolePermissions: data.rolePermissions || {}, pwaIcon: data.pwaIcon || '' }; setSettings(safeData); } catch (e) { console.error("Failed to load settings"); } };
+  const loadSettings = async () => { try { const data = await getSettings(); const safeData = { ...data, companyNames: data.companyNames || [], defaultCompany: data.defaultCompany || '', bankNames: data.bankNames || [], commodityGroups: data.commodityGroups || [], rolePermissions: data.rolePermissions || {}, pwaIcon: data.pwaIcon || '', telegramBotToken: data.telegramBotToken || '' }; setSettings(safeData); } catch (e) { console.error("Failed to load settings"); } };
   const handleSave = async (e: React.FormEvent) => { e.preventDefault(); setLoading(true); try { await saveSettings(settings); setMessage('تنظیمات با موفقیت ذخیره شد.'); setTimeout(() => setMessage(''), 3000); } catch (e) { setMessage('خطا در ذخیره تنظیمات.'); } finally { setLoading(false); } };
   const handleAddCompany = () => { if (newCompany.trim() && !settings.companyNames.includes(newCompany.trim())) { setSettings({ ...settings, companyNames: [...settings.companyNames, newCompany.trim()] }); setNewCompany(''); } };
   const handleRemoveCompany = (name: string) => { setSettings({ ...settings, companyNames: settings.companyNames.filter(c => c !== name) }); };
@@ -84,7 +86,7 @@ const Settings: React.FC = () => {
                     <div className={`p-4 rounded-xl border flex flex-col md:flex-row md:items-center justify-between gap-4 transition-colors ${notificationsEnabled ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
                         <div>
                             <h4 className={`font-bold text-sm ${notificationsEnabled ? 'text-green-800' : 'text-red-800'}`}>
-                                {notificationsEnabled ? 'اعلان‌ها فعال هستند' : 'اعلان‌ها غیرفعال هستند'}
+                                {notificationsEnabled ? 'اعلان‌ها مرورگر فعال هستند' : 'اعلان‌های مرورگر غیرفعال هستند'}
                             </h4>
                             <p className="text-xs text-gray-600 mt-1">با فعال‌سازی، پیام‌های جدید و تغییر وضعیت دستورات را دریافت خواهید کرد.</p>
                             {!isSecure && <p className="text-xs text-amber-600 mt-1 font-bold bg-amber-100 p-1 rounded w-fit">هشدار: ارتباط شما امن (HTTPS) نیست. مرورگرها اجازه اعلان نمی‌دهند.</p>}
@@ -92,6 +94,26 @@ const Settings: React.FC = () => {
                         <button type="button" onClick={handleToggleNotifications} className={`px-4 py-2 rounded-lg text-sm font-bold shadow-sm transition-transform active:scale-95 flex items-center gap-2 ${notificationsEnabled ? 'bg-white text-green-700 border border-green-200 hover:bg-green-100' : 'bg-red-600 text-white hover:bg-red-700'}`}>
                             {notificationsEnabled ? <><BellRing size={18}/> غیرفعال کردن</> : <><BellOff size={18}/> فعال‌سازی اعلان‌ها</>}
                         </button>
+                    </div>
+                </div>
+                
+                {/* TELEGRAM BOT SECTION */}
+                <div className="space-y-4 border-t pt-6">
+                    <div className="flex items-center gap-2 mb-2"><Send className="text-blue-500" size={20} /><h3 className="font-bold text-gray-800">ربات تلگرام (اعلان‌های کارتابل)</h3></div>
+                    <div className="bg-blue-50 p-4 rounded-xl border border-blue-100">
+                        <label className="text-xs font-bold text-gray-700 block mb-2">توکن ربات تلگرام (Bot Token)</label>
+                        <input 
+                          type="text" 
+                          className="w-full border border-blue-200 rounded-lg p-2 text-sm dir-ltr font-mono" 
+                          placeholder="123456789:ABCdefGHIjklMNOpqrsTUVwxyz"
+                          value={settings.telegramBotToken}
+                          onChange={(e) => setSettings({...settings, telegramBotToken: e.target.value})}
+                        />
+                        <p className="text-xs text-gray-500 mt-2">
+                            برای دریافت توکن، به ربات <a href="https://t.me/BotFather" target="_blank" className="text-blue-600 underline font-bold">BotFather@</a> در تلگرام پیام دهید و یک ربات جدید بسازید.
+                            <br/>
+                            توجه: کاربران باید Chat ID خود را در پروفایلشان وارد کنند تا پیام دریافت کنند.
+                        </p>
                     </div>
                 </div>
 

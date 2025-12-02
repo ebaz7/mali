@@ -1,7 +1,7 @@
 
 
 import React, { useState, useEffect, useRef } from 'react';
-import { LayoutDashboard, PlusCircle, ListChecks, FileText, Users, LogOut, User as UserIcon, Settings, Bell, BellOff, MessageSquare, X, Check, Container, KeyRound, Save, Upload, Camera, Download, Share, ChevronRight, Home } from 'lucide-react';
+import { LayoutDashboard, PlusCircle, ListChecks, FileText, Users, LogOut, User as UserIcon, Settings, Bell, BellOff, MessageSquare, X, Check, Container, KeyRound, Save, Upload, Camera, Download, Share, ChevronRight, Home, Send } from 'lucide-react';
 import { User, UserRole, AppNotification, SystemSettings } from '../types';
 import { logout, hasPermission, getRolePermissions, updateUser } from '../services/authService';
 import { requestNotificationPermission, setNotificationPreference, isNotificationEnabledInApp } from '../services/notificationService';
@@ -32,8 +32,13 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab, curr
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [telegramChatId, setTelegramChatId] = useState('');
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const avatarInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    setTelegramChatId(currentUser.telegramChatId || '');
+  }, [currentUser]);
 
   useEffect(() => {
     getSettings().then(data => {
@@ -112,6 +117,10 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab, curr
           if (newPassword !== confirmPassword) { alert('رمز عبور و تکرار آن مطابقت ندارند.'); return; }
           if (newPassword.length < 4) { alert('رمز عبور باید حداقل ۴ کاراکتر باشد.'); return; }
           updates.password = newPassword;
+      }
+
+      if (telegramChatId !== currentUser.telegramChatId) {
+          updates.telegramChatId = telegramChatId;
       }
 
       try {
@@ -236,9 +245,25 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab, curr
                   </div>
 
                   <form onSubmit={handleUpdateProfile} className="space-y-4 border-t pt-4">
-                      <p className="text-xs text-gray-500 font-bold mb-2">تغییر رمز عبور (اختیاری)</p>
-                      <div><label className="text-sm font-medium text-gray-700 block mb-1">رمز عبور جدید</label><input type="password" className="w-full border rounded-lg p-2 text-left dir-ltr" value={newPassword} onChange={e => setNewPassword(e.target.value)} /></div>
-                      <div><label className="text-sm font-medium text-gray-700 block mb-1">تکرار رمز عبور جدید</label><input type="password" className="w-full border rounded-lg p-2 text-left dir-ltr" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} /></div>
+                      
+                      {/* Telegram ID Section */}
+                      <div>
+                          <label className="text-sm font-medium text-gray-700 flex items-center gap-1 mb-1"><Send size={14} className="text-blue-500"/> آیدی عددی تلگرام (Chat ID)</label>
+                          <input 
+                            type="text" 
+                            className="w-full border rounded-lg p-2 text-left dir-ltr font-mono text-sm" 
+                            placeholder="برای دریافت: @userinfobot"
+                            value={telegramChatId} 
+                            onChange={e => setTelegramChatId(e.target.value)} 
+                          />
+                          <p className="text-[10px] text-gray-500 mt-1">برای دریافت پیام‌های سیستم در تلگرام، به ربات <b>userinfobot@</b> پیام دهید و عدد دریافتی را اینجا وارد کنید.</p>
+                      </div>
+
+                      <div className="border-t pt-2">
+                        <p className="text-xs text-gray-500 font-bold mb-2">تغییر رمز عبور (اختیاری)</p>
+                        <div><label className="text-sm font-medium text-gray-700 block mb-1">رمز عبور جدید</label><input type="password" className="w-full border rounded-lg p-2 text-left dir-ltr" value={newPassword} onChange={e => setNewPassword(e.target.value)} /></div>
+                        <div className="mt-2"><label className="text-sm font-medium text-gray-700 block mb-1">تکرار رمز عبور جدید</label><input type="password" className="w-full border rounded-lg p-2 text-left dir-ltr" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} /></div>
+                      </div>
                       <div className="flex justify-end pt-2">
                           <button type="submit" className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm flex items-center gap-2"><Save size={16}/> ذخیره تغییرات</button>
                       </div>

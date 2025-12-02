@@ -31,6 +31,7 @@ export interface User {
   role: UserRole;
   canManageTrade?: boolean; // Specific permission override
   avatar?: string; // Profile picture URL
+  telegramChatId?: string; // Telegram Chat ID for notifications
 }
 
 export interface PaymentDetail {
@@ -95,6 +96,7 @@ export interface SystemSettings {
   commodityGroups: string[]; // Trade: Commodity Groups
   rolePermissions: Record<string, RolePermissions>; // Dynamic permissions
   pwaIcon?: string; // Custom PWA Icon URL
+  telegramBotToken?: string; // Token for Telegram Bot Notifications
 }
 
 export interface DashboardStats {

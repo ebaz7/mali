@@ -1,4 +1,5 @@
 
+
 import express from 'express';
 import cors from 'cors';
 import fs from 'fs';
@@ -61,7 +62,8 @@ const getDb = () => {
                     manager: { canViewAll: true, canApproveFinancial: false, canApproveManager: true, canApproveCeo: false, canEditOwn: true, canEditAll: true, canDeleteOwn: true, canDeleteAll: true, canManageTrade: true, canManageSettings: false },
                     financial: { canViewAll: true, canApproveFinancial: true, canApproveManager: false, canApproveCeo: false, canEditOwn: true, canEditAll: false, canDeleteOwn: true, canDeleteAll: false, canManageTrade: false, canManageSettings: false },
                     user: { canViewAll: false, canApproveFinancial: false, canApproveManager: false, canApproveCeo: false, canEditOwn: true, canEditAll: false, canDeleteOwn: true, canDeleteAll: false, canManageTrade: false, canManageSettings: false }
-                }
+                },
+                telegramBotToken: ''
             },
             orders: [],
             users: [
@@ -122,6 +124,47 @@ const performAutoBackup = () => {
 // Backup every 30 minutes (1800000 ms)
 setInterval(performAutoBackup, 1800000);
 performAutoBackup();
+
+// --- TELEGRAM NOTIFICATION HELPER ---
+const sendTelegramNotification = async (targetRole, message, specificUserId = null) => {
+    try {
+        const db = getDb();
+        const token = db.settings.telegramBotToken;
+        if (!token) return; // No bot token configured
+
+        let targetUsers = [];
+        if (specificUserId) {
+            targetUsers = db.users.filter(u => u.id === specificUserId);
+        } else if (targetRole) {
+            targetUsers = db.users.filter(u => u.role === targetRole || u.role === 'admin'); // Admins usually want to know too
+        }
+
+        // Filter users who have a Telegram Chat ID
+        targetUsers = targetUsers.filter(u => u.telegramChatId);
+        
+        // Remove duplicates
+        const uniqueChatIds = [...new Set(targetUsers.map(u => u.telegramChatId))];
+
+        for (const chatId of uniqueChatIds) {
+            try {
+                // Using built-in fetch (available in Node 18+). If older node, consider axios or node-fetch
+                await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        chat_id: chatId,
+                        text: message,
+                        parse_mode: 'HTML'
+                    })
+                });
+            } catch (err) {
+                console.error(`Failed to send Telegram message to ${chatId}:`, err.message);
+            }
+        }
+    } catch (e) {
+        console.error("Telegram Notification Error:", e);
+    }
+};
 
 // --- SMART TRACKING NUMBER LOGIC ---
 const findNextAvailableTrackingNumber = (db) => {
@@ -363,6 +406,11 @@ app.post('/api/orders', (req, res) => {
     // The system will just fill up from there.
     
     saveDb(db);
+    
+    // NOTIFY FINANCIAL MANAGER
+    const msg = `🧾 <b>درخواست پرداخت جدید</b>\n\nشماره: ${newOrder.trackingNumber}\nمبلغ: ${new Intl.NumberFormat('fa-IR').format(newOrder.totalAmount)} ریال\nگیرنده: ${newOrder.payee}\nدرخواست کننده: ${newOrder.requester}`;
+    sendTelegramNotification('financial', msg);
+
     res.json(db.orders);
 });
 app.put('/api/orders/:id', (req, res) => {
@@ -376,8 +424,40 @@ app.put('/api/orders/:id', (req, res) => {
              return res.status(400).json({ message: 'Tracking number already exists' });
         }
 
+        const oldStatus = db.orders[index].status;
         db.orders[index] = updatedOrder;
         saveDb(db);
+
+        // NOTIFICATION LOGIC BASED ON STATUS CHANGE
+        if (oldStatus !== updatedOrder.status) {
+            const tracking = updatedOrder.trackingNumber;
+            const amount = new Intl.NumberFormat('fa-IR').format(updatedOrder.totalAmount);
+            
+            if (updatedOrder.status === 'تایید مالی / در انتظار مدیریت') { // APPROVED_FINANCE
+                 const msg = `✅ <b>تایید مالی انجام شد</b>\n\nدستور پرداخت شماره ${tracking}\nمبلغ: ${amount} ریال\n\nمدیر محترم، این درخواست در انتظار تایید شماست.`;
+                 sendTelegramNotification('manager', msg);
+            }
+            else if (updatedOrder.status === 'تایید مدیریت / در انتظار مدیرعامل') { // APPROVED_MANAGER
+                 const msg = `👑 <b>تایید مدیریت انجام شد</b>\n\nدستور پرداخت شماره ${tracking}\nمبلغ: ${amount} ریال\n\nمدیرعامل محترم، این درخواست در کارتابل شما قرار گرفت.`;
+                 sendTelegramNotification('ceo', msg);
+            }
+            else if (updatedOrder.status === 'تایید نهایی') { // APPROVED_CEO
+                 const msg = `💰 <b>پرداخت تایید نهایی شد</b>\n\nدستور پرداخت شماره ${tracking}\nمبلغ: ${amount} ریال\n\nآماده پرداخت.`;
+                 // Notify Financial again so they know they can pay
+                 sendTelegramNotification('financial', msg);
+            }
+            else if (updatedOrder.status === 'رد شده') { // REJECTED
+                 // Need to find the requester to notify them specifically if possible, 
+                 // but for now let's just notify admins or generic role. 
+                 // Ideally we find the User object by `requester` name (fullName).
+                 const requesterUser = db.users.find(u => u.fullName === updatedOrder.requester);
+                 if (requesterUser) {
+                     const msg = `❌ <b>درخواست پرداخت رد شد</b>\n\nدستور پرداخت شماره ${tracking}\nدلیل: ${updatedOrder.rejectionReason || 'نامشخص'}`;
+                     sendTelegramNotification(null, msg, requesterUser.id);
+                 }
+            }
+        }
+
         res.json(db.orders);
     } else res.status(404).json({ message: 'Order not found' });
 });
