@@ -256,6 +256,39 @@ export interface CurrencyPurchaseData {
     isDelivered: boolean; // تیک تحویل نهایی (کلی)
 }
 
+export type ShippingDocType = 'Commercial Invoice' | 'Packing List' | 'Certificate of Origin' | 'Bill of Lading';
+export type DocStatus = 'Draft' | 'Final';
+
+export interface ShippingDocument {
+    id: string;
+    type: ShippingDocType;
+    status: DocStatus; // Initial/Draft or Final
+    documentNumber: string;
+    documentDate: string;
+    
+    // Invoice Specific
+    amount?: number;
+    currency?: string;
+    
+    // Packing Specific
+    netWeight?: number;
+    grossWeight?: number;
+    packagesCount?: number;
+
+    // CO Specific
+    chamberOfCommerce?: string;
+
+    // BL Specific
+    vesselName?: string;
+    portOfLoading?: string;
+    portOfDischarge?: string;
+
+    description?: string;
+    attachments: { fileName: string; url: string }[];
+    createdAt: number;
+    createdBy: string;
+}
+
 export interface TradeRecord {
     id: string;
     company?: string; // Company owning this record
@@ -295,6 +328,9 @@ export interface TradeRecord {
     
     // Currency Purchase Details
     currencyPurchaseData?: CurrencyPurchaseData;
+
+    // Shipping Documents (New)
+    shippingDocuments?: ShippingDocument[];
 
     startDate: string; // ISO Date
     status: 'Active' | 'Completed' | 'Cancelled';

@@ -1,9 +1,9 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { User, TradeRecord, TradeStage, TradeItem, SystemSettings, InsuranceEndorsement, CurrencyPurchaseData, TradeTransaction, CurrencyTranche, TradeStageData } from '../types';
+import { User, TradeRecord, TradeStage, TradeItem, SystemSettings, InsuranceEndorsement, CurrencyPurchaseData, TradeTransaction, CurrencyTranche, TradeStageData, ShippingDocument, ShippingDocType, DocStatus } from '../types';
 import { getTradeRecords, saveTradeRecord, updateTradeRecord, deleteTradeRecord, getSettings, uploadFile } from '../services/storageService';
 import { generateUUID, formatCurrency, formatNumberString, deformatNumberString, parsePersianDate, getCurrentShamsiDate } from '../constants';
-import { Container, Plus, Search, CheckCircle2, Circle, Save, Trash2, X, Package, ArrowRight, History, Banknote, Coins, Filter, Wallet, FileSpreadsheet, Shield, LayoutDashboard, Printer, FileDown, PieChart as PieIcon, BarChart3, ListFilter, Paperclip, Upload, Calendar, Building2, Layers, FolderOpen, ChevronLeft, ArrowLeft, Home, Calculator } from 'lucide-react';
+import { Container, Plus, Search, CheckCircle2, Circle, Save, Trash2, X, Package, ArrowRight, History, Banknote, Coins, Filter, Wallet, FileSpreadsheet, Shield, LayoutDashboard, Printer, FileDown, PieChart as PieIcon, BarChart3, ListFilter, Paperclip, Upload, Calendar, Building2, Layers, FolderOpen, ChevronLeft, ArrowLeft, Home, Calculator, Ship, FileText, Scale, Stamp } from 'lucide-react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts';
 
 interface TradeModuleProps {
@@ -49,7 +49,7 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
     const [newMainCurrency, setNewMainCurrency] = useState('EUR');
     const [newRecordCompany, setNewRecordCompany] = useState('');
     
-    const [activeTab, setActiveTab] = useState<'timeline' | 'proforma' | 'insurance' | 'currency_purchase'>('timeline');
+    const [activeTab, setActiveTab] = useState<'timeline' | 'proforma' | 'insurance' | 'currency_purchase' | 'shipping_docs'>('timeline');
     
     // Stage Detail Modal State
     const [editingStage, setEditingStage] = useState<TradeStage | null>(null);
@@ -74,6 +74,18 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
     
     // Currency Tranche State
     const [newCurrencyTranche, setNewCurrencyTranche] = useState<Partial<CurrencyTranche>>({ amount: 0, currencyType: 'EUR', date: '', exchangeName: '', brokerName: '', isDelivered: false, deliveryDate: '' });
+
+    // Shipping Docs State
+    const [activeShippingSubTab, setActiveShippingSubTab] = useState<ShippingDocType>('Commercial Invoice');
+    const [shippingDocForm, setShippingDocForm] = useState<Partial<ShippingDocument>>({
+        status: 'Draft',
+        documentNumber: '',
+        documentDate: '',
+        attachments: []
+    });
+    const [uploadingDocFile, setUploadingDocFile] = useState(false);
+    const docFileInputRef = useRef<HTMLInputElement>(null);
+
 
     // PDF Generation State
     const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
@@ -105,6 +117,9 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
             setNewLicenseTx({ amount: 0, bank: '', date: '', description: 'هزینه ثبت سفارش' });
             setNewCurrencyTranche({ amount: 0, currencyType: selectedRecord.mainCurrency || 'EUR', date: '', exchangeName: '', brokerName: '', isDelivered: false, deliveryDate: '' });
             setNewItem({ name: '', weight: 0, unitPrice: 0, totalPrice: 0 });
+
+            // Reset shipping form
+            setShippingDocForm({ status: 'Draft', documentNumber: '', documentDate: '', attachments: [], currency: selectedRecord.mainCurrency || 'EUR' });
         }
     }, [selectedRecord]);
 
@@ -137,7 +152,7 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
         return record.stages[stage] || { stage, isCompleted: false, description: '', costRial: 0, costCurrency: 0, currencyType: 'EUR', attachments: [], updatedAt: 0, updatedBy: '' };
     };
 
-    const handleCreateRecord = async () => { if (!newFileNumber || !newGoodsName) return; const newRecord: TradeRecord = { id: generateUUID(), company: newRecordCompany, fileNumber: newFileNumber, orderNumber: newFileNumber, goodsName: newGoodsName, sellerName: newSellerName, commodityGroup: newCommodityGroup, mainCurrency: newMainCurrency, items: [], freightCost: 0, startDate: new Date().toISOString(), status: 'Active', stages: {}, createdAt: Date.now(), createdBy: currentUser.fullName, licenseData: { transactions: [] } }; STAGES.forEach(stage => { newRecord.stages[stage] = { stage, isCompleted: false, description: '', costRial: 0, costCurrency: 0, currencyType: newMainCurrency, attachments: [], updatedAt: Date.now(), updatedBy: '' }; }); await saveTradeRecord(newRecord); await loadRecords(); setShowNewModal(false); setNewFileNumber(''); setNewGoodsName(''); setNewSellerName(''); setNewCommodityGroup(''); setNewMainCurrency('EUR'); setSelectedRecord(newRecord); setActiveTab('proforma'); setViewMode('details'); };
+    const handleCreateRecord = async () => { if (!newFileNumber || !newGoodsName) return; const newRecord: TradeRecord = { id: generateUUID(), company: newRecordCompany, fileNumber: newFileNumber, orderNumber: newFileNumber, goodsName: newGoodsName, sellerName: newSellerName, commodityGroup: newCommodityGroup, mainCurrency: newMainCurrency, items: [], freightCost: 0, startDate: new Date().toISOString(), status: 'Active', stages: {}, createdAt: Date.now(), createdBy: currentUser.fullName, licenseData: { transactions: [] }, shippingDocuments: [] }; STAGES.forEach(stage => { newRecord.stages[stage] = { stage, isCompleted: false, description: '', costRial: 0, costCurrency: 0, currencyType: newMainCurrency, attachments: [], updatedAt: Date.now(), updatedBy: '' }; }); await saveTradeRecord(newRecord); await loadRecords(); setShowNewModal(false); setNewFileNumber(''); setNewGoodsName(''); setNewSellerName(''); setNewCommodityGroup(''); setNewMainCurrency('EUR'); setSelectedRecord(newRecord); setActiveTab('proforma'); setViewMode('details'); };
     const handleDeleteRecord = async (id: string) => { if (confirm("آیا از حذف این پرونده بازرگانی اطمینان دارید؟")) { await deleteTradeRecord(id); if (selectedRecord?.id === id) setSelectedRecord(null); loadRecords(); } };
     
     // --- Proforma & Item Handlers ---
@@ -159,6 +174,94 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
     const handleAddCurrencyTranche = async () => { if (!selectedRecord || !newCurrencyTranche.amount) return; const tranche: CurrencyTranche = { id: generateUUID(), date: newCurrencyTranche.date || '', amount: Number(newCurrencyTranche.amount), currencyType: newCurrencyTranche.currencyType || selectedRecord.mainCurrency || 'EUR', brokerName: newCurrencyTranche.brokerName || '', exchangeName: newCurrencyTranche.exchangeName || '', rate: Number(newCurrencyTranche.rate) || 0, isDelivered: newCurrencyTranche.isDelivered, deliveryDate: newCurrencyTranche.deliveryDate }; const currentTranches = currencyForm.tranches || []; const updatedTranches = [...currentTranches, tranche]; const totalPurchased = updatedTranches.reduce((acc, t) => acc + t.amount, 0); const totalDelivered = updatedTranches.filter(t => t.isDelivered).reduce((acc, t) => acc + t.amount, 0); const updatedForm = { ...currencyForm, tranches: updatedTranches, purchasedAmount: totalPurchased, deliveredAmount: totalDelivered }; setCurrencyForm(updatedForm); const updatedRecord = { ...selectedRecord, currencyPurchaseData: updatedForm }; await updateTradeRecord(updatedRecord); setSelectedRecord(updatedRecord); setNewCurrencyTranche({ amount: 0, currencyType: selectedRecord.mainCurrency || 'EUR', date: '', exchangeName: '', brokerName: '', isDelivered: false, deliveryDate: '' }); };
     const handleUpdateTrancheDelivery = async (id: string, isDelivered: boolean, deliveryDate?: string) => { if (!selectedRecord) return; const updatedTranches = (currencyForm.tranches || []).map(t => { if (t.id === id) return { ...t, isDelivered, deliveryDate }; return t; }); const totalPurchased = updatedTranches.reduce((acc, t) => acc + t.amount, 0); const totalDelivered = updatedTranches.filter(t => t.isDelivered).reduce((acc, t) => acc + t.amount, 0); const updatedForm = { ...currencyForm, tranches: updatedTranches, purchasedAmount: totalPurchased, deliveredAmount: totalDelivered }; setCurrencyForm(updatedForm); const updatedRecord = { ...selectedRecord, currencyPurchaseData: updatedForm }; await updateTradeRecord(updatedRecord); setSelectedRecord(updatedRecord); };
     const handleRemoveTranche = async (id: string) => { if (!selectedRecord) return; if (!confirm('آیا از حذف این پارت خرید ارز مطمئن هستید؟')) return; const updatedTranches = (currencyForm.tranches || []).filter(t => t.id !== id); const totalPurchased = updatedTranches.reduce((acc, t) => acc + t.amount, 0); const totalDelivered = updatedTranches.filter(t => t.isDelivered).reduce((acc, t) => acc + t.amount, 0); const updatedForm = { ...currencyForm, tranches: updatedTranches, purchasedAmount: totalPurchased, deliveredAmount: totalDelivered }; setCurrencyForm(updatedForm); const updatedRecord = { ...selectedRecord, currencyPurchaseData: updatedForm }; await updateTradeRecord(updatedRecord); setSelectedRecord(updatedRecord); }
+
+    // --- Shipping Documents Handlers ---
+    const handleSaveShippingDoc = async () => {
+        if (!selectedRecord || !shippingDocForm.documentNumber) { alert("شماره سند الزامی است"); return; }
+        
+        const newDoc: ShippingDocument = {
+            id: generateUUID(),
+            type: activeShippingSubTab,
+            status: shippingDocForm.status as DocStatus || 'Draft',
+            documentNumber: shippingDocForm.documentNumber || '',
+            documentDate: shippingDocForm.documentDate || '',
+            attachments: shippingDocForm.attachments || [],
+            amount: activeShippingSubTab === 'Commercial Invoice' ? Number(shippingDocForm.amount) : undefined,
+            currency: activeShippingSubTab === 'Commercial Invoice' ? shippingDocForm.currency : undefined,
+            netWeight: activeShippingSubTab === 'Packing List' ? Number(shippingDocForm.netWeight) : undefined,
+            grossWeight: activeShippingSubTab === 'Packing List' ? Number(shippingDocForm.grossWeight) : undefined,
+            packagesCount: activeShippingSubTab === 'Packing List' ? Number(shippingDocForm.packagesCount) : undefined,
+            chamberOfCommerce: activeShippingSubTab === 'Certificate of Origin' ? shippingDocForm.chamberOfCommerce : undefined,
+            vesselName: activeShippingSubTab === 'Bill of Lading' ? shippingDocForm.vesselName : undefined,
+            portOfLoading: activeShippingSubTab === 'Bill of Lading' ? shippingDocForm.portOfLoading : undefined,
+            portOfDischarge: activeShippingSubTab === 'Bill of Lading' ? shippingDocForm.portOfDischarge : undefined,
+            description: shippingDocForm.description,
+            createdAt: Date.now(),
+            createdBy: currentUser.fullName
+        };
+
+        const currentDocs = selectedRecord.shippingDocuments || [];
+        // Add to top
+        const updatedDocs = [newDoc, ...currentDocs];
+        const updatedRecord = { ...selectedRecord, shippingDocuments: updatedDocs };
+        
+        // Update generic stage completion status if necessary
+        if (!updatedRecord.stages[TradeStage.SHIPPING_DOCS]) updatedRecord.stages[TradeStage.SHIPPING_DOCS] = getStageData(updatedRecord, TradeStage.SHIPPING_DOCS);
+        updatedRecord.stages[TradeStage.SHIPPING_DOCS].isCompleted = true; // Assumes if we add a doc, we are working on it
+        updatedRecord.stages[TradeStage.SHIPPING_DOCS].updatedAt = Date.now();
+
+        await updateTradeRecord(updatedRecord);
+        setSelectedRecord(updatedRecord);
+        
+        // Reset Form
+        setShippingDocForm({ 
+            status: 'Draft', 
+            documentNumber: '', 
+            documentDate: '', 
+            attachments: [], 
+            amount: 0, 
+            netWeight: 0, 
+            grossWeight: 0, 
+            packagesCount: 0,
+            chamberOfCommerce: '',
+            vesselName: '',
+            portOfLoading: '',
+            portOfDischarge: '',
+            description: '',
+            currency: selectedRecord.mainCurrency || 'EUR'
+        });
+    };
+
+    const handleDeleteShippingDoc = async (id: string) => {
+        if (!selectedRecord) return;
+        if (!confirm('آیا از حذف این سند مطمئن هستید؟')) return;
+        const currentDocs = selectedRecord.shippingDocuments || [];
+        const updatedDocs = currentDocs.filter(d => d.id !== id);
+        const updatedRecord = { ...selectedRecord, shippingDocuments: updatedDocs };
+        await updateTradeRecord(updatedRecord);
+        setSelectedRecord(updatedRecord);
+    };
+
+    const handleDocFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0]; if (!file) return; 
+        setUploadingDocFile(true); 
+        const reader = new FileReader(); 
+        reader.onload = async (ev) => { 
+            const base64 = ev.target?.result as string; 
+            try { 
+                const result = await uploadFile(file.name, base64); 
+                const current = shippingDocForm.attachments || [];
+                setShippingDocForm({ ...shippingDocForm, attachments: [...current, { fileName: result.fileName, url: result.url }] }); 
+            } catch (error) { alert('خطا در آپلود فایل'); } finally { setUploadingDocFile(false); } 
+        }; 
+        reader.readAsDataURL(file); e.target.value = '';
+    };
+
+    const removeDocAttachment = (index: number) => {
+        const current = shippingDocForm.attachments || [];
+        setShippingDocForm({ ...shippingDocForm, attachments: current.filter((_, i) => i !== index) });
+    };
+
 
     // --- Stage Modal Logic ---
     const handleOpenStage = (stage: TradeStage) => { if (!selectedRecord) return; const data = getStageData(selectedRecord, stage); setStageFormData(data); setEditingStage(stage); };
@@ -426,6 +529,7 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
                         <button onClick={() => setActiveTab('proforma')} className={`p-4 text-right hover:bg-white border-b border-gray-100 transition-colors flex items-center gap-3 ${activeTab === 'proforma' ? 'bg-white border-r-4 border-r-amber-500 text-amber-700 font-bold shadow-sm' : 'text-gray-600'}`}><FileSpreadsheet size={18} /> پروفرما و کالاها</button>
                         <button onClick={() => setActiveTab('insurance')} className={`p-4 text-right hover:bg-white border-b border-gray-100 transition-colors flex items-center gap-3 ${activeTab === 'insurance' ? 'bg-white border-r-4 border-r-purple-500 text-purple-700 font-bold shadow-sm' : 'text-gray-600'}`}><Shield size={18} /> بیمه و الحاقیه‌ها</button>
                         <button onClick={() => setActiveTab('currency_purchase')} className={`p-4 text-right hover:bg-white border-b border-gray-100 transition-colors flex items-center gap-3 ${activeTab === 'currency_purchase' ? 'bg-white border-r-4 border-r-green-500 text-green-700 font-bold shadow-sm' : 'text-gray-600'}`}><Coins size={18} /> خرید و تحویل ارز</button>
+                        <button onClick={() => setActiveTab('shipping_docs')} className={`p-4 text-right hover:bg-white border-b border-gray-100 transition-colors flex items-center gap-3 ${activeTab === 'shipping_docs' ? 'bg-white border-r-4 border-r-cyan-500 text-cyan-700 font-bold shadow-sm' : 'text-gray-600'}`}><Container size={18} /> اسناد حمل</button>
                     </div>
 
                     <div className="flex-1 overflow-y-auto p-6 bg-white">
@@ -477,6 +581,148 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
                                     <div className="bg-gray-50 p-3 border-b font-bold text-gray-700 flex justify-between items-center"><span>لیست پارت‌های خرید ارز (Tranches)</span><span className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded">ارز پایه: {selectedRecord.mainCurrency}</span></div>
                                     <div className="p-4 grid grid-cols-1 md:grid-cols-6 gap-2 bg-gray-50 border-b items-end"><div className="md:col-span-1"><label className="text-[10px] text-gray-500 block mb-1">مبلغ ارزی</label><input className="w-full border rounded p-1.5 text-sm dir-ltr" placeholder="Amount" value={newCurrencyTranche.amount || ''} onChange={e => setNewCurrencyTranche({...newCurrencyTranche, amount: Number(e.target.value)})} /></div><div className="md:col-span-1"><label className="text-[10px] text-gray-500 block mb-1">نوع ارز</label><select className="w-full border rounded p-1.5 text-sm" value={newCurrencyTranche.currencyType} onChange={e => setNewCurrencyTranche({...newCurrencyTranche, currencyType: e.target.value})}>{CURRENCIES.map(c => <option key={c.code} value={c.code}>{c.label}</option>)}</select></div><div className="md:col-span-1"><label className="text-[10px] text-gray-500 block mb-1">نرخ ریالی</label><input className="w-full border rounded p-1.5 text-sm dir-ltr" placeholder="Rate" value={newCurrencyTranche.rate || ''} onChange={e => setNewCurrencyTranche({...newCurrencyTranche, rate: Number(e.target.value)})} /></div><div className="md:col-span-1"><label className="text-[10px] text-gray-500 block mb-1">صرافی</label><input className="w-full border rounded p-1.5 text-sm" placeholder="Exchange" value={newCurrencyTranche.exchangeName || ''} onChange={e => setNewCurrencyTranche({...newCurrencyTranche, exchangeName: e.target.value})} /></div><div className="md:col-span-1"><label className="text-[10px] text-gray-500 block mb-1">تاریخ</label><input className="w-full border rounded p-1.5 text-sm" placeholder="Date" value={newCurrencyTranche.date || ''} onChange={e => setNewCurrencyTranche({...newCurrencyTranche, date: e.target.value})} /></div><div className="md:col-span-1"><button onClick={handleAddCurrencyTranche} className="w-full bg-green-600 text-white p-1.5 rounded text-sm hover:bg-green-700 h-[34px]">افزودن پارت</button></div></div>
                                     <table className="w-full text-sm text-right"><thead className="bg-gray-100 text-gray-600"><tr><th className="p-3 border-b">مبلغ</th><th className="p-3 border-b">ارز</th><th className="p-3 border-b">نرخ</th><th className="p-3 border-b">صرافی</th><th className="p-3 border-b">تاریخ خرید</th><th className="p-3 border-b text-center w-24">وضعیت تحویل</th><th className="p-3 border-b w-32">تاریخ تحویل</th><th className="p-3 border-b w-10"></th></tr></thead><tbody className="divide-y">{currencyForm.tranches?.map((t, idx) => (<tr key={t.id || idx}><td className="p-3 font-mono dir-ltr font-bold text-gray-800">{formatNumberString(t.amount.toString())}</td><td className="p-3">{t.currencyType}</td><td className="p-3 font-mono text-gray-500">{formatCurrency(t.rate || 0)}</td><td className="p-3">{t.exchangeName}</td><td className="p-3">{t.date}</td><td className="p-3 text-center"><input type="checkbox" checked={t.isDelivered || false} onChange={e => handleUpdateTrancheDelivery(t.id, e.target.checked, t.deliveryDate)} className="w-4 h-4 text-green-600 rounded cursor-pointer" /></td><td className="p-3"><input disabled={!t.isDelivered} className={`w-full border rounded px-1 py-0.5 text-xs ${!t.isDelivered ? 'bg-gray-100 text-gray-400' : 'bg-white'}`} placeholder="تاریخ..." value={t.deliveryDate || ''} onChange={e => handleUpdateTrancheDelivery(t.id, true, e.target.value)} /></td><td className="p-3 text-center"><button onClick={() => handleRemoveTranche(t.id)} className="text-gray-400 hover:text-red-500"><Trash2 size={16}/></button></td></tr>))}{(!currencyForm.tranches || currencyForm.tranches.length === 0) && (<tr><td colSpan={8} className="p-4 text-center text-gray-400">هیچ پارت ارزی ثبت نشده است.</td></tr>)}</tbody><tfoot className="bg-gray-50 font-bold"><tr><td className="p-3 border-t">جمع کل:</td><td className="p-3 border-t font-mono dir-ltr text-blue-600" colSpan={7}>{formatNumberString(currencyForm.purchasedAmount.toString())} {selectedRecord.mainCurrency}</td></tr></tfoot></table>
+                                </div>
+                            </div>
+                        )}
+
+                        {activeTab === 'shipping_docs' && (
+                            <div className="space-y-6 animate-fade-in">
+                                <h3 className="text-lg font-bold text-gray-800 border-b pb-2 mb-4 flex items-center gap-2"><Container size={20} className="text-cyan-600"/> مدیریت اسناد حمل</h3>
+                                
+                                <div className="flex bg-gray-100 p-1 rounded-xl mb-6">
+                                    <button onClick={() => { setActiveShippingSubTab('Commercial Invoice'); setShippingDocForm({ ...shippingDocForm, status: 'Draft', currency: selectedRecord.mainCurrency || 'EUR' }); }} className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-sm font-bold transition-all ${activeShippingSubTab === 'Commercial Invoice' ? 'bg-white shadow text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}><FileText size={16}/> اینفویس</button>
+                                    <button onClick={() => { setActiveShippingSubTab('Packing List'); setShippingDocForm({ ...shippingDocForm, status: 'Draft' }); }} className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-sm font-bold transition-all ${activeShippingSubTab === 'Packing List' ? 'bg-white shadow text-amber-600' : 'text-gray-500 hover:text-gray-700'}`}><Package size={16}/> پکینگ</button>
+                                    <button onClick={() => { setActiveShippingSubTab('Certificate of Origin'); setShippingDocForm({ ...shippingDocForm, status: 'Draft' }); }} className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-sm font-bold transition-all ${activeShippingSubTab === 'Certificate of Origin' ? 'bg-white shadow text-purple-600' : 'text-gray-500 hover:text-gray-700'}`}><Stamp size={16}/> گواهی مبدا</button>
+                                    <button onClick={() => { setActiveShippingSubTab('Bill of Lading'); setShippingDocForm({ ...shippingDocForm, status: 'Draft' }); }} className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-sm font-bold transition-all ${activeShippingSubTab === 'Bill of Lading' ? 'bg-white shadow text-cyan-600' : 'text-gray-500 hover:text-gray-700'}`}><Ship size={16}/> بارنامه</button>
+                                </div>
+
+                                {/* INPUT FORM */}
+                                <div className="bg-gray-50 border border-gray-200 rounded-xl p-4">
+                                    <h4 className="font-bold text-gray-700 mb-4 flex justify-between items-center">
+                                        <span>ثبت {activeShippingSubTab === 'Commercial Invoice' ? 'کامرشیال اینفویس' : activeShippingSubTab === 'Packing List' ? 'پکینگ لیست' : activeShippingSubTab === 'Certificate of Origin' ? 'گواهی مبدا' : 'بارنامه'} جدید</span>
+                                        <div className="flex bg-white rounded border p-0.5">
+                                            <button onClick={() => setShippingDocForm({ ...shippingDocForm, status: 'Draft' })} className={`px-3 py-0.5 text-xs rounded ${shippingDocForm.status === 'Draft' ? 'bg-yellow-100 text-yellow-700 font-bold' : 'text-gray-500'}`}>اولیه (Draft)</button>
+                                            <button onClick={() => setShippingDocForm({ ...shippingDocForm, status: 'Final' })} className={`px-3 py-0.5 text-xs rounded ${shippingDocForm.status === 'Final' ? 'bg-green-100 text-green-700 font-bold' : 'text-gray-500'}`}>نهایی (Final)</button>
+                                        </div>
+                                    </h4>
+                                    
+                                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
+                                        <div><label className="text-[10px] text-gray-500 block mb-1">شماره سند</label><input className="w-full border rounded p-2 text-sm" value={shippingDocForm.documentNumber || ''} onChange={e => setShippingDocForm({...shippingDocForm, documentNumber: e.target.value})} /></div>
+                                        <div><label className="text-[10px] text-gray-500 block mb-1">تاریخ سند</label><input className="w-full border rounded p-2 text-sm dir-ltr" placeholder="YYYY/MM/DD" value={shippingDocForm.documentDate || ''} onChange={e => setShippingDocForm({...shippingDocForm, documentDate: e.target.value})} /></div>
+                                        
+                                        {/* Dynamic Fields */}
+                                        {activeShippingSubTab === 'Commercial Invoice' && (
+                                            <>
+                                                <div><label className="text-[10px] text-gray-500 block mb-1">مبلغ</label><input type="number" className="w-full border rounded p-2 text-sm dir-ltr" value={shippingDocForm.amount || ''} onChange={e => setShippingDocForm({...shippingDocForm, amount: Number(e.target.value)})} /></div>
+                                                <div><label className="text-[10px] text-gray-500 block mb-1">ارز</label><select className="w-full border rounded p-2 text-sm" value={shippingDocForm.currency} onChange={e => setShippingDocForm({...shippingDocForm, currency: e.target.value})}>{CURRENCIES.map(c => <option key={c.code} value={c.code}>{c.label}</option>)}</select></div>
+                                            </>
+                                        )}
+
+                                        {activeShippingSubTab === 'Packing List' && (
+                                            <>
+                                                <div><label className="text-[10px] text-gray-500 block mb-1">وزن خالص (KG)</label><input type="number" className="w-full border rounded p-2 text-sm dir-ltr" value={shippingDocForm.netWeight || ''} onChange={e => setShippingDocForm({...shippingDocForm, netWeight: Number(e.target.value)})} /></div>
+                                                <div><label className="text-[10px] text-gray-500 block mb-1">وزن ناخالص (KG)</label><input type="number" className="w-full border rounded p-2 text-sm dir-ltr" value={shippingDocForm.grossWeight || ''} onChange={e => setShippingDocForm({...shippingDocForm, grossWeight: Number(e.target.value)})} /></div>
+                                                <div><label className="text-[10px] text-gray-500 block mb-1">تعداد بسته</label><input type="number" className="w-full border rounded p-2 text-sm dir-ltr" value={shippingDocForm.packagesCount || ''} onChange={e => setShippingDocForm({...shippingDocForm, packagesCount: Number(e.target.value)})} /></div>
+                                            </>
+                                        )}
+
+                                        {activeShippingSubTab === 'Certificate of Origin' && (
+                                             <div className="md:col-span-2"><label className="text-[10px] text-gray-500 block mb-1">اتاق بازرگانی (صادر کننده)</label><input className="w-full border rounded p-2 text-sm" value={shippingDocForm.chamberOfCommerce || ''} onChange={e => setShippingDocForm({...shippingDocForm, chamberOfCommerce: e.target.value})} /></div>
+                                        )}
+
+                                        {activeShippingSubTab === 'Bill of Lading' && (
+                                            <>
+                                                <div><label className="text-[10px] text-gray-500 block mb-1">نام کشتی / پرواز</label><input className="w-full border rounded p-2 text-sm" value={shippingDocForm.vesselName || ''} onChange={e => setShippingDocForm({...shippingDocForm, vesselName: e.target.value})} /></div>
+                                                <div><label className="text-[10px] text-gray-500 block mb-1">بندر مبدا</label><input className="w-full border rounded p-2 text-sm" value={shippingDocForm.portOfLoading || ''} onChange={e => setShippingDocForm({...shippingDocForm, portOfLoading: e.target.value})} /></div>
+                                                <div><label className="text-[10px] text-gray-500 block mb-1">بندر مقصد</label><input className="w-full border rounded p-2 text-sm" value={shippingDocForm.portOfDischarge || ''} onChange={e => setShippingDocForm({...shippingDocForm, portOfDischarge: e.target.value})} /></div>
+                                            </>
+                                        )}
+                                    </div>
+                                    
+                                    <div className="mb-4">
+                                        <label className="text-[10px] text-gray-500 block mb-1">توضیحات تکمیلی</label>
+                                        <input className="w-full border rounded p-2 text-sm" value={shippingDocForm.description || ''} onChange={e => setShippingDocForm({...shippingDocForm, description: e.target.value})} />
+                                    </div>
+
+                                    <div className="flex justify-between items-center border-t pt-3">
+                                         <div className="flex items-center gap-2">
+                                            <input type="file" ref={docFileInputRef} className="hidden" onChange={handleDocFileChange} />
+                                            <button onClick={() => docFileInputRef.current?.click()} className="text-xs bg-white border px-3 py-1.5 rounded hover:bg-gray-50 flex items-center gap-1" disabled={uploadingDocFile}>
+                                                {uploadingDocFile ? '...' : <><Upload size={12}/> افزودن فایل ضمیمه</>}
+                                            </button>
+                                            <div className="flex gap-2">
+                                                {shippingDocForm.attachments?.map((file, idx) => (
+                                                    <div key={idx} className="flex items-center gap-1 bg-white border px-2 py-0.5 rounded text-xs">
+                                                        <span className="truncate max-w-[100px]">{file.fileName}</span>
+                                                        <button onClick={() => removeDocAttachment(idx)} className="text-red-500"><X size={10}/></button>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                         </div>
+                                         <button onClick={handleSaveShippingDoc} className="bg-blue-600 text-white px-6 py-2 rounded-lg text-sm hover:bg-blue-700 flex items-center gap-2"><Save size={16}/> ذخیره در لیست</button>
+                                    </div>
+                                </div>
+
+                                {/* HISTORY TABLE */}
+                                <div className="border rounded-xl overflow-hidden shadow-sm">
+                                    <div className="bg-gray-100 p-3 text-sm font-bold text-gray-700 border-b">سوابق ثبت شده: {activeShippingSubTab}</div>
+                                    <table className="w-full text-sm text-right">
+                                        <thead className="bg-white text-gray-600">
+                                            <tr>
+                                                <th className="p-3 border-b w-20 text-center">وضعیت</th>
+                                                <th className="p-3 border-b">شماره سند</th>
+                                                <th className="p-3 border-b">تاریخ</th>
+                                                {activeShippingSubTab === 'Commercial Invoice' && <th className="p-3 border-b">مبلغ</th>}
+                                                {activeShippingSubTab === 'Packing List' && <th className="p-3 border-b">وزن ناخالص / خالص</th>}
+                                                {activeShippingSubTab === 'Certificate of Origin' && <th className="p-3 border-b">صادر کننده</th>}
+                                                {activeShippingSubTab === 'Bill of Lading' && <th className="p-3 border-b">مسیر حمل</th>}
+                                                <th className="p-3 border-b w-24">ضمائم</th>
+                                                <th className="p-3 border-b w-10"></th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y">
+                                            {(selectedRecord.shippingDocuments || [])
+                                                .filter(d => d.type === activeShippingSubTab)
+                                                .map(doc => (
+                                                <tr key={doc.id} className="bg-white hover:bg-gray-50">
+                                                    <td className="p-3 text-center">
+                                                        <span className={`px-2 py-1 rounded text-xs border ${doc.status === 'Final' ? 'bg-green-100 text-green-700 border-green-200' : 'bg-yellow-100 text-yellow-700 border-yellow-200'}`}>
+                                                            {doc.status === 'Final' ? 'نهایی' : 'اولیه'}
+                                                        </span>
+                                                    </td>
+                                                    <td className="p-3 font-medium">{doc.documentNumber}</td>
+                                                    <td className="p-3 text-gray-600 dir-ltr text-right">{doc.documentDate}</td>
+                                                    
+                                                    {activeShippingSubTab === 'Commercial Invoice' && (
+                                                        <td className="p-3 font-mono dir-ltr">{formatNumberString(doc.amount?.toString())} {doc.currency}</td>
+                                                    )}
+                                                    {activeShippingSubTab === 'Packing List' && (
+                                                        <td className="p-3 dir-ltr text-right">{doc.grossWeight} / {doc.netWeight} KG</td>
+                                                    )}
+                                                    {activeShippingSubTab === 'Certificate of Origin' && (
+                                                        <td className="p-3">{doc.chamberOfCommerce}</td>
+                                                    )}
+                                                    {activeShippingSubTab === 'Bill of Lading' && (
+                                                        <td className="p-3 text-xs">{doc.portOfLoading} <ArrowRight size={10} className="inline"/> {doc.portOfDischarge}</td>
+                                                    )}
+
+                                                    <td className="p-3">
+                                                        <div className="flex gap-1">
+                                                            {doc.attachments.map((a, i) => (
+                                                                <a key={i} href={a.url} target="_blank" className="text-blue-500 hover:text-blue-700 p-1 bg-blue-50 rounded" title={a.fileName}><Paperclip size={14}/></a>
+                                                            ))}
+                                                        </div>
+                                                    </td>
+                                                    <td className="p-3 text-center">
+                                                        <button onClick={() => handleDeleteShippingDoc(doc.id)} className="text-gray-400 hover:text-red-500"><Trash2 size={16}/></button>
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                            {(selectedRecord.shippingDocuments || []).filter(d => d.type === activeShippingSubTab).length === 0 && (
+                                                <tr><td colSpan={7} className="p-6 text-center text-gray-400 italic bg-white">هیچ سندی ثبت نشده است.</td></tr>
+                                            )}
+                                        </tbody>
+                                    </table>
                                 </div>
                             </div>
                         )}
