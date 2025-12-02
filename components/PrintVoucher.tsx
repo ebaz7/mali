@@ -127,9 +127,24 @@ const PrintVoucher: React.FC<PrintVoucherProps> = ({ order, onClose }) => {
       </div>
 
       {/* Voucher Container - A5 Landscape Ratio */}
-      <div id="print-area" className="bg-white w-[210mm] aspect-[1.414/1] mx-auto p-8 shadow-2xl print:shadow-none print:w-full print:h-full print:aspect-auto print:m-0 print:p-4 rounded-sm relative text-gray-900 flex flex-col justify-between">
+      <div id="print-area" className="bg-white w-[210mm] aspect-[1.414/1] mx-auto p-8 shadow-2xl print:shadow-none print:w-full print:h-full print:aspect-auto print:m-0 print:p-4 rounded-sm relative text-gray-900 flex flex-col justify-between overflow-hidden">
         
-        <div>
+        {/* Rejected Watermark/Stamp */}
+        {order.status === OrderStatus.REJECTED && (
+            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 border-8 border-red-600/30 text-red-600/30 font-black text-9xl rotate-[-25deg] p-4 rounded-3xl select-none z-0 pointer-events-none">
+                REJECTED
+            </div>
+        )}
+
+        {order.status === OrderStatus.REJECTED && order.rejectedBy && (
+             <div className="absolute top-10 left-10 border-4 border-red-700 text-red-700 rounded-xl p-2 rotate-[-15deg] opacity-90 mix-blend-multiply z-10 bg-white/80">
+                <div className="text-sm font-bold border-b-2 border-red-700 mb-1 text-center">درخواست رد شد</div>
+                <div className="text-xs text-center font-bold whitespace-nowrap mb-1">{order.rejectedBy}</div>
+                <div className="text-[10px] text-center font-bold">دلیل: {order.rejectionReason}</div>
+             </div>
+        )}
+
+        <div className="relative z-10">
             {/* Header */}
             <div className="border-b-2 border-gray-800 pb-4 mb-6 flex justify-between items-end">
                 <div className="text-right w-1/2">
@@ -204,7 +219,7 @@ const PrintVoucher: React.FC<PrintVoucherProps> = ({ order, onClose }) => {
         </div>
 
         {/* Footer / Signatures - 4 Columns */}
-        <div className="mt-6 pt-4 border-t-2 border-gray-800 print:mt-auto">
+        <div className="mt-6 pt-4 border-t-2 border-gray-800 print:mt-auto relative z-10">
             <div className="grid grid-cols-4 gap-4 text-center h-24 items-end">
                 <div className="flex flex-col items-center justify-end h-full relative">
                     <span className="text-xs font-bold text-gray-700 border-t border-dotted border-gray-400 w-full pt-2">درخواست کننده</span>

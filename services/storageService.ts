@@ -1,3 +1,4 @@
+
 import { PaymentOrder, User, UserRole, OrderStatus, SystemSettings, ChatMessage, ChatGroup, GroupTask, TradeRecord } from '../types';
 import { apiCall } from './apiService';
 
@@ -26,7 +27,10 @@ export const updateOrderStatus = async (id: string, status: OrderStatus, approve
           if (status === OrderStatus.APPROVED_MANAGER) updates.approverManager = approverUser.fullName;
           if (status === OrderStatus.APPROVED_CEO) updates.approverCeo = approverUser.fullName;
       }
-      if (status === OrderStatus.REJECTED && rejectionReason) updates.rejectionReason = rejectionReason;
+      if (status === OrderStatus.REJECTED) {
+          if (rejectionReason) updates.rejectionReason = rejectionReason;
+          updates.rejectedBy = approverUser.fullName; // Record who rejected it
+      }
       const updatedOrder = { ...order, ...updates };
       return await apiCall<PaymentOrder[]>(`/orders/${id}`, 'PUT', updatedOrder);
   }

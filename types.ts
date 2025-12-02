@@ -61,6 +61,7 @@ export interface PaymentOrder {
   
   // Rejection Logic
   rejectionReason?: string;
+  rejectedBy?: string; // New: Stores who rejected the order
 
   // Attachments
   attachments?: {

@@ -3,7 +3,7 @@ import React, { useState, useMemo } from 'react';
 import { PaymentOrder, OrderStatus } from '../types';
 import { formatCurrency } from '../constants';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts';
-import { TrendingUp, Clock, CheckCircle, Archive, Activity, Building2, X } from 'lucide-react';
+import { TrendingUp, Clock, CheckCircle, Archive, Activity, Building2, X, XCircle } from 'lucide-react';
 
 interface DashboardProps {
   orders: PaymentOrder[];
@@ -21,13 +21,14 @@ const Dashboard: React.FC<DashboardProps> = ({ orders, onViewArchive, onFilterBy
   const countPending = orders.filter(o => o.status === OrderStatus.PENDING).length;
   const countFin = orders.filter(o => o.status === OrderStatus.APPROVED_FINANCE).length;
   const countMgr = orders.filter(o => o.status === OrderStatus.APPROVED_MANAGER).length;
+  const countRejected = orders.filter(o => o.status === OrderStatus.REJECTED).length;
 
   const statusData = [
     { name: 'در انتظار مالی', value: countPending, color: '#fbbf24' },
     { name: 'در انتظار مدیریت', value: countFin, color: '#f59e0b' },
     { name: 'در انتظار مدیرعامل', value: countMgr, color: '#d97706' },
     { name: 'تایید نهایی', value: completedOrders.length, color: '#10b981' },
-    { name: 'رد شده', value: orders.filter(o => o.status === OrderStatus.REJECTED).length, color: '#ef4444' },
+    { name: 'رد شده', value: countRejected, color: '#ef4444' },
   ].filter(d => d.value > 0);
 
   const methodDataRaw: Record<string, number> = {};
@@ -43,11 +44,12 @@ const Dashboard: React.FC<DashboardProps> = ({ orders, onViewArchive, onFilterBy
   return (
     <div className="space-y-6 animate-fade-in">
       <h2 className="text-2xl font-bold text-gray-800 mb-6">داشبورد وضعیت مالی</h2>
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
          <div onClick={() => onFilterByStatus && onFilterByStatus(OrderStatus.PENDING)} className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex items-center justify-between cursor-pointer hover:shadow-md hover:border-yellow-300 transition-all"><div><p className="text-xs text-gray-500 mb-1">در انتظار مالی</p><p className="text-xl font-bold text-yellow-600">{countPending}</p></div><div className="bg-yellow-50 p-2 rounded-lg text-yellow-500"><Clock size={20}/></div></div>
          <div onClick={() => onFilterByStatus && onFilterByStatus(OrderStatus.APPROVED_FINANCE)} className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex items-center justify-between cursor-pointer hover:shadow-md hover:border-orange-300 transition-all"><div><p className="text-xs text-gray-500 mb-1">در انتظار مدیریت</p><p className="text-xl font-bold text-orange-600">{countFin}</p></div><div className="bg-orange-50 p-2 rounded-lg text-orange-500"><Activity size={20}/></div></div>
          <div onClick={() => onFilterByStatus && onFilterByStatus(OrderStatus.APPROVED_MANAGER)} className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex items-center justify-between cursor-pointer hover:shadow-md hover:border-amber-400 transition-all"><div><p className="text-xs text-gray-500 mb-1">در انتظار مدیرعامل</p><p className="text-xl font-bold text-amber-700">{countMgr}</p></div><div className="bg-amber-50 p-2 rounded-lg text-amber-600"><CheckCircle size={20}/></div></div>
          <div onClick={onViewArchive} className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex items-center justify-between cursor-pointer hover:shadow-md hover:border-green-300 transition-all"><div><p className="text-xs text-gray-500 mb-1">تایید نهایی شده</p><p className="text-xl font-bold text-green-600">{completedOrders.length}</p></div><div className="bg-green-50 p-2 rounded-lg text-green-500"><Archive size={20}/></div></div>
+         <div onClick={() => onFilterByStatus && onFilterByStatus(OrderStatus.REJECTED)} className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex items-center justify-between cursor-pointer hover:shadow-md hover:border-red-300 transition-all"><div><p className="text-xs text-gray-500 mb-1">درخواست‌های رد شده</p><p className="text-xl font-bold text-red-600">{countRejected}</p></div><div className="bg-red-50 p-2 rounded-lg text-red-500"><XCircle size={20}/></div></div>
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div onClick={() => onFilterByStatus && onFilterByStatus('pending_all')} className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex items-center gap-4 cursor-pointer hover:shadow-md transition-all group relative overflow-hidden"><div className="absolute right-0 top-0 w-1 h-full bg-amber-400 group-hover:w-1.5 transition-all"></div><div className="p-3 bg-amber-100 text-amber-600 rounded-xl"><Clock size={24} /></div><div><p className="text-sm text-gray-500 mb-1">کل سفارشات در جریان</p><p className="text-2xl font-bold text-gray-900">{pendingOrders.length}</p></div></div>

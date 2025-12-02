@@ -110,13 +110,13 @@ const EditOrderModal: React.FC<EditOrderModalProps> = ({ order, onClose, onSave 
     if (!formData.trackingNumber) { alert("شماره دستور پرداخت الزامی است."); return; }
     
     // When saving an edited order, if it was REJECTED, reset it to PENDING so it can be reviewed again
-    let newStatus = order.status;
+    // Also clear rejectedBy so the stamp disappears
     let updates: Partial<PaymentOrder> = {};
     if (order.status === OrderStatus.REJECTED) {
-        newStatus = OrderStatus.PENDING;
         updates = { 
             status: OrderStatus.PENDING, 
-            rejectionReason: undefined, // Clear the rejection reason
+            rejectionReason: undefined, 
+            rejectedBy: undefined, // Clear the rejecter
             approverFinancial: undefined, 
             approverManager: undefined, 
             approverCeo: undefined 
@@ -158,7 +158,7 @@ const EditOrderModal: React.FC<EditOrderModalProps> = ({ order, onClose, onSave 
                                 <span className="font-bold">دلیل رد شدن: </span>
                                 {order.rejectionReason}
                             </p>
-                            <p className="text-red-500 text-xs mt-2">با ذخیره تغییرات، درخواست مجدداً به وضعیت «در انتظار بررسی» تغییر خواهد کرد.</p>
+                            <p className="text-red-500 text-xs mt-2">با ذخیره تغییرات، درخواست مجدداً به وضعیت «در انتظار بررسی» تغییر خواهد کرد و از لیست رد شده‌ها خارج می‌شود.</p>
                         </div>
                     </div>
                 )}
