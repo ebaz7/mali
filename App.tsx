@@ -2,6 +2,8 @@
 
 
 
+
+
 import React, { useState, useEffect, useRef } from 'react';
 import Layout from './components/Layout';
 import Dashboard from './components/Dashboard';
@@ -33,49 +35,19 @@ function App() {
   const idleTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const IDLE_LIMIT = 60 * 60 * 1000; 
 
-  // --- History API Management for Back Button ---
+  // History API Management
   const safePushState = (state: any, title: string, url?: string) => {
-      try {
-          if (url) {
-              window.history.pushState(state, title, url);
-          } else {
-              window.history.pushState(state, title);
-          }
-      } catch (e) {
-          // If setting URL fails (SecurityError in sandboxed environments), try without URL
-          try {
-              window.history.pushState(state, title);
-          } catch (e2) {
-              console.warn("History API unavailable");
-          }
-      }
+      try { if (url) window.history.pushState(state, title, url); else window.history.pushState(state, title); } catch (e) { try { window.history.pushState(state, title); } catch(e2) {} }
   };
-
   const safeReplaceState = (state: any, title: string, url?: string) => {
-      try {
-          if (url) {
-              window.history.replaceState(state, title, url);
-          } else {
-              window.history.replaceState(state, title);
-          }
-      } catch (e) {
-          try {
-              window.history.replaceState(state, title);
-          } catch (e2) {
-              console.warn("History API unavailable");
-          }
-      }
+      try { if (url) window.history.replaceState(state, title, url); else window.history.replaceState(state, title); } catch (e) { try { window.history.replaceState(state, title); } catch(e2) {} }
   };
-
   const setActiveTab = (tab: string, addToHistory = true) => {
       setActiveTabState(tab);
-      if (addToHistory) {
-          safePushState({ tab }, '', `#${tab}`);
-      }
+      if (addToHistory) safePushState({ tab }, '', `#${tab}`);
   };
 
   useEffect(() => {
-    // Handle initial load or refresh
     const hash = window.location.hash.replace('#', '');
     if (hash && ['dashboard', 'create', 'manage', 'chat', 'trade', 'users', 'settings'].includes(hash)) {
         setActiveTabState(hash);
@@ -83,25 +55,12 @@ function App() {
     } else {
         safeReplaceState({ tab: 'dashboard' }, '', '#dashboard');
     }
-
-    const handlePopState = (event: PopStateEvent) => {
-        if (event.state && event.state.tab) {
-            setActiveTabState(event.state.tab);
-        } else {
-            // Default to dashboard if no state or root
-            setActiveTabState('dashboard');
-        }
-    };
-
+    const handlePopState = (event: PopStateEvent) => { if (event.state && event.state.tab) setActiveTabState(event.state.tab); else setActiveTabState('dashboard'); };
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
   }, []);
-  // ---------------------------------------------
 
-  useEffect(() => {
-    const user = getCurrentUser();
-    if (user) setCurrentUser(user);
-  }, []);
+  useEffect(() => { const user = getCurrentUser(); if (user) setCurrentUser(user); }, []);
 
   const handleLogout = () => {
     setCurrentUser(null);
@@ -133,7 +92,6 @@ function App() {
     try {
         const [ordersData, settingsData] = await Promise.all([getOrders(), getSettings()]);
         setSettings(settingsData);
-        // Only run notification check if it's NOT the first load (prevents old notifications on refresh)
         if (!isFirstLoad.current && silent) {
             checkForNotifications(prevOrdersRef.current, ordersData, currentUser);
         }
@@ -144,24 +102,30 @@ function App() {
   };
 
   const checkForNotifications = (oldList: PaymentOrder[], newList: PaymentOrder[], user: User) => {
-     // 1. Detect New Orders (Only for Financial Manager or Admin)
+     // 1. Detect New Orders
      const newOrders = newList.filter(n => !oldList.find(o => o.id === n.id));
      newOrders.forEach(order => {
-        if (user.role === UserRole.FINANCIAL) {
+        if (user.role === UserRole.FINANCIAL || user.role === UserRole.ADMIN) {
              const title = 'درخواست پرداخت جدید'; 
-             const body = `شماره: ${order.trackingNumber}`; 
+             const body = `شماره: ${order.trackingNumber} | درخواست کننده: ${order.requester}`; 
              sendNotification(title, body); 
              addAppNotification(title, body);
         }
      });
 
-     // 2. Detect Status Changes (Sequential Workflow)
+     // 2. Detect Status Changes
      newList.forEach(newItem => {
         const oldItem = oldList.find(o => o.id === newItem.id);
         if (oldItem && oldItem.status !== newItem.status) {
            const newStatus = newItem.status;
+           const isAdmin = user.role === UserRole.ADMIN;
            
-           // A. Financial Approved -> Notify MANAGER
+           // Notify Admin of ANY change
+           if (isAdmin) {
+               addAppNotification(`تغییر وضعیت (${newItem.trackingNumber})`, `وضعیت جدید: ${newStatus}`);
+           }
+
+           // Specific Role Notifications
            if (newStatus === OrderStatus.APPROVED_FINANCE) {
                if (user.role === UserRole.MANAGER) {
                    const title = 'تایید مالی شد';
@@ -170,8 +134,6 @@ function App() {
                    addAppNotification(title, body);
                }
            }
-           
-           // B. Manager Approved -> Notify CEO
            else if (newStatus === OrderStatus.APPROVED_MANAGER) {
                if (user.role === UserRole.CEO) {
                    const title = 'تایید مدیریت شد';
@@ -180,8 +142,6 @@ function App() {
                    addAppNotification(title, body);
                }
            }
-           
-           // C. CEO Approved -> Notify Financial (to Pay) + Requester
            else if (newStatus === OrderStatus.APPROVED_CEO) {
                if (user.role === UserRole.FINANCIAL) {
                    const title = 'تایید نهایی شد (پرداخت)';
@@ -196,8 +156,6 @@ function App() {
                    addAppNotification(title, body);
                }
            }
-           
-           // D. Rejected -> Notify Requester
            else if (newStatus === OrderStatus.REJECTED) {
                if (newItem.requester === user.fullName) {
                    const title = 'درخواست رد شد';
