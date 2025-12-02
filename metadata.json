@@ -1,5 +1,7 @@
 {
   "name": "Copy1 of PaymentOrderPro",
   "description": "A comprehensive payment order management system with approval workflows and formal printing capabilities, designed for small businesses.",
-  "requestFramePermissions": []
+  "requestFramePermissions": [
+    "microphone"
+  ]
 }

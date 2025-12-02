@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { User, TradeRecord, TradeStage, TradeItem, SystemSettings, InsuranceEndorsement, CurrencyPurchaseData, TradeTransaction, CurrencyTranche, TradeStageData, ShippingDocument, ShippingDocType, DocStatus, InvoiceItem, InspectionData, InspectionPayment, InspectionCertificate } from '../types';
 import { getTradeRecords, saveTradeRecord, updateTradeRecord, deleteTradeRecord, getSettings, uploadFile } from '../services/storageService';
 import { generateUUID, formatCurrency, formatNumberString, deformatNumberString, parsePersianDate, getCurrentShamsiDate } from '../constants';
-import { Container, Plus, Search, CheckCircle2, Circle, Save, Trash2, X, Package, ArrowRight, History, Banknote, Coins, Filter, Wallet, FileSpreadsheet, Shield, LayoutDashboard, Printer, FileDown, PieChart as PieIcon, BarChart3, ListFilter, Paperclip, Upload, Calendar, Building2, Layers, FolderOpen, ChevronLeft, ArrowLeft, Home, Calculator, Ship, FileText, Scale, Stamp, AlertCircle, Plane, ClipboardCheck, Microscope, Eye, RefreshCw } from 'lucide-react';
+import { Container, Plus, Search, CheckCircle2, Circle, Save, Trash2, X, Package, ArrowRight, History, Banknote, Coins, Filter, Wallet, FileSpreadsheet, Shield, LayoutDashboard, Printer, FileDown, PieChart as LucidePieChart, BarChart3, ListFilter, Paperclip, Upload, Calendar, Building2, Layers, FolderOpen, ChevronLeft, ArrowLeft, Home, Calculator, Ship, FileText, Scale, Stamp, AlertCircle, Plane, ClipboardCheck, Microscope, Eye, RefreshCw } from 'lucide-react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts';
 
 interface TradeModuleProps {
@@ -503,7 +503,7 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
             return;
         }
 
-        if (confirm(`آیا مطمئن هستید؟ لیست کالاهای پرونده (پروفرما) و هزینه حمل با اطلاعات جمع‌آوری شده از اینویس‌های نهایی جایگزین خواهد شد. کالاهای هم‌نام تجمیع می‌شوند.${finalCurrency ? `\nهمچنین ارز پایه پرونده به ${finalCurrency} تغییر می‌کند.` : ''}`)) {
+        if (confirm(`آیا مطمئن هستید؟ لیست کالاهای پرونده (پروفرما) و هزینه حمل با اطلاعات جمع‌آوری شده از اینویس‌های نهایی جایگزین می‌شود. کالاهای هم‌نام تجمیع می‌شوند.${finalCurrency ? `\nهمچنین ارز پایه پرونده به ${finalCurrency} تغییر می‌کند.` : ''}`)) {
             // Convert InvoiceItems to TradeItems
             const tradeItems: TradeItem[] = finalItems.map(i => ({
                 id: generateUUID(),
@@ -650,7 +650,9 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
                     <button onClick={() => { setActiveReport('insurance'); setReportFilterCompany(''); setReportFilterInternalCompany(''); }} className={`p-3 rounded-lg text-right text-sm flex items-center gap-3 transition-colors whitespace-nowrap ${activeReport === 'insurance' ? 'bg-indigo-50 text-indigo-700 font-bold' : 'hover:bg-gray-50 text-gray-600'}`}><Shield size={18}/> گزارش بیمه</button>
                     <button onClick={() => { setActiveReport('inspection'); setReportFilterCompany(''); setReportFilterInternalCompany(''); }} className={`p-3 rounded-lg text-right text-sm flex items-center gap-3 transition-colors whitespace-nowrap ${activeReport === 'inspection' ? 'bg-rose-50 text-rose-700 font-bold' : 'hover:bg-gray-50 text-gray-600'}`}><Microscope size={18}/> گزارش بازرسی</button>
                     <button onClick={() => { setActiveReport('shipping'); setReportFilterCompany(''); setReportFilterInternalCompany(''); }} className={`p-3 rounded-lg text-right text-sm flex items-center gap-3 transition-colors whitespace-nowrap ${activeReport === 'shipping' ? 'bg-cyan-50 text-cyan-700 font-bold' : 'hover:bg-gray-50 text-gray-600'}`}><Container size={18}/> در حال حمل</button>
-                    <div className="mt-auto pt-4 border-t hidden md:block"><button onClick={() => setViewMode('dashboard')} className="w-full p-3 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg flex items-center justify-center gap-2 text-sm"><Home size={16}/> بازگشت به داشبورد</button></div>
+                    
+                    {/* VISIBLE ON MOBILE NOW */}
+                    <div className="mt-auto pt-4 border-t md:block"><button onClick={() => setViewMode('dashboard')} className="w-full p-3 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg flex items-center justify-center gap-2 text-sm whitespace-nowrap"><Home size={16}/> بازگشت به داشبورد</button></div>
                 </div>
 
                 <div className="flex-1 p-4 md:p-8 overflow-y-auto">
@@ -1300,7 +1302,7 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
                         />
                     </div>
                     <div className="flex w-full sm:w-auto gap-2">
-                        <button onClick={() => setViewMode('reports')} className="flex-1 sm:flex-none bg-gray-100 text-gray-700 px-4 py-2.5 rounded-xl font-medium hover:bg-gray-200 flex items-center justify-center gap-2 transition-colors"><PieIcon size={20}/> گزارشات</button>
+                        <button onClick={() => setViewMode('reports')} className="flex-1 sm:flex-none bg-gray-100 text-gray-700 px-4 py-2.5 rounded-xl font-medium hover:bg-gray-200 flex items-center justify-center gap-2 transition-colors"><LucidePieChart size={20}/> گزارشات</button>
                         <button onClick={() => setShowNewModal(true)} className="flex-1 sm:flex-none bg-blue-600 text-white px-4 py-2.5 rounded-xl font-bold hover:bg-blue-700 flex items-center justify-center gap-2 shadow-lg shadow-blue-600/20 transition-all"><Plus size={20}/> پرونده جدید</button>
                     </div>
                 </div>

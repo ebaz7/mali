@@ -1,7 +1,7 @@
 
 
 import React, { useState, useEffect, useRef } from 'react';
-import { LayoutDashboard, PlusCircle, ListChecks, FileText, Users, LogOut, User as UserIcon, Settings, Bell, BellOff, MessageSquare, X, Check, Container, KeyRound, Save, Upload, Camera, Download, Share } from 'lucide-react';
+import { LayoutDashboard, PlusCircle, ListChecks, FileText, Users, LogOut, User as UserIcon, Settings, Bell, BellOff, MessageSquare, X, Check, Container, KeyRound, Save, Upload, Camera, Download, Share, ChevronRight, Home } from 'lucide-react';
 import { User, UserRole, AppNotification, SystemSettings } from '../types';
 import { logout, hasPermission, getRolePermissions, updateUser } from '../services/authService';
 import { requestNotificationPermission, setNotificationPreference, isNotificationEnabledInApp } from '../services/notificationService';
@@ -266,7 +266,10 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab, curr
       </aside>
 
       {/* Mobile Bottom Navigation */}
-      <div className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t p-2 flex justify-around z-50 no-print shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)] overflow-x-auto safe-pb">
+      <div 
+        className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t p-2 flex justify-around z-50 no-print shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)] overflow-x-auto safe-pb"
+        style={{ paddingBottom: 'calc(8px + env(safe-area-inset-bottom))', height: 'calc(60px + env(safe-area-inset-bottom))' }}
+      >
         {navItems.map((item) => { const Icon = item.icon; return (<button key={item.id} onClick={() => setActiveTab(item.id)} className={`p-2 rounded-lg flex flex-col items-center text-xs min-w-[60px] ${activeTab === item.id ? 'text-blue-600 font-bold' : 'text-gray-500'}`}><Icon size={22} /><span className="mt-1 whitespace-nowrap text-[10px]">{item.label}</span></button>); })}
         <button onClick={handleLogout} className="p-2 rounded-lg flex flex-col items-center text-xs text-red-500 min-w-[60px]"><LogOut size={22} /><span className="mt-1 text-[10px]">خروج</span></button>
       </div>
@@ -274,13 +277,22 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab, curr
       <main className="flex-1 flex flex-col h-[100dvh] overflow-hidden relative min-w-0">
           {/* Mobile Header */}
           <header className="bg-white shadow-sm p-4 md:hidden no-print flex items-center justify-between shrink-0 relative z-40">
-              <div className="flex items-center gap-2" onClick={() => setShowProfileModal(true)}>
-                 <div className="w-8 h-8 rounded-full bg-slate-200 overflow-hidden border border-gray-300">
-                    {currentUser.avatar ? <img src={currentUser.avatar} alt="" className="w-full h-full object-cover"/> : <UserIcon size={16} className="text-gray-500 m-2" />}
-                 </div>
-                 <div>
-                     <h1 className="font-bold text-gray-800 text-sm">سیستم مالی</h1>
-                     <div className="text-[10px] text-gray-500">{currentUser.fullName}</div>
+              <div className="flex items-center gap-3">
+                 {/* Back Button Logic */}
+                 {activeTab !== 'dashboard' && (
+                     <button onClick={() => setActiveTab('dashboard')} className="p-1.5 -mr-2 text-gray-600 hover:bg-gray-100 rounded-full transition-colors">
+                         <ChevronRight size={24} />
+                     </button>
+                 )}
+
+                 <div className="flex items-center gap-2" onClick={() => setShowProfileModal(true)}>
+                    <div className="w-8 h-8 rounded-full bg-slate-200 overflow-hidden border border-gray-300">
+                        {currentUser.avatar ? <img src={currentUser.avatar} alt="" className="w-full h-full object-cover"/> : <UserIcon size={16} className="text-gray-500 m-2" />}
+                    </div>
+                    <div>
+                        <h1 className="font-bold text-gray-800 text-sm">{activeTab === 'dashboard' ? 'سیستم مالی' : navItems.find(i => i.id === activeTab)?.label}</h1>
+                        <div className="text-[10px] text-gray-500">{currentUser.fullName}</div>
+                    </div>
                  </div>
               </div>
               <div className="flex items-center gap-2">
@@ -300,7 +312,7 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab, curr
               </div>
           </header>
           
-          <div className="flex-1 overflow-auto bg-gray-50 pb-20 md:pb-0 min-w-0">
+          <div className="flex-1 overflow-auto bg-gray-50 pb-[calc(80px+env(safe-area-inset-bottom))] md:pb-0 min-w-0">
              <div className="p-4 md:p-8 max-w-7xl mx-auto min-h-full min-w-0">
                  {children}
              </div>

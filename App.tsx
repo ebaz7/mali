@@ -18,7 +18,7 @@ import { generateUUID } from './constants';
 
 function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
-  const [activeTab, setActiveTab] = useState('dashboard');
+  const [activeTab, setActiveTabState] = useState('dashboard');
   const [orders, setOrders] = useState<PaymentOrder[]>([]);
   const [settings, setSettings] = useState<SystemSettings | undefined>(undefined);
   const [loading, setLoading] = useState(false);
@@ -29,6 +29,71 @@ function App() {
   const isFirstLoad = useRef(true);
   const idleTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const IDLE_LIMIT = 60 * 60 * 1000; 
+
+  // --- History API Management for Back Button ---
+  const safePushState = (state: any, title: string, url?: string) => {
+      try {
+          if (url) {
+              window.history.pushState(state, title, url);
+          } else {
+              window.history.pushState(state, title);
+          }
+      } catch (e) {
+          // If setting URL fails (SecurityError in sandboxed environments), try without URL
+          try {
+              window.history.pushState(state, title);
+          } catch (e2) {
+              console.warn("History API unavailable");
+          }
+      }
+  };
+
+  const safeReplaceState = (state: any, title: string, url?: string) => {
+      try {
+          if (url) {
+              window.history.replaceState(state, title, url);
+          } else {
+              window.history.replaceState(state, title);
+          }
+      } catch (e) {
+          try {
+              window.history.replaceState(state, title);
+          } catch (e2) {
+              console.warn("History API unavailable");
+          }
+      }
+  };
+
+  const setActiveTab = (tab: string, addToHistory = true) => {
+      setActiveTabState(tab);
+      if (addToHistory) {
+          safePushState({ tab }, '', `#${tab}`);
+      }
+  };
+
+  useEffect(() => {
+    // Handle initial load or refresh
+    const hash = window.location.hash.replace('#', '');
+    if (hash && ['dashboard', 'create', 'manage', 'chat', 'trade', 'users', 'settings'].includes(hash)) {
+        setActiveTabState(hash);
+        safeReplaceState({ tab: hash }, '', `#${hash}`);
+    } else {
+        safeReplaceState({ tab: 'dashboard' }, '', '#dashboard');
+    }
+
+    const handlePopState = (event: PopStateEvent) => {
+        if (event.state && event.state.tab) {
+            setActiveTabState(event.state.tab);
+        } else {
+            // Default to dashboard if no state or root
+            setActiveTabState('dashboard');
+        }
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+  // ---------------------------------------------
 
   useEffect(() => {
     const user = getCurrentUser();
