@@ -1,5 +1,4 @@
 
-
 import express from 'express';
 import cors from 'cors';
 import fs from 'fs';
@@ -20,6 +19,29 @@ if (!fs.existsSync(BACKUPS_DIR)) fs.mkdirSync(BACKUPS_DIR);
 
 app.use(cors());
 app.use(express.json({ limit: '200mb' })); 
+
+// --- SECURITY: Force HTTPS & Trust Proxy ---
+// This ensures that if Cloudflare sends a request, we know if it was HTTPS or HTTP.
+app.enable('trust proxy');
+
+app.use((req, res, next) => {
+    // 1. Allow localhost/private IPs to be insecure (for testing inside the VPS or local network)
+    const isLocal = req.hostname === 'localhost' || req.hostname === '127.0.0.1' || req.hostname.startsWith('192.168.') || req.hostname.startsWith('10.');
+    
+    // 2. If it's a local request, proceed.
+    if (isLocal) return next();
+
+    // 3. Check protocol. Cloudflare sets 'x-forwarded-proto'.
+    // If user is on HTTP, redirect to HTTPS.
+    if (req.secure || req.headers['x-forwarded-proto'] === 'https') {
+        next();
+    } else {
+        // Redirect to HTTPS
+        res.redirect(`https://${req.headers.host}${req.url}`);
+    }
+});
+// -------------------------------------------
+
 app.use(express.static(path.join(__dirname, 'dist')));
 app.use('/uploads', express.static(UPLOADS_DIR));
 
