@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { User, TradeRecord, TradeStage, TradeItem, SystemSettings, InsuranceEndorsement, CurrencyPurchaseData, TradeTransaction, CurrencyTranche, TradeStageData, ShippingDocument, ShippingDocType, DocStatus, InvoiceItem, InspectionData, InspectionPayment, InspectionCertificate, ClearanceData, WarehouseReceipt, ClearancePayment, GreenLeafData, GreenLeafCustomsDuty, GreenLeafGuarantee, GreenLeafTax, GreenLeafRoadToll } from '../types';
 import { getTradeRecords, saveTradeRecord, updateTradeRecord, deleteTradeRecord, getSettings, uploadFile } from '../services/storageService';
 import { generateUUID, formatCurrency, formatNumberString, deformatNumberString, parsePersianDate, formatDate, calculateDaysDiff } from '../constants';
-import { Container, Plus, Search, CheckCircle2, Save, Trash2, X, Package, ArrowRight, History, Banknote, Coins, Wallet, FileSpreadsheet, Shield, LayoutDashboard, Printer, FileDown, Paperclip, Building2, FolderOpen, Home, Calculator, FileText, Microscope, ListFilter, Warehouse, Calendar, PieChart, BarChart, Clock, Leaf, Scale, ShieldCheck, Percent, Truck, CheckSquare, Square, ToggleLeft, ToggleRight } from 'lucide-react';
+import { Container, Plus, Search, CheckCircle2, Save, Trash2, X, Package, ArrowRight, History, Banknote, Coins, Wallet, FileSpreadsheet, Shield, LayoutDashboard, Printer, FileDown, Paperclip, Building2, FolderOpen, Home, Calculator, FileText, Microscope, ListFilter, Warehouse, Calendar, PieChart, BarChart, Clock, Leaf, Scale, ShieldCheck, Percent, Truck, CheckSquare, Square, ToggleLeft, ToggleRight, DollarSign } from 'lucide-react';
 
 interface TradeModuleProps {
     currentUser: User;
@@ -462,6 +462,12 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
     if (selectedRecord && viewMode === 'details') {
         const totalRial = STAGES.reduce((sum, stage) => sum + (selectedRecord.stages[stage]?.costRial || 0), 0);
         const totalCurrency = STAGES.reduce((sum, stage) => sum + (selectedRecord.stages[stage]?.costCurrency || 0), 0);
+        
+        // Calculate Cost Price (Final Price)
+        const totalWeight = selectedRecord.items.reduce((sum, item) => sum + item.weight, 0);
+        const exchangeRate = selectedRecord.exchangeRate || 0;
+        const grandTotalRial = totalRial + (totalCurrency * exchangeRate);
+        const costPerKg = totalWeight > 0 ? grandTotalRial / totalWeight : 0;
 
         return (
             <div className="flex flex-col h-[calc(100vh-100px)] animate-fade-in relative">
@@ -954,6 +960,57 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
                         <div className="mt-auto border-t pt-4">
                             <div className="flex justify-between items-center mb-2"><span className="font-bold text-gray-700">جمع ریالی:</span><span className="font-mono font-bold">{formatCurrency(totalRial)}</span></div>
                             <div className="flex justify-between items-center"><span className="font-bold text-gray-700">جمع ارزی:</span><span className="font-mono font-bold text-blue-600">{formatCurrency(totalCurrency).replace('ریال', selectedRecord.mainCurrency || '')}</span></div>
+                            
+                            {/* Cost Price Calculation Section */}
+                            <div className="mt-4 pt-4 border-t border-gray-200">
+                                <h4 className="font-bold text-gray-800 text-sm mb-2 flex items-center gap-1">
+                                    <Scale size={16}/> محاسبه قیمت تمام شده
+                                </h4>
+                                
+                                <div className="mb-3">
+                                    <label className="text-[10px] text-gray-500 block mb-1">نرخ ارز محاسباتی (ریال)</label>
+                                    <input 
+                                        type="text" 
+                                        className="w-full border rounded p-1 text-sm font-mono text-center bg-yellow-50"
+                                        placeholder="0"
+                                        value={formatNumberString(selectedRecord.exchangeRate)}
+                                        onChange={(e) => {
+                                            const val = deformatNumberString(e.target.value);
+                                            const updated = { ...selectedRecord, exchangeRate: val };
+                                            updateTradeRecord(updated); // Optimistic UI
+                                            setSelectedRecord(updated);
+                                        }}
+                                    />
+                                </div>
+
+                                {totalWeight > 0 && (
+                                    <div className="space-y-2">
+                                        <div className="text-xs bg-gray-100 p-2 rounded flex justify-between">
+                                             <span>وزن کل:</span>
+                                             <span className="font-bold">{totalWeight} KG</span>
+                                        </div>
+                                        <div className="text-xs bg-gray-100 p-2 rounded flex justify-between">
+                                             <span>هزینه هر کیلو:</span>
+                                             <span className="font-bold text-blue-600">{formatCurrency(Math.round(costPerKg))}</span>
+                                        </div>
+
+                                        <div className="mt-2 space-y-2 max-h-40 overflow-y-auto pr-1">
+                                            {selectedRecord.items.map((item, idx) => {
+                                                 const itemFinalCost = Math.round(item.weight * costPerKg);
+                                                 return (
+                                                     <div key={idx} className="bg-gray-50 p-2 rounded border text-xs">
+                                                         <div className="font-bold text-gray-700 truncate">{item.name}</div>
+                                                         <div className="flex justify-between mt-1 items-center">
+                                                             <span className="text-gray-500">{item.weight} KG</span>
+                                                             <span className="font-bold text-green-700">{formatCurrency(itemFinalCost)}</span>
+                                                         </div>
+                                                     </div>
+                                                 )
+                                            })}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
                         </div>
                     </div>
                 </div>
