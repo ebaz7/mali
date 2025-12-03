@@ -2,15 +2,18 @@
 import React, { useState } from 'react';
 import { PaymentOrder, OrderStatus, PaymentMethod, SystemSettings } from '../types';
 import { formatCurrency, formatDate } from '../constants';
-import { X, Printer, Image as ImageIcon, FileDown, Loader2 } from 'lucide-react';
+import { X, Printer, Image as ImageIcon, FileDown, Loader2, CheckCircle, XCircle, Pencil } from 'lucide-react';
 
 interface PrintVoucherProps {
   order: PaymentOrder;
   onClose: () => void;
   settings?: SystemSettings;
+  onApprove?: () => void;
+  onReject?: () => void;
+  onEdit?: () => void;
 }
 
-const PrintVoucher: React.FC<PrintVoucherProps> = ({ order, onClose, settings }) => {
+const PrintVoucher: React.FC<PrintVoucherProps> = ({ order, onClose, settings, onApprove, onReject, onEdit }) => {
   const [processing, setProcessing] = useState(false);
 
   const handlePrint = () => {
@@ -88,41 +91,62 @@ const PrintVoucher: React.FC<PrintVoucherProps> = ({ order, onClose, settings })
   );
 
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto print:p-0 print:static print:bg-white print:block">
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto print:p-0 print:static print:bg-white print:block animate-fade-in">
       {/* Controls */}
       <div className="absolute top-0 left-0 right-0 p-4 flex justify-between items-start no-print z-50 pointer-events-none">
-         <div className="bg-white p-3 rounded-xl shadow-lg pointer-events-auto flex flex-col gap-3 w-full max-w-md mx-auto mt-10 md:mt-0">
-             <div className="flex items-center justify-between">
-                 <h3 className="font-bold text-gray-700 text-sm">تنظیمات و خروجی</h3>
+         <div className="bg-white p-3 rounded-xl shadow-lg pointer-events-auto flex flex-col gap-3 w-full max-w-lg mx-auto mt-10 md:mt-0">
+             <div className="flex items-center justify-between border-b pb-2 mb-1">
+                 <h3 className="font-bold text-gray-800 text-base">جزئیات و عملیات</h3>
                  <button onClick={onClose} className="text-gray-400 hover:text-red-500"><X size={20}/></button>
              </div>
              
-             <div className="grid grid-cols-2 gap-2">
+             {/* Main Actions (Approve/Reject/Edit) */}
+             {(onApprove || onReject || onEdit) && (
+                <div className="flex gap-2 pb-3 border-b border-gray-100">
+                    {onApprove && (
+                        <button onClick={onApprove} className="flex-1 bg-green-600 hover:bg-green-700 text-white py-2 rounded-lg flex items-center justify-center gap-1.5 font-bold shadow-md shadow-green-600/20">
+                            <CheckCircle size={18} /> تایید درخواست
+                        </button>
+                    )}
+                    {onReject && (
+                        <button onClick={onReject} className="flex-1 bg-red-500 hover:bg-red-600 text-white py-2 rounded-lg flex items-center justify-center gap-1.5 font-bold shadow-md shadow-red-500/20">
+                            <XCircle size={18} /> رد درخواست
+                        </button>
+                    )}
+                    {onEdit && (
+                        <button onClick={onEdit} className="bg-amber-100 text-amber-700 hover:bg-amber-200 px-3 py-2 rounded-lg flex items-center justify-center gap-1.5 font-bold" title="ویرایش">
+                            <Pencil size={18} />
+                        </button>
+                    )}
+                </div>
+             )}
+
+             {/* Output Options */}
+             <div className="grid grid-cols-3 gap-2">
                  <button 
                     onClick={handleDownloadImage}
                     disabled={processing}
-                    className="bg-purple-50 text-purple-700 hover:bg-purple-100 py-2 rounded-lg flex items-center justify-center gap-1 text-xs font-bold transition-colors"
+                    className="bg-gray-100 text-gray-700 hover:bg-gray-200 py-2 rounded-lg flex items-center justify-center gap-1 text-xs font-bold transition-colors"
                  >
-                     {processing ? <Loader2 size={16} className="animate-spin"/> : <ImageIcon size={16} />}
-                     دانلود عکس
+                     {processing ? <Loader2 size={14} className="animate-spin"/> : <ImageIcon size={14} />}
+                     عکس
                  </button>
                  <button 
                     onClick={handleDownloadPDF}
                     disabled={processing}
-                    className="bg-red-50 text-red-700 hover:bg-red-100 py-2 rounded-lg flex items-center justify-center gap-1 text-xs font-bold transition-colors"
+                    className="bg-gray-100 text-gray-700 hover:bg-gray-200 py-2 rounded-lg flex items-center justify-center gap-1 text-xs font-bold transition-colors"
                  >
-                     {processing ? <Loader2 size={16} className="animate-spin"/> : <FileDown size={16} />}
-                     دانلود PDF
+                     {processing ? <Loader2 size={14} className="animate-spin"/> : <FileDown size={14} />}
+                     PDF
+                 </button>
+                 <button 
+                    onClick={handlePrint}
+                    className="bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-lg flex items-center justify-center gap-1 text-xs font-bold transition-colors"
+                 >
+                     <Printer size={14} />
+                     چاپ
                  </button>
              </div>
-
-             <button 
-                onClick={handlePrint}
-                className="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-lg flex items-center justify-center gap-2"
-             >
-                 <Printer size={18} />
-                 چاپ مستقیم
-             </button>
          </div>
       </div>
 

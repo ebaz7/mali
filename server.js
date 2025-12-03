@@ -182,6 +182,33 @@ const sendTelegramFile = async (chatId, filePath, caption = '', type = 'document
     }
 };
 
+// Function to set the bot menu commands
+const setBotCommands = async () => {
+    const db = getDb();
+    const token = db.settings.telegramBotToken;
+    if (!token) return;
+
+    try {
+        await fetch(`https://api.telegram.org/bot${token}/setMyCommands`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                commands: [
+                    { command: 'start', description: 'شروع / منوی اصلی' },
+                    { command: 'pending', description: 'کارتابل من' },
+                    { command: 'id', description: 'اطلاعات کاربری' }
+                ]
+            })
+        });
+    } catch (e) {
+        console.error("Failed to set bot commands", e);
+    }
+};
+
+// Initial call to set commands on server start (and periodically)
+setInterval(setBotCommands, 3600000); // Check every hour
+setTimeout(setBotCommands, 5000); // And on startup
+
 const generateOrderReceipt = (order) => {
     const statusIcons = {
         'در انتظار بررسی مالی': '🟡',
@@ -197,11 +224,23 @@ const generateOrderReceipt = (order) => {
     html += `➖➖➖➖➖➖➖➖\n`;
     html += `👤 <b>گیرنده:</b> ${order.payee}\n`;
     html += `💰 <b>مبلغ کل:</b> ${formatCurrency(order.totalAmount)} ریال\n`;
-    html += `🏢 <b>محل پرداخت:</b> ${order.payingCompany || 'نامشخص'}\n`; // Added Payment Location
-    html += `📝 <b>شرح:</b> ${order.description}\n`;
+    html += `🏢 <b>محل پرداخت:</b> ${order.payingCompany || 'نامشخص'}\n`; 
+    html += `📝 <b>شرح کلی:</b> ${order.description}\n`;
+    
+    // Detailed Payments
+    if (order.paymentDetails && order.paymentDetails.length > 0) {
+        html += `\n🔽 <b>جزئیات پرداخت:</b>\n`;
+        order.paymentDetails.forEach((d, i) => {
+            const detailInfo = d.method === 'چک' ? `(چک: ${d.chequeNumber || '-'})` : 
+                               d.method === 'حواله بانکی' ? `(بانک: ${d.bankName || '-'})` : '';
+            html += `${i+1}. <b>${d.method}</b>: ${formatCurrency(d.amount)} ${detailInfo}\n`;
+            if (d.description) html += `   └ <i>${d.description}</i>\n`;
+        });
+    }
+
     html += `➖➖➖➖➖➖➖➖\n`;
     html += `👤 <b>درخواست کننده:</b> ${order.requester}\n`;
-    html += `📅 <b>تاریخ:</b> ${toShamsi(order.date)}\n`; // Shamsi Date
+    html += `📅 <b>تاریخ:</b> ${toShamsi(order.date)}\n`;
     html += `📊 <b>وضعیت:</b> ${icon} ${order.status}\n`;
     
     if (order.status === 'رد شده' && order.rejectionReason) {

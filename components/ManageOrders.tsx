@@ -4,7 +4,7 @@ import { PaymentOrder, OrderStatus, User, UserRole, SystemSettings, PaymentMetho
 import { updateOrderStatus, deleteOrder } from '../services/storageService';
 import { getRolePermissions } from '../services/authService';
 import { formatCurrency, formatDate, getStatusLabel, jalaliToGregorian, formatNumberString, deformatNumberString } from '../constants';
-import { Printer, Check, X, Trash2, AlertCircle, Search, Pencil, FileSpreadsheet, Paperclip, Filter, Archive, ListChecks } from 'lucide-react';
+import { Eye, Trash2, Search, Filter, FileSpreadsheet, Paperclip, ListChecks, Archive, X } from 'lucide-react';
 import PrintVoucher from './PrintVoucher';
 import EditOrderModal from './EditOrderModal';
 
@@ -19,7 +19,7 @@ interface ManageOrdersProps {
 
 const ManageOrders: React.FC<ManageOrdersProps> = ({ orders, refreshData, currentUser, initialTab = 'current', settings, statusFilter }) => {
   const [activeTab, setActiveTab] = useState<'current' | 'archive'>(initialTab);
-  const [printOrder, setPrintOrder] = useState<PaymentOrder | null>(null);
+  const [viewOrder, setViewOrder] = useState<PaymentOrder | null>(null); // Replaces printOrder
   const [editingOrder, setEditingOrder] = useState<PaymentOrder | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   
@@ -95,6 +95,7 @@ const ManageOrders: React.FC<ManageOrdersProps> = ({ orders, refreshData, curren
     if (window.confirm(`آیا تایید مرحله "${getStatusLabel(nextStatus)}" را انجام می‌دهید؟`)) {
         await updateOrderStatus(id, nextStatus, currentUser); 
         refreshData();
+        setViewOrder(null); // Close modal after action
     }
   };
 
@@ -103,6 +104,7 @@ const ManageOrders: React.FC<ManageOrdersProps> = ({ orders, refreshData, curren
       if (reason !== null) {
           await updateOrderStatus(id, OrderStatus.REJECTED, currentUser, reason || 'بدون توضیح');
           refreshData();
+          setViewOrder(null); // Close modal after action
       }
   };
 
@@ -111,6 +113,11 @@ const ManageOrders: React.FC<ManageOrdersProps> = ({ orders, refreshData, curren
       await deleteOrder(id);
       refreshData();
     }
+  };
+
+  const handleEdit = (order: PaymentOrder) => {
+      setEditingOrder(order);
+      setViewOrder(null);
   };
 
   const handleExportCSV = () => {
@@ -247,10 +254,13 @@ const ManageOrders: React.FC<ManageOrdersProps> = ({ orders, refreshData, curren
                             )}
                         </td>
                         <td className="px-6 py-4"><div className="flex justify-center items-center gap-2">
-                            {canEdit(order) && <button onClick={() => setEditingOrder(order)} className="p-1.5 text-amber-600 hover:bg-amber-100 rounded" title={order.status === OrderStatus.REJECTED ? "اصلاح درخواست رد شده" : "ویرایش"}><Pencil size={18}/></button>}
-                            {canApprove(order) && <><button onClick={() => handleApprove(order.id, order.status)} className="p-1.5 text-green-600 hover:bg-green-100 rounded"><Check size={18}/></button><button onClick={() => handleReject(order.id)} className="p-1.5 text-red-600 hover:bg-red-100 rounded"><X size={18}/></button></>}
-                            <button onClick={() => setPrintOrder(order)} className="p-1.5 text-blue-600 hover:bg-blue-100 rounded"><Printer size={18}/></button>
-                            {canDelete(order) && <button onClick={() => handleDelete(order.id)} className="p-1.5 text-gray-400 hover:text-red-500"><Trash2 size={18}/></button>}
+                             <button 
+                                onClick={() => setViewOrder(order)} 
+                                className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg flex items-center gap-1.5 text-xs transition-colors shadow-sm"
+                             >
+                                <Eye size={16}/> مشاهده
+                             </button>
+                             {canDelete(order) && <button onClick={() => handleDelete(order.id)} className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded transition-colors" title="حذف"><Trash2 size={16}/></button>}
                         </div></td>
                       </tr>
                   ))
@@ -259,7 +269,18 @@ const ManageOrders: React.FC<ManageOrdersProps> = ({ orders, refreshData, curren
           </table>
         </div>
       </div>
-      {printOrder && <PrintVoucher order={printOrder} onClose={() => setPrintOrder(null)} settings={settings} />}
+      
+      {viewOrder && (
+          <PrintVoucher 
+            order={viewOrder} 
+            onClose={() => setViewOrder(null)} 
+            settings={settings}
+            onApprove={canApprove(viewOrder) ? () => handleApprove(viewOrder.id, viewOrder.status) : undefined}
+            onReject={canApprove(viewOrder) ? () => handleReject(viewOrder.id) : undefined}
+            onEdit={canEdit(viewOrder) ? () => handleEdit(viewOrder) : undefined}
+          />
+      )}
+      
       {editingOrder && <EditOrderModal order={editingOrder} onClose={() => setEditingOrder(null)} onSave={refreshData} />}
     </>
   );
