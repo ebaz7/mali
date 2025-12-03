@@ -1,11 +1,4 @@
 
-
-
-
-
-
-
-
 import React, { useState, useEffect, useRef } from 'react';
 import Layout from './components/Layout';
 import Dashboard from './components/Dashboard';
@@ -18,10 +11,10 @@ import ChatRoom from './components/ChatRoom';
 import TradeModule from './components/TradeModule';
 import { getOrders, getSettings } from './services/storageService';
 import { getCurrentUser } from './services/authService';
-import { PaymentOrder, User, OrderStatus, UserRole, AppNotification, SystemSettings } from './types';
+import { PaymentOrder, User, OrderStatus, UserRole, AppNotification, SystemSettings, PaymentMethod } from './types';
 import { Loader2 } from 'lucide-react';
 import { sendNotification } from './services/notificationService';
-import { generateUUID } from './constants';
+import { generateUUID, parsePersianDate } from './constants';
 
 function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
@@ -95,18 +88,42 @@ function App() {
         setSettings(settingsData);
         
         // Smart Notification Check
-        // We only check for notifications if it's NOT the very first load of the session (to avoid spam on refresh)
-        // OR if we implement a timestamp check, we can check even on first load for "missed" notifications.
-        // Here we use the timestamp strategy:
         const lastCheck = parseInt(localStorage.getItem(NOTIFICATION_CHECK_KEY) || '0');
         checkForNotifications(ordersData, currentUser, lastCheck);
         
+        // Check for Cheque Alerts on First Load Only
+        if (isFirstLoad.current) {
+            checkChequeAlerts(ordersData);
+        }
+
         // Update the last check time to now
         localStorage.setItem(NOTIFICATION_CHECK_KEY, Date.now().toString());
 
         setOrders(ordersData);
         isFirstLoad.current = false;
     } catch (error) { console.error("Failed to load data", error); } finally { if (!silent) setLoading(false); }
+  };
+
+  const checkChequeAlerts = (list: PaymentOrder[]) => {
+      const now = new Date();
+      let alertCount = 0;
+      list.forEach(order => {
+          order.paymentDetails.forEach(detail => {
+              if (detail.method === PaymentMethod.CHEQUE && detail.chequeDate) {
+                  const dueDate = parsePersianDate(detail.chequeDate);
+                  if (dueDate) {
+                      const diffTime = dueDate.getTime() - now.getTime();
+                      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                      if (diffDays <= 2 && diffDays >= 0) {
+                          alertCount++;
+                      }
+                  }
+              }
+          });
+      });
+      if (alertCount > 0) {
+          addAppNotification('هشدار سررسید چک', `${alertCount} چک در ۲ روز آینده سررسید می‌شوند. لطفا داشبورد را بررسی کنید.`);
+      }
   };
 
   const checkForNotifications = (newList: PaymentOrder[], user: User, lastCheckTime: number) => {

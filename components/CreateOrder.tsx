@@ -22,7 +22,14 @@ const CreateOrder: React.FC<CreateOrderProps> = ({ onSuccess, currentUser }) => 
   const [availableCompanies, setAvailableCompanies] = useState<string[]>([]);
   const [availableBanks, setAvailableBanks] = useState<string[]>([]);
   const [paymentLines, setPaymentLines] = useState<PaymentDetail[]>([]);
-  const [newLine, setNewLine] = useState<{ method: PaymentMethod; amount: string; chequeNumber: string; bankName: string; description: string; }>({ method: PaymentMethod.TRANSFER, amount: '', chequeNumber: '', bankName: '', description: '' });
+  const [newLine, setNewLine] = useState<{ method: PaymentMethod; amount: string; chequeNumber: string; bankName: string; description: string; chequeDate: {y:number, m:number, d:number} }>({ 
+      method: PaymentMethod.TRANSFER, 
+      amount: '', 
+      chequeNumber: '', 
+      bankName: '', 
+      description: '',
+      chequeDate: { year: currentShamsi.year, month: currentShamsi.month, day: currentShamsi.day } as any
+  });
   const [attachments, setAttachments] = useState<{ fileName: string, data: string }[]>([]);
   const [isEnhancing, setIsEnhancing] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -30,33 +37,22 @@ const CreateOrder: React.FC<CreateOrderProps> = ({ onSuccess, currentUser }) => 
 
   useEffect(() => {
       getSettings().then((settings: SystemSettings) => {
-          // Use companies object array or fallback to legacy names array
           const names = settings.companies?.map(c => c.name) || settings.companyNames || [];
           setAvailableCompanies(names);
           setPayingCompany(settings.defaultCompany || '');
           setAvailableBanks(settings.bankNames || []);
       });
-      // Initial fetch
       getNextTrackingNumber().then(num => setTrackingNumber(num.toString()));
 
-      // Poll for tracking number updates every 3 seconds to handle concurrent users or gap fills
       const interval = setInterval(async () => {
           try {
               const num = await getNextTrackingNumber();
               setTrackingNumber(prev => {
-                  // If the user hasn't manually edited it to something else, keep it in sync
-                  // Or simply check if the server suggests a DIFFERENT number than what we have (and user hasn't started typing other stuff)
                   const current = Number(prev);
-                  if (current !== num) {
-                      // Only update if the server number is "better" (e.g. gap fill or next increment)
-                      // We'll trust the server's judgment here.
-                      return num.toString();
-                  }
+                  if (current !== num) return num.toString();
                   return prev;
               });
-          } catch (e) {
-              console.error("Polling error", e);
-          }
+          } catch (e) {}
       }, 3000);
 
       return () => clearInterval(interval);
@@ -84,13 +80,10 @@ const CreateOrder: React.FC<CreateOrderProps> = ({ onSuccess, currentUser }) => 
           const currentSettings = await getSettings();
           const updatedBanks = [...(currentSettings.bankNames || []), newBank.trim()];
           const uniqueBanks = Array.from(new Set(updatedBanks));
-          
           await saveSettings({ ...currentSettings, bankNames: uniqueBanks });
           setAvailableBanks(uniqueBanks);
           setNewLine(prev => ({ ...prev, bankName: newBank.trim() }));
-      } catch (e) {
-          alert("خطا در ذخیره بانک جدید");
-      }
+      } catch (e) { alert("خطا در ذخیره بانک جدید"); }
   };
 
   const handleEnhance = async () => { if (!formData.description) return; setIsEnhancing(true); const improved = await enhanceDescription(formData.description); setFormData(prev => ({ ...prev, description: improved })); setIsEnhancing(false); };
@@ -107,22 +100,29 @@ const CreateOrder: React.FC<CreateOrderProps> = ({ onSuccess, currentUser }) => 
           amount: amt, 
           chequeNumber: newLine.method === PaymentMethod.CHEQUE ? normalizeInputNumber(newLine.chequeNumber) : undefined, 
           bankName: (newLine.method === PaymentMethod.TRANSFER || newLine.method === PaymentMethod.CHEQUE) ? newLine.bankName : undefined,
-          description: newLine.description
+          description: newLine.description,
+          chequeDate: newLine.method === PaymentMethod.CHEQUE 
+            ? `${newLine.chequeDate.y}/${newLine.chequeDate.m}/${newLine.chequeDate.d}`
+            : undefined
       }; 
       
       setPaymentLines([...paymentLines, detail]); 
       
-      // Auto-append description if provided
       if (newLine.description) {
           setFormData(prev => ({
               ...prev,
-              description: prev.description 
-                ? `${prev.description} - ${newLine.description}`
-                : newLine.description
+              description: prev.description ? `${prev.description} - ${newLine.description}` : newLine.description
           }));
       }
 
-      setNewLine({ method: PaymentMethod.TRANSFER, amount: '', chequeNumber: '', bankName: '', description: '' }); 
+      setNewLine({ 
+          method: PaymentMethod.TRANSFER, 
+          amount: '', 
+          chequeNumber: '', 
+          bankName: '', 
+          description: '', 
+          chequeDate: { year: currentShamsi.year, month: currentShamsi.month, day: currentShamsi.day } as any 
+      }); 
   };
   
   const removePaymentLine = (id: string) => { setPaymentLines(paymentLines.filter(p => p.id !== id)); };
@@ -138,11 +138,7 @@ const CreateOrder: React.FC<CreateOrderProps> = ({ onSuccess, currentUser }) => 
         const newOrder: PaymentOrder = { id: generateUUID(), trackingNumber: Number(trackingNumber), date: getIsoDate(), payee: formData.payee, totalAmount: sumPaymentLines, description: formData.description, status: OrderStatus.PENDING, requester: currentUser.fullName, createdAt: Date.now(), paymentDetails: paymentLines, attachments: attachments, payingCompany: payingCompany }; 
         await saveOrder(newOrder); 
         onSuccess(); 
-    } catch (error) { 
-        alert('خطا در ثبت سفارش'); 
-    } finally { 
-        setIsSubmitting(false); 
-    }
+    } catch (error) { alert('خطا در ثبت سفارش'); } finally { setIsSubmitting(false); }
   };
 
   const years = Array.from({ length: 11 }, (_, i) => 1400 + i);
@@ -166,9 +162,21 @@ const CreateOrder: React.FC<CreateOrderProps> = ({ onSuccess, currentUser }) => 
                 <div className="space-y-1"><label className="text-xs text-gray-500">مبلغ (ریال)</label><input type="text" inputMode="numeric" className="w-full border rounded-lg p-2 text-sm dir-ltr text-left" placeholder="0" value={formatNumberString(newLine.amount)} onChange={e => setNewLine({ ...newLine, amount: normalizeInputNumber(e.target.value).replace(/[^0-9]/g, '') })} onKeyDown={handleKeyDown}/></div>
                 {(newLine.method === PaymentMethod.CHEQUE || newLine.method === PaymentMethod.TRANSFER) ? (<>{newLine.method === PaymentMethod.CHEQUE && <div className="space-y-1"><label className="text-xs text-gray-500">شماره چک</label><input type="text" inputMode="numeric" className="w-full border rounded-lg p-2 text-sm" value={newLine.chequeNumber} onChange={e => setNewLine({ ...newLine, chequeNumber: normalizeInputNumber(e.target.value).replace(/[^0-9]/g, '') })} onKeyDown={handleKeyDown}/></div>}<div className="space-y-1"><label className="text-xs text-gray-500">نام بانک</label><div className="flex gap-1"><select className="w-full border rounded-lg p-2 text-sm" value={newLine.bankName} onChange={e => setNewLine({ ...newLine, bankName: e.target.value })} onKeyDown={handleKeyDown}><option value="">-- انتخاب بانک --</option>{availableBanks.map(b => <option key={b} value={b}>{b}</option>)}</select><button type="button" onClick={handleAddBank} className="bg-blue-100 text-blue-600 px-2 rounded-lg hover:bg-blue-200" title="افزودن بانک جدید"><Plus size={16}/></button></div></div></>) : <div className="md:block hidden"></div>}
                 <div className="space-y-1 md:col-span-3"><label className="text-xs text-gray-500">شرح (اختیاری - به شرح اصلی اضافه می‌شود)</label><input type="text" className="w-full border rounded-lg p-2 text-sm" placeholder="توضیحات این بخش..." value={newLine.description} onChange={e => setNewLine({ ...newLine, description: e.target.value })} onKeyDown={handleKeyDown}/></div>
+                
+                {newLine.method === PaymentMethod.CHEQUE && (
+                    <div className="space-y-1 md:col-span-4 bg-yellow-50 p-2 rounded border border-yellow-200 mt-2">
+                        <label className="text-xs font-bold text-gray-700 flex items-center gap-1"><Calendar size={14}/> تاریخ سررسید چک:</label>
+                        <div className="flex gap-2">
+                            <select className="border rounded px-2 py-1 text-sm bg-white" value={newLine.chequeDate.d} onChange={e => setNewLine({...newLine, chequeDate: {...newLine.chequeDate, d: Number(e.target.value)}})}>{days.map(d => <option key={d} value={d}>{d}</option>)}</select>
+                            <select className="border rounded px-2 py-1 text-sm bg-white" value={newLine.chequeDate.m} onChange={e => setNewLine({...newLine, chequeDate: {...newLine.chequeDate, m: Number(e.target.value)}})}>{MONTHS.map((m, idx) => <option key={idx} value={idx + 1}>{m}</option>)}</select>
+                            <select className="border rounded px-2 py-1 text-sm bg-white" value={newLine.chequeDate.y} onChange={e => setNewLine({...newLine, chequeDate: {...newLine.chequeDate, y: Number(e.target.value)}})}>{years.map(y => <option key={y} value={y}>{y}</option>)}</select>
+                        </div>
+                    </div>
+                )}
+
                 <div className="md:col-span-1"><button type="button" onClick={addPaymentLine} disabled={!newLine.amount} className="w-full bg-blue-600 text-white p-2 rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center justify-center gap-1 text-sm"><Plus size={16} /> افزودن</button></div>
             </div>
-            <div className="space-y-2">{paymentLines.map((line) => (<div key={line.id} className="flex items-center justify-between bg-white p-3 rounded border border-gray-100 shadow-sm"><div className="flex gap-3 text-sm flex-wrap items-center"><span className="font-bold text-gray-800">{line.method}</span><span className="text-gray-600 dir-ltr">{formatCurrency(line.amount)}</span>{line.chequeNumber && <span className="text-gray-500 text-xs bg-yellow-50 px-2 py-0.5 rounded">چک: {line.chequeNumber}</span>}{line.bankName && <span className="text-blue-500 text-xs bg-blue-50 px-2 py-0.5 rounded">{line.bankName}</span>}{line.description && <span className="text-gray-500 text-xs italic border-r pr-2 mr-1">{line.description}</span>}</div><button type="button" onClick={() => removePaymentLine(line.id)} className="text-red-500 hover:text-red-700"><Trash2 size={16} /></button></div>))}</div>
+            <div className="space-y-2">{paymentLines.map((line) => (<div key={line.id} className="flex items-center justify-between bg-white p-3 rounded border border-gray-100 shadow-sm"><div className="flex gap-3 text-sm flex-wrap items-center"><span className="font-bold text-gray-800">{line.method}</span><span className="text-gray-600 dir-ltr">{formatCurrency(line.amount)}</span>{line.chequeNumber && <span className="text-gray-500 text-xs bg-yellow-50 px-2 py-0.5 rounded">چک: {line.chequeNumber} {line.chequeDate && `(${line.chequeDate})`}</span>}{line.bankName && <span className="text-blue-500 text-xs bg-blue-50 px-2 py-0.5 rounded">{line.bankName}</span>}{line.description && <span className="text-gray-500 text-xs italic border-r pr-2 mr-1">{line.description}</span>}</div><button type="button" onClick={() => removePaymentLine(line.id)} className="text-red-500 hover:text-red-700"><Trash2 size={16} /></button></div>))}</div>
         </div>
         <div className="space-y-2"><div className="flex justify-between items-center"><label className="text-sm font-medium text-gray-700">شرح پرداخت</label><button type="button" onClick={handleEnhance} disabled={isEnhancing || !formData.description} className="text-xs flex items-center gap-1.5 text-purple-600 bg-purple-50 px-3 py-1.5 rounded-lg disabled:opacity-50">{isEnhancing ? <Loader2 size={14} className="animate-spin" /> : <Wand2 size={14} />}هوش مصنوعی</button></div><textarea required rows={4} className="w-full border rounded-xl px-4 py-3 bg-gray-50 resize-none" placeholder="توضیحات..." value={formData.description} onChange={e => setFormData({ ...formData, description: e.target.value })} /></div>
         <div className="bg-gray-50 p-4 rounded-xl border border-gray-200"><label className="text-sm font-medium text-gray-700 mb-2 block flex items-center gap-2"><Paperclip size={16} />فایل‌های ضمیمه</label><div className="flex items-center gap-4"><input type="file" id="attachment" className="hidden" accept="image/*,application/pdf" onChange={handleFileChange} /><label htmlFor="attachment" className={`bg-white border text-gray-700 px-4 py-2 rounded-lg cursor-pointer hover:bg-gray-100 text-sm ${uploading ? 'opacity-50 cursor-wait' : ''}`}>{uploading ? 'در حال آپلود...' : 'انتخاب فایل'}</label></div>{attachments.length > 0 && <div className="mt-3 space-y-2">{attachments.map((file, idx) => (<div key={idx} className="flex items-center justify-between bg-white p-2 rounded border text-sm"><span className="text-blue-600 truncate max-w-[200px]">{file.fileName}</span><button type="button" onClick={() => removeAttachment(idx)} className="text-red-500"><X size={16} /></button></div>))}</div>}</div>

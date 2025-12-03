@@ -1,10 +1,9 @@
 
-
 import React, { useState, useMemo } from 'react';
-import { PaymentOrder, OrderStatus } from '../types';
-import { formatCurrency } from '../constants';
+import { PaymentOrder, OrderStatus, PaymentMethod } from '../types';
+import { formatCurrency, parsePersianDate } from '../constants';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts';
-import { TrendingUp, Clock, CheckCircle, Archive, Activity, Building2, X, XCircle } from 'lucide-react';
+import { TrendingUp, Clock, CheckCircle, Archive, Activity, Building2, X, XCircle, AlertCircle, Banknote } from 'lucide-react';
 
 interface DashboardProps {
   orders: PaymentOrder[];
@@ -42,6 +41,36 @@ const Dashboard: React.FC<DashboardProps> = ({ orders, onViewArchive, onFilterBy
     return Object.entries(stats).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value);
   }, [completedOrders]);
 
+  // Cheque Report Logic
+  const chequeData = useMemo(() => {
+      const allCheques: any[] = [];
+      orders.forEach(order => {
+          order.paymentDetails.forEach(detail => {
+              if (detail.method === PaymentMethod.CHEQUE && detail.chequeDate) {
+                  const dueDate = parsePersianDate(detail.chequeDate);
+                  if (dueDate) {
+                      const now = new Date();
+                      const diffTime = dueDate.getTime() - now.getTime();
+                      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                      
+                      allCheques.push({
+                          id: detail.id,
+                          bank: detail.bankName || 'نامشخص',
+                          number: detail.chequeNumber,
+                          date: detail.chequeDate,
+                          amount: detail.amount,
+                          payee: order.payee,
+                          daysLeft: diffDays,
+                          isPassed: diffDays < 0
+                      });
+                  }
+              }
+          });
+      });
+      // Sort by Due Date (Ascending)
+      return allCheques.sort((a, b) => a.daysLeft - b.daysLeft);
+  }, [orders]);
+
   return (
     <div className="space-y-6 animate-fade-in min-w-0">
       <h2 className="text-2xl font-bold text-gray-800 mb-6">داشبورد وضعیت مالی</h2>
@@ -56,6 +85,49 @@ const Dashboard: React.FC<DashboardProps> = ({ orders, onViewArchive, onFilterBy
         <div onClick={() => onFilterByStatus && onFilterByStatus('pending_all')} className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex items-center gap-4 cursor-pointer hover:shadow-md transition-all group relative overflow-hidden"><div className="absolute right-0 top-0 w-1 h-full bg-amber-400 group-hover:w-1.5 transition-all"></div><div className="p-3 bg-amber-100 text-amber-600 rounded-xl"><Clock size={24} /></div><div><p className="text-sm text-gray-500 mb-1">کل سفارشات در جریان</p><p className="text-2xl font-bold text-gray-900">{pendingOrders.length}</p></div></div>
         <div onClick={() => setShowBankReport(true)} className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex items-center gap-4 cursor-pointer hover:shadow-md hover:border-blue-200 transition-all group relative overflow-hidden"><div className="absolute right-0 top-0 w-1 h-full bg-blue-500 group-hover:w-1.5 transition-all"></div><div className="p-3 bg-blue-100 text-blue-600 rounded-xl group-hover:bg-blue-600 group-hover:text-white transition-colors"><TrendingUp size={24} /></div><div><div className="flex items-center gap-2"><p className="text-sm text-gray-500 mb-1">مجموع پرداختی (نهایی)</p><span className="text-[10px] bg-blue-50 text-blue-600 px-1.5 rounded border border-blue-100">گزارش بانک</span></div><p className="text-2xl font-bold text-gray-900">{formatCurrency(totalAmount)}</p></div></div>
       </div>
+
+      {/* Cheque Report Widget */}
+      {chequeData.length > 0 && (
+          <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 w-full min-w-0">
+              <h3 className="text-lg font-bold text-gray-700 mb-4 flex items-center gap-2"><Banknote size={20} className="text-purple-600"/> گزارش چک‌های صادره و سررسید</h3>
+              <div className="overflow-x-auto">
+                  <table className="w-full text-sm text-right">
+                      <thead className="bg-gray-50 text-gray-600 text-xs">
+                          <tr>
+                              <th className="px-4 py-3">نام بانک</th>
+                              <th className="px-4 py-3">شماره چک</th>
+                              <th className="px-4 py-3">در وجه (گیرنده)</th>
+                              <th className="px-4 py-3">تاریخ سررسید</th>
+                              <th className="px-4 py-3">مبلغ</th>
+                              <th className="px-4 py-3 text-center">وضعیت</th>
+                          </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100">
+                          {chequeData.slice(0, 10).map((c) => (
+                              <tr key={c.id} className="hover:bg-gray-50">
+                                  <td className="px-4 py-3 text-gray-700">{c.bank}</td>
+                                  <td className="px-4 py-3 font-mono text-gray-600">{c.number}</td>
+                                  <td className="px-4 py-3 font-bold text-gray-800">{c.payee}</td>
+                                  <td className="px-4 py-3 dir-ltr text-right">{c.date}</td>
+                                  <td className="px-4 py-3 font-mono font-bold text-gray-900 dir-ltr">{formatCurrency(c.amount)}</td>
+                                  <td className="px-4 py-3 text-center">
+                                      {c.isPassed ? (
+                                          <span className="text-gray-400 text-xs bg-gray-100 px-2 py-1 rounded">پاس شده / گذشته</span>
+                                      ) : c.daysLeft <= 2 ? (
+                                          <span className="text-red-600 text-xs bg-red-50 px-2 py-1 rounded font-bold animate-pulse">⚠️ {c.daysLeft} روز مانده</span>
+                                      ) : (
+                                          <span className="text-green-600 text-xs bg-green-50 px-2 py-1 rounded">{c.daysLeft} روز مانده</span>
+                                      )}
+                                  </td>
+                              </tr>
+                          ))}
+                      </tbody>
+                  </table>
+                  {chequeData.length > 10 && <div className="text-center text-xs text-gray-400 mt-2">... و {chequeData.length - 10} مورد دیگر</div>}
+              </div>
+          </div>
+      )}
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-8">
         <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 h-[400px] w-full min-w-0"><h3 className="text-lg font-bold text-gray-700 mb-4">وضعیت درخواست‌ها</h3><ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={statusData} cx="50%" cy="50%" innerRadius={60} outerRadius={100} paddingAngle={5} dataKey="value">{statusData.map((entry, index) => (<Cell key={`cell-${index}`} fill={entry.color} />))}</Pie><Tooltip contentStyle={{ fontFamily: 'Vazirmatn', borderRadius: '8px' }} /><Legend wrapperStyle={{ fontFamily: 'Vazirmatn' }} /></PieChart></ResponsiveContainer></div>
         <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 h-[400px] w-full min-w-0"><h3 className="text-lg font-bold text-gray-700 mb-4">هزینه بر اساس روش پرداخت</h3><ResponsiveContainer width="100%" height="100%"><BarChart data={methodData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}><CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" /><XAxis dataKey="name" tick={{ fontFamily: 'Vazirmatn', fontSize: 12 }} axisLine={false} tickLine={false} /><YAxis tickFormatter={(val) => `${val / 1000000}M`} tick={{ fontSize: 10 }} axisLine={false} tickLine={false} /><Tooltip formatter={(value: number) => formatCurrency(value)} contentStyle={{ fontFamily: 'Vazirmatn', borderRadius: '8px', direction: 'rtl' }} cursor={{fill: '#f3f4f6'}} /><Bar dataKey="amount" fill="#3b82f6" radius={[4, 4, 0, 0]} barSize={40} /></BarChart></ResponsiveContainer></div>

@@ -38,6 +38,7 @@ export interface PaymentDetail {
   amount: number;
   method: PaymentMethod;
   chequeNumber?: string;
+  chequeDate?: string; // New: Cheque Due Date (Shamsi YYYY/MM/DD)
   bankName?: string;
   description?: string; // New optional description field
 }

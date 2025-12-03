@@ -377,7 +377,8 @@ const PrintVoucher: React.FC<PrintVoucherProps> = ({ order, onClose, settings, o
                                     <td className={`${isCompact ? 'p-1' : 'p-2'} font-bold`}>{detail.method}</td>
                                     <td className={`${isCompact ? 'p-1' : 'p-2'} font-mono`}>{formatCurrency(detail.amount)}</td>
                                     <td className={`${isCompact ? 'p-1' : 'p-2'}`}>
-                                        {detail.method === PaymentMethod.CHEQUE ? `چک: ${detail.chequeNumber}` :
+                                        {detail.method === PaymentMethod.CHEQUE ? 
+                                            `چک: ${detail.chequeNumber}${detail.chequeDate ? ` (سررسید: ${detail.chequeDate})` : ''}` :
                                          detail.method === PaymentMethod.TRANSFER ? `بانک: ${detail.bankName}` : '-'}
                                     </td>
                                     <td className={`${isCompact ? 'p-1' : 'p-2'} text-gray-600 truncate max-w-[150px]`}>

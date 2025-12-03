@@ -94,6 +94,40 @@ const findNextAvailableTrackingNumber = (db) => {
     return nextNum;
 };
 
+// --- DATE HELPERS FOR CRON ---
+const jalaliToGregorian = (j_y, j_m, j_d) => {
+  const jy = j_y - 979;
+  const jm = j_m - 1;
+  const jd = j_d - 1;
+  let j_day_no = 365 * jy + Math.floor(jy / 33) * 8 + Math.floor((jy % 33 + 3) / 4);
+  for (let i = 0; i < jm; ++i) j_day_no += (i < 6) ? 31 : 30;
+  j_day_no += jd;
+  let g_day_no = j_day_no + 79;
+  let gy = 1600 + 400 * Math.floor(g_day_no / 146097);
+  g_day_no = g_day_no % 146097;
+  let leap = true;
+  if (g_day_no >= 36525) {
+    g_day_no--;
+    gy += 100 * Math.floor(g_day_no / 36524);
+    g_day_no = g_day_no % 36524;
+    if (g_day_no >= 365) g_day_no++; else leap = false;
+  }
+  gy += 4 * Math.floor(g_day_no / 1461);
+  g_day_no %= 1461;
+  if (g_day_no >= 366) { leap = false; g_day_no--; gy += Math.floor(g_day_no / 365); g_day_no = g_day_no % 365; }
+  let i;
+  for (i = 0; g_day_no >= ((i < 1) ? (31 + (leap ? 1 : 0)) : ((i === 1) ? 28 : ((i < 7) ? 31 : 30))); i++) { g_day_no -= ((i < 1) ? (31 + (leap ? 1 : 0)) : ((i === 1) ? 28 : ((i < 7) ? 31 : 30))); }
+  return new Date(gy, i, g_day_no + 1);
+};
+
+const parsePersianDate = (dateStr) => {
+    if (!dateStr) return null;
+    const parts = dateStr.includes('/') ? dateStr.split('/') : dateStr.split('-');
+    const [y, m, d] = parts.map(Number);
+    if (!y || !m || !d) return null;
+    return jalaliToGregorian(y, m, d);
+};
+
 // --- TELEGRAM BOT UTILS ---
 let lastUpdateId = 0;
 // Store user state for creation wizard: { chatId: { step: 'PAYEE' | 'AMOUNT' | 'BANK' | 'DESC' | 'COMPANY', data: {} } }
@@ -626,6 +660,59 @@ setInterval(() => {
     }
 }, 8 * 60 * 60 * 1000); // 8 Hours
 
+// --- CHEQUE ALERT TIMER (Check Daily at 9:00 AM) ---
+// Simplified: We run this every 12 hours.
+setInterval(() => {
+    const db = getDb();
+    const now = new Date();
+    
+    // Find upcoming cheques
+    const upcomingCheques = [];
+    db.orders.forEach(order => {
+        order.paymentDetails.forEach(detail => {
+            if (detail.method === 'چک' && detail.chequeDate) {
+                const dueDate = parsePersianDate(detail.chequeDate);
+                if (dueDate) {
+                    const diffTime = dueDate.getTime() - now.getTime();
+                    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                    
+                    // Alert if exactly 2 days remaining (or 1, 2)
+                    if (diffDays <= 2 && diffDays >= 0) {
+                        upcomingCheques.push({
+                            bank: detail.bankName || 'نامشخص',
+                            number: detail.chequeNumber,
+                            amount: detail.amount,
+                            payee: order.payee, // Payee Name
+                            date: detail.chequeDate,
+                            days: diffDays
+                        });
+                    }
+                }
+            }
+        });
+    });
+
+    if (upcomingCheques.length > 0) {
+        let msg = `⚠️ <b>هشدار سررسید چک‌ها (تا ۲ روز آینده)</b>\n\n`;
+        upcomingCheques.forEach(c => {
+            msg += `🔸 <b>${c.payee}</b>\n   مبلغ: ${formatCurrency(c.amount)}\n   بانک: ${c.bank} | چک: ${c.number}\n   سررسید: ${c.date} (${c.days} روز مانده)\n\n`;
+        });
+
+        // 1. Send to Financial (Action Owner)
+        notifyUsers(db, 'financial', msg);
+        
+        // 2. Send to Admin (Monitor)
+        if (db.settings.telegramAdminId) sendTelegram(db.settings.telegramAdminId, msg);
+
+        // 3. Send to CEO (Monitor - Added per request)
+        const ceo = db.users.find(u => u.role === 'ceo');
+        if (ceo && ceo.telegramChatId) {
+             sendTelegram(ceo.telegramChatId, msg);
+        }
+    }
+
+}, 12 * 60 * 60 * 1000); // 12 Hours
+
 // --- API ROUTES ---
 
 app.get('/api/manifest', (req, res) => {
@@ -673,10 +760,6 @@ app.post('/api/chat', (req, res) => {
             group.members.forEach(m => {
                  if (m !== newMsg.senderUsername) {
                      const u = db.users.find(user => user.username === m);
-                     // Also skip admin monitoring for group messages if you wish, but usually groups are semi-public.
-                     // Based on user request "private chats people send to each other", groups might be included or excluded.
-                     // I'll keep groups visible to admin if they are monitoring, but user specifically asked for "private messages".
-                     // If safe mode is preferred, set true here as well. Let's stick to true for groups too to be safe.
                      if (u) notifyUsers(db, null, `👥 <b>گروه ${group.name}</b>\n${newMsg.sender}: ${newMsg.message || 'فایل'}`, null, u.id, true);
                  }
             });
