@@ -1,9 +1,9 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { User, TradeRecord, TradeStage, TradeItem, SystemSettings, InsuranceEndorsement, CurrencyPurchaseData, TradeTransaction, CurrencyTranche, TradeStageData, ShippingDocument, ShippingDocType, DocStatus, InvoiceItem, InspectionData, InspectionPayment, InspectionCertificate, ClearanceData, WarehouseReceipt, ClearancePayment } from '../types';
+import { User, TradeRecord, TradeStage, TradeItem, SystemSettings, InsuranceEndorsement, CurrencyPurchaseData, TradeTransaction, CurrencyTranche, TradeStageData, ShippingDocument, ShippingDocType, DocStatus, InvoiceItem, InspectionData, InspectionPayment, InspectionCertificate } from '../types';
 import { getTradeRecords, saveTradeRecord, updateTradeRecord, deleteTradeRecord, getSettings, uploadFile } from '../services/storageService';
-import { generateUUID, formatCurrency, formatNumberString, deformatNumberString, parsePersianDate, formatDate } from '../constants';
-import { Container, Plus, Search, CheckCircle2, Save, Trash2, X, Package, ArrowRight, History, Banknote, Coins, Wallet, FileSpreadsheet, Shield, LayoutDashboard, Printer, FileDown, Paperclip, Building2, FolderOpen, Home, Calculator, FileText, Microscope, ListFilter, Warehouse, Calendar, PieChart, BarChart } from 'lucide-react';
+import { generateUUID, formatCurrency, formatNumberString, deformatNumberString } from '../constants';
+import { Plus, Search, CheckCircle2, Save, Trash2, X, Package, ArrowRight, Banknote, Coins, Wallet, Shield, Paperclip, Building2, Calculator, Microscope, PieChart } from 'lucide-react';
 
 interface TradeModuleProps {
     currentUser: User;
@@ -47,7 +47,7 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
     const [newMainCurrency, setNewMainCurrency] = useState('EUR');
     const [newRecordCompany, setNewRecordCompany] = useState('');
     
-    const [activeTab, setActiveTab] = useState<'timeline' | 'proforma' | 'insurance' | 'currency_purchase' | 'shipping_docs' | 'inspection' | 'clearance'>('timeline');
+    const [activeTab, setActiveTab] = useState<'timeline' | 'proforma' | 'insurance' | 'currency_purchase' | 'shipping_docs' | 'inspection'>('timeline');
     
     // Stage Detail Modal State
     const [editingStage, setEditingStage] = useState<TradeStage | null>(null);
@@ -67,11 +67,6 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
     const [inspectionForm, setInspectionForm] = useState<InspectionData>({ certificates: [], payments: [] });
     const [newInspectionCertificate, setNewInspectionCertificate] = useState<Partial<InspectionCertificate>>({ part: '', company: '', certificateNumber: '', amount: 0 });
     const [newInspectionPayment, setNewInspectionPayment] = useState<Partial<InspectionPayment>>({ part: '', amount: 0, date: '', bank: '' });
-
-    // Clearance State
-    const [clearanceForm, setClearanceForm] = useState<ClearanceData>({ receipts: [], payments: [] });
-    const [newWarehouseReceipt, setNewWarehouseReceipt] = useState<Partial<WarehouseReceipt>>({ number: '', part: '', issueDate: '' });
-    const [newClearancePayment, setNewClearancePayment] = useState<Partial<ClearancePayment>>({ amount: 0, part: '', bank: '', date: '', payingBank: '' });
 
     // License Transactions State
     const [newLicenseTx, setNewLicenseTx] = useState<Partial<TradeTransaction>>({ amount: 0, bank: '', date: '', description: 'هزینه ثبت سفارش' });
@@ -118,8 +113,6 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
             }
             setInspectionForm(inspData);
 
-            setClearanceForm(selectedRecord.clearanceData || { receipts: [], payments: [] });
-            
             const curData = selectedRecord.currencyPurchaseData || { payments: [], purchasedAmount: 0, purchasedCurrencyType: selectedRecord.mainCurrency || 'EUR', tranches: [], isDelivered: false, deliveredAmount: 0 };
             if (!curData.tranches) curData.tranches = [];
             setCurrencyForm(curData as CurrencyPurchaseData);
@@ -130,8 +123,6 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
             setNewItem({ name: '', weight: 0, unitPrice: 0, totalPrice: 0 });
             setNewInspectionPayment({ part: '', amount: 0, date: '', bank: '' });
             setNewInspectionCertificate({ part: '', company: '', certificateNumber: '', amount: 0 });
-            setNewWarehouseReceipt({ number: '', part: '', issueDate: '' });
-            setNewClearancePayment({ amount: 0, part: '', bank: '', date: '', payingBank: '' });
             setShippingDocForm({ status: 'Draft', documentNumber: '', documentDate: '', attachments: [], currency: selectedRecord.mainCurrency || 'EUR', invoiceItems: [], freightCost: 0 });
             setNewInvoiceItem({ name: '', weight: 0, unitPrice: 0, totalPrice: 0 });
         }
@@ -181,12 +172,6 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
     const handleDeleteInspectionCertificate = async (id: string) => { if (!selectedRecord) return; const updatedCertificates = (inspectionForm.certificates || []).filter(c => c.id !== id); const updatedData = { ...inspectionForm, certificates: updatedCertificates }; setInspectionForm(updatedData); const updatedRecord = { ...selectedRecord, inspectionData: updatedData }; await updateTradeRecord(updatedRecord); setSelectedRecord(updatedRecord); };
     const handleAddInspectionPayment = async () => { if (!selectedRecord || !newInspectionPayment.amount) return; const payment: InspectionPayment = { id: generateUUID(), part: newInspectionPayment.part || 'Part', amount: Number(newInspectionPayment.amount), date: newInspectionPayment.date || '', bank: newInspectionPayment.bank || '', description: '' }; const updatedPayments = [...(inspectionForm.payments || []), payment]; const updatedData = { ...inspectionForm, payments: updatedPayments }; setInspectionForm(updatedData); setNewInspectionPayment({ part: '', amount: 0, date: '', bank: '' }); const updatedRecord = { ...selectedRecord, inspectionData: updatedData }; if (!updatedRecord.stages[TradeStage.INSPECTION]) updatedRecord.stages[TradeStage.INSPECTION] = getStageData(updatedRecord, TradeStage.INSPECTION); updatedRecord.stages[TradeStage.INSPECTION].costRial = updatedPayments.reduce((acc, p) => acc + p.amount, 0); await updateTradeRecord(updatedRecord); setSelectedRecord(updatedRecord); };
     const handleDeleteInspectionPayment = async (id: string) => { if (!selectedRecord) return; const updatedPayments = (inspectionForm.payments || []).filter(p => p.id !== id); const updatedData = { ...inspectionForm, payments: updatedPayments }; setInspectionForm(updatedData); const updatedRecord = { ...selectedRecord, inspectionData: updatedData }; if (!updatedRecord.stages[TradeStage.INSPECTION]) updatedRecord.stages[TradeStage.INSPECTION] = getStageData(updatedRecord, TradeStage.INSPECTION); updatedRecord.stages[TradeStage.INSPECTION].costRial = updatedPayments.reduce((acc, p) => acc + p.amount, 0); await updateTradeRecord(updatedRecord); setSelectedRecord(updatedRecord); };
-
-    // Clearance Handlers
-    const handleAddWarehouseReceipt = async () => { if (!selectedRecord || !newWarehouseReceipt.number) return; const receipt: WarehouseReceipt = { id: generateUUID(), number: newWarehouseReceipt.number || '', part: newWarehouseReceipt.part || '', issueDate: newWarehouseReceipt.issueDate || '' }; const updatedReceipts = [...(clearanceForm.receipts || []), receipt]; const updatedData = { ...clearanceForm, receipts: updatedReceipts }; setClearanceForm(updatedData); setNewWarehouseReceipt({ number: '', part: '', issueDate: '' }); const updatedRecord = { ...selectedRecord, clearanceData: updatedData }; if (!updatedRecord.stages[TradeStage.CLEARANCE_DOCS]) updatedRecord.stages[TradeStage.CLEARANCE_DOCS] = getStageData(updatedRecord, TradeStage.CLEARANCE_DOCS); updatedRecord.stages[TradeStage.CLEARANCE_DOCS].isCompleted = updatedReceipts.length > 0; await updateTradeRecord(updatedRecord); setSelectedRecord(updatedRecord); };
-    const handleDeleteWarehouseReceipt = async (id: string) => { if (!selectedRecord) return; const updatedReceipts = (clearanceForm.receipts || []).filter(r => r.id !== id); const updatedData = { ...clearanceForm, receipts: updatedReceipts }; setClearanceForm(updatedData); const updatedRecord = { ...selectedRecord, clearanceData: updatedData }; await updateTradeRecord(updatedRecord); setSelectedRecord(updatedRecord); };
-    const handleAddClearancePayment = async () => { if (!selectedRecord || !newClearancePayment.amount) return; const payment: ClearancePayment = { id: generateUUID(), amount: Number(newClearancePayment.amount), part: newClearancePayment.part || '', bank: newClearancePayment.bank || '', date: newClearancePayment.date || '', payingBank: newClearancePayment.payingBank }; const updatedPayments = [...(clearanceForm.payments || []), payment]; const updatedData = { ...clearanceForm, payments: updatedPayments }; setClearanceForm(updatedData); setNewClearancePayment({ amount: 0, part: '', bank: '', date: '', payingBank: '' }); const totalCost = updatedPayments.reduce((acc, p) => acc + p.amount, 0); const updatedRecord = { ...selectedRecord, clearanceData: updatedData }; if (!updatedRecord.stages[TradeStage.CLEARANCE_DOCS]) updatedRecord.stages[TradeStage.CLEARANCE_DOCS] = getStageData(updatedRecord, TradeStage.CLEARANCE_DOCS); updatedRecord.stages[TradeStage.CLEARANCE_DOCS].costRial = totalCost; await updateTradeRecord(updatedRecord); setSelectedRecord(updatedRecord); };
-    const handleDeleteClearancePayment = async (id: string) => { if (!selectedRecord) return; const updatedPayments = (clearanceForm.payments || []).filter(p => p.id !== id); const updatedData = { ...clearanceForm, payments: updatedPayments }; setClearanceForm(updatedData); const totalCost = updatedPayments.reduce((acc, p) => acc + p.amount, 0); const updatedRecord = { ...selectedRecord, clearanceData: updatedData }; if (!updatedRecord.stages[TradeStage.CLEARANCE_DOCS]) updatedRecord.stages[TradeStage.CLEARANCE_DOCS] = getStageData(updatedRecord, TradeStage.CLEARANCE_DOCS); updatedRecord.stages[TradeStage.CLEARANCE_DOCS].costRial = totalCost; await updateTradeRecord(updatedRecord); setSelectedRecord(updatedRecord); };
 
     // Currency Handlers
     const handleAddCurrencyTranche = async () => { if (!selectedRecord || !newCurrencyTranche.amount) return; const tranche: CurrencyTranche = { id: generateUUID(), date: newCurrencyTranche.date || '', amount: Number(newCurrencyTranche.amount), currencyType: newCurrencyTranche.currencyType || selectedRecord.mainCurrency || 'EUR', brokerName: newCurrencyTranche.brokerName || '', exchangeName: newCurrencyTranche.exchangeName || '', rate: Number(newCurrencyTranche.rate) || 0, isDelivered: newCurrencyTranche.isDelivered, deliveryDate: newCurrencyTranche.deliveryDate }; const currentTranches = currencyForm.tranches || []; const updatedTranches = [...currentTranches, tranche]; const totalPurchased = updatedTranches.reduce((acc, t) => acc + t.amount, 0); const totalDelivered = updatedTranches.filter(t => t.isDelivered).reduce((acc, t) => acc + t.amount, 0); const updatedForm = { ...currencyForm, tranches: updatedTranches, purchasedAmount: totalPurchased, deliveredAmount: totalDelivered }; setCurrencyForm(updatedForm); const updatedRecord = { ...selectedRecord, currencyPurchaseData: updatedForm }; await updateTradeRecord(updatedRecord); setSelectedRecord(updatedRecord); setNewCurrencyTranche({ amount: 0, currencyType: selectedRecord.mainCurrency || 'EUR', date: '', exchangeName: '', brokerName: '', isDelivered: false }); };
@@ -344,9 +329,9 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
 
                     <main className="flex-1 min-w-0">
                         <div className="px-6 border-b flex gap-6 overflow-x-auto no-scrollbar">
-                            {['timeline', 'proforma', 'insurance', 'currency_purchase', 'shipping_docs', 'inspection', 'clearance'].map(tab => (
+                            {['timeline', 'proforma', 'insurance', 'currency_purchase', 'shipping_docs', 'inspection'].map(tab => (
                                 <button key={tab} onClick={() => setActiveTab(tab as any)} className={`pb-4 pt-2 text-sm font-medium border-b-2 whitespace-nowrap ${activeTab === tab ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500'}`}>
-                                    {tab === 'timeline' ? 'تایم‌لاین' : tab === 'proforma' ? 'پروفرما' : tab === 'insurance' ? 'بیمه' : tab === 'currency_purchase' ? 'خرید ارز' : tab === 'shipping_docs' ? 'اسناد حمل' : tab === 'inspection' ? 'بازرسی' : 'ترخیصیه و قبض انبار'}
+                                    {tab === 'timeline' ? 'تایم‌لاین' : tab === 'proforma' ? 'پروفرما' : tab === 'insurance' ? 'بیمه' : tab === 'currency_purchase' ? 'خرید ارز' : tab === 'shipping_docs' ? 'اسناد حمل' : 'بازرسی'}
                                 </button>
                             ))}
                         </div>
@@ -588,54 +573,6 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
                                                 </div>
                                             ))}
                                         </div>
-                                    </div>
-                                </div>
-                            )}
-
-                            {/* CLEARANCE TAB */}
-                            {activeTab === 'clearance' && (
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                    <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm">
-                                        <h3 className="font-bold text-gray-800 mb-6 flex items-center gap-2"><Warehouse className="text-orange-600"/> لیست قبض انبار</h3>
-                                        <div className="bg-gray-50 p-4 rounded-xl border mb-4 space-y-2">
-                                            <div className="flex gap-2">
-                                                <input className="flex-1 border rounded-lg p-2 bg-white text-sm" value={newWarehouseReceipt.number} onChange={e => setNewWarehouseReceipt({...newWarehouseReceipt, number: e.target.value})} placeholder="شماره قبض انبار" />
-                                                <input className="flex-1 border rounded-lg p-2 bg-white text-sm" value={newWarehouseReceipt.part} onChange={e => setNewWarehouseReceipt({...newWarehouseReceipt, part: e.target.value})} placeholder="پارت" />
-                                            </div>
-                                            <input type="text" className="w-full border rounded-lg p-2 bg-white text-sm dir-ltr text-right" value={newWarehouseReceipt.issueDate} onChange={e => setNewWarehouseReceipt({...newWarehouseReceipt, issueDate: e.target.value})} placeholder="تاریخ صدور (YYYY/MM/DD)" />
-                                            <button onClick={handleAddWarehouseReceipt} disabled={!newWarehouseReceipt.number} className="w-full bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700 text-sm">افزودن قبض انبار</button>
-                                        </div>
-                                        <div className="space-y-2 max-h-[300px] overflow-y-auto">
-                                            {(clearanceForm.receipts || []).map(r => (
-                                                <div key={r.id} className="flex justify-between items-center p-3 bg-gray-50 rounded border">
-                                                    <div><div className="font-bold text-sm text-gray-800">شماره: {r.number}</div><div className="text-xs text-gray-500">پارت: {r.part} | تاریخ: {r.issueDate}</div></div>
-                                                    <button onClick={() => handleDeleteWarehouseReceipt(r.id)} className="text-red-400 hover:text-red-600"><Trash2 size={14}/></button>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    </div>
-
-                                    <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm">
-                                        <h3 className="font-bold text-gray-800 mb-6 flex items-center gap-2"><Banknote className="text-green-600"/> هزینه‌های ترخیصیه</h3>
-                                        <div className="bg-gray-50 p-4 rounded-xl border mb-4 space-y-2">
-                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                                                <input className="border rounded p-2 text-sm" placeholder="عنوان هزینه / پارت" value={newClearancePayment.part} onChange={e => setNewClearancePayment({...newClearancePayment, part: e.target.value})} />
-                                                <input className="border rounded p-2 text-sm dir-ltr" placeholder="مبلغ (ریال)" value={formatNumberString(newClearancePayment.amount?.toString())} onChange={e => setNewClearancePayment({...newClearancePayment, amount: deformatNumberString(e.target.value)})} />
-                                                <select className="border rounded p-2 text-sm bg-white" value={newClearancePayment.bank} onChange={e => setNewClearancePayment({...newClearancePayment, bank: e.target.value})}><option value="">بانک مقصد...</option>{availableBanks.map(b => <option key={b} value={b}>{b}</option>)}</select>
-                                                <select className="border rounded p-2 text-sm bg-white" value={newClearancePayment.payingBank} onChange={e => setNewClearancePayment({...newClearancePayment, payingBank: e.target.value})}><option value="">بانک پرداخت کننده...</option>{availableBanks.map(b => <option key={b} value={b}>{b}</option>)}</select>
-                                                <input className="border rounded p-2 text-sm dir-ltr text-right col-span-2" placeholder="تاریخ پرداخت" value={newClearancePayment.date} onChange={e => setNewClearancePayment({...newClearancePayment, date: e.target.value})} />
-                                            </div>
-                                            <button onClick={handleAddClearancePayment} disabled={!newClearancePayment.amount} className="w-full bg-green-600 text-white py-2 rounded-lg hover:bg-green-700 text-sm">افزودن هزینه</button>
-                                        </div>
-                                        <div className="space-y-2 max-h-[300px] overflow-y-auto">
-                                            {(clearanceForm.payments || []).map(p => (
-                                                <div key={p.id} className="flex justify-between items-center p-3 bg-gray-50 rounded border">
-                                                    <div><div className="font-bold text-sm text-gray-800">{p.part}</div><div className="text-xs text-gray-500">{p.date} - {p.payingBank ? `از ${p.payingBank} به ` : ''}{p.bank}</div></div>
-                                                    <div className="flex items-center gap-3"><span className="font-mono font-bold text-gray-700 dir-ltr">{formatCurrency(p.amount)}</span><button onClick={() => handleDeleteClearancePayment(p.id)} className="text-red-400 hover:text-red-600"><Trash2 size={14}/></button></div>
-                                                </div>
-                                            ))}
-                                        </div>
-                                        <div className="mt-6 pt-4 border-t flex justify-between text-base"><span className="font-bold text-gray-800">جمع کل هزینه‌ها:</span><span className="font-black font-mono dir-ltr text-blue-700">{formatCurrency((clearanceForm.payments || []).reduce((acc, p) => acc + p.amount, 0))}</span></div>
                                     </div>
                                 </div>
                             )}
