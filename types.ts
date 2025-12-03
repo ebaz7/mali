@@ -336,6 +336,21 @@ export interface InternalShippingData {
     payments: ShippingPayment[];
 }
 
+// --- AGENT/CLEARANCE FEES TYPES ---
+export interface AgentPayment {
+    id: string;
+    agentName: string;
+    amount: number;
+    bank: string;
+    date: string;
+    part: string;
+    description?: string;
+}
+
+export interface AgentData {
+    payments: AgentPayment[];
+}
+
 export interface CurrencyPayment {
     id: string;
     date: string;
@@ -491,6 +506,9 @@ export interface TradeRecord {
     
     // Internal Shipping Data (New)
     internalShippingData?: InternalShippingData;
+
+    // Agent / Clearance Fees Data (New)
+    agentData?: AgentData;
     
     // Currency Purchase Details
     currencyPurchaseData?: CurrencyPurchaseData;
@@ -501,6 +519,10 @@ export interface TradeRecord {
     startDate: string; // ISO Date
     status: 'Active' | 'Completed' | 'Cancelled';
     
+    // Finalization Flags
+    isCommitmentFulfilled?: boolean; // رفع تعهد
+    isArchived?: boolean; // بایگانی شده (ترخیص شده)
+
     stages: Record<string, TradeStageData>; // Map of Stage Enum to Data
 
     createdAt: number;
