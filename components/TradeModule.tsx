@@ -1,9 +1,9 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { User, TradeRecord, TradeStage, TradeItem, SystemSettings, InsuranceEndorsement, CurrencyPurchaseData, TradeTransaction, CurrencyTranche, TradeStageData, ShippingDocument, ShippingDocType, DocStatus, InvoiceItem, InspectionData, InspectionPayment, InspectionCertificate, ClearanceData, WarehouseReceipt, ClearancePayment } from '../types';
+import { User, TradeRecord, TradeStage, TradeItem, SystemSettings, InsuranceEndorsement, CurrencyPurchaseData, TradeTransaction, CurrencyTranche, TradeStageData, ShippingDocument, ShippingDocType, DocStatus, InvoiceItem, InspectionData, InspectionPayment, InspectionCertificate, ClearanceData, WarehouseReceipt, ClearancePayment, GreenLeafData, GreenLeafCustomsDuty, GreenLeafGuarantee, GreenLeafTax, GreenLeafRoadToll } from '../types';
 import { getTradeRecords, saveTradeRecord, updateTradeRecord, deleteTradeRecord, getSettings, uploadFile } from '../services/storageService';
 import { generateUUID, formatCurrency, formatNumberString, deformatNumberString, parsePersianDate, formatDate, calculateDaysDiff } from '../constants';
-import { Container, Plus, Search, CheckCircle2, Save, Trash2, X, Package, ArrowRight, History, Banknote, Coins, Wallet, FileSpreadsheet, Shield, LayoutDashboard, Printer, FileDown, Paperclip, Building2, FolderOpen, Home, Calculator, FileText, Microscope, ListFilter, Warehouse, Calendar, PieChart, BarChart, Clock } from 'lucide-react';
+import { Container, Plus, Search, CheckCircle2, Save, Trash2, X, Package, ArrowRight, History, Banknote, Coins, Wallet, FileSpreadsheet, Shield, LayoutDashboard, Printer, FileDown, Paperclip, Building2, FolderOpen, Home, Calculator, FileText, Microscope, ListFilter, Warehouse, Calendar, PieChart, BarChart, Clock, Leaf, Scale, ShieldCheck, Percent, Truck } from 'lucide-react';
 
 interface TradeModuleProps {
     currentUser: User;
@@ -19,7 +19,7 @@ const CURRENCIES = [
 ];
 
 // Report Types
-type ReportType = 'general' | 'allocation_queue' | 'allocated' | 'currency' | 'insurance' | 'shipping' | 'inspection' | 'clearance';
+type ReportType = 'general' | 'allocation_queue' | 'allocated' | 'currency' | 'insurance' | 'shipping' | 'inspection' | 'clearance' | 'green_leaf';
 
 const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
     const [records, setRecords] = useState<TradeRecord[]>([]);
@@ -47,7 +47,7 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
     const [newMainCurrency, setNewMainCurrency] = useState('EUR');
     const [newRecordCompany, setNewRecordCompany] = useState('');
     
-    const [activeTab, setActiveTab] = useState<'timeline' | 'proforma' | 'insurance' | 'currency_purchase' | 'shipping_docs' | 'inspection' | 'clearance'>('timeline');
+    const [activeTab, setActiveTab] = useState<'timeline' | 'proforma' | 'insurance' | 'currency_purchase' | 'shipping_docs' | 'inspection' | 'clearance_docs' | 'green_leaf'>('timeline');
     
     // Stage Detail Modal State
     const [editingStage, setEditingStage] = useState<TradeStage | null>(null);
@@ -72,6 +72,14 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
     const [clearanceForm, setClearanceForm] = useState<ClearanceData>({ receipts: [], payments: [] });
     const [newWarehouseReceipt, setNewWarehouseReceipt] = useState<Partial<WarehouseReceipt>>({ number: '', part: '', issueDate: '' });
     const [newClearancePayment, setNewClearancePayment] = useState<Partial<ClearancePayment>>({ amount: 0, part: '', bank: '', date: '', payingBank: '' });
+
+    // Green Leaf State
+    const [greenLeafForm, setGreenLeafForm] = useState<GreenLeafData>({ duties: [], guarantees: [], taxes: [], roadTolls: [] });
+    const [newCustomsDuty, setNewCustomsDuty] = useState<Partial<GreenLeafCustomsDuty>>({ cottageNumber: '', part: '', amount: 0, paymentMethod: 'Bank', bank: '', date: '' });
+    const [newGuaranteeDetails, setNewGuaranteeDetails] = useState<Partial<GreenLeafGuarantee>>({ guaranteeNumber: '', chequeNumber: '', chequeBank: '', chequeDate: '', cashAmount: 0, cashBank: '', cashDate: '' });
+    const [selectedDutyForGuarantee, setSelectedDutyForGuarantee] = useState<string>(''); // ID of the duty
+    const [newTax, setNewTax] = useState<Partial<GreenLeafTax>>({ part: '', amount: 0, bank: '', date: '' });
+    const [newRoadToll, setNewRoadToll] = useState<Partial<GreenLeafRoadToll>>({ part: '', amount: 0, bank: '', date: '' });
 
     // License Transactions State
     const [newLicenseTx, setNewLicenseTx] = useState<Partial<TradeTransaction>>({ amount: 0, bank: '', date: '', description: 'هزینه ثبت سفارش' });
@@ -119,6 +127,8 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
             setInspectionForm(inspData);
 
             setClearanceForm(selectedRecord.clearanceData || { receipts: [], payments: [] });
+
+            setGreenLeafForm(selectedRecord.greenLeafData || { duties: [], guarantees: [], taxes: [], roadTolls: [] });
             
             const curData = selectedRecord.currencyPurchaseData || { payments: [], purchasedAmount: 0, purchasedCurrencyType: selectedRecord.mainCurrency || 'EUR', tranches: [], isDelivered: false, deliveredAmount: 0 };
             if (!curData.tranches) curData.tranches = [];
@@ -132,6 +142,10 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
             setNewInspectionCertificate({ part: '', company: '', certificateNumber: '', amount: 0 });
             setNewWarehouseReceipt({ number: '', part: '', issueDate: '' });
             setNewClearancePayment({ amount: 0, part: '', bank: '', date: '', payingBank: '' });
+            setNewCustomsDuty({ cottageNumber: '', part: '', amount: 0, paymentMethod: 'Bank', bank: '', date: '' });
+            setNewGuaranteeDetails({ guaranteeNumber: '', chequeNumber: '', chequeBank: '', chequeDate: '', cashAmount: 0, cashBank: '', cashDate: '' });
+            setNewTax({ part: '', amount: 0, bank: '', date: '' });
+            setNewRoadToll({ part: '', amount: 0, bank: '', date: '' });
             setShippingDocForm({ status: 'Draft', documentNumber: '', documentDate: '', attachments: [], currency: selectedRecord.mainCurrency || 'EUR', invoiceItems: [], freightCost: 0 });
             setNewInvoiceItem({ name: '', weight: 0, unitPrice: 0, totalPrice: 0 });
         }
@@ -188,684 +202,672 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
     const handleAddClearancePayment = async () => { if (!selectedRecord || !newClearancePayment.amount) return; const payment: ClearancePayment = { id: generateUUID(), amount: Number(newClearancePayment.amount), part: newClearancePayment.part || '', bank: newClearancePayment.bank || '', date: newClearancePayment.date || '', payingBank: newClearancePayment.payingBank }; const updatedPayments = [...(clearanceForm.payments || []), payment]; const updatedData = { ...clearanceForm, payments: updatedPayments }; setClearanceForm(updatedData); setNewClearancePayment({ amount: 0, part: '', bank: '', date: '', payingBank: '' }); const totalCost = updatedPayments.reduce((acc, p) => acc + p.amount, 0); const updatedRecord = { ...selectedRecord, clearanceData: updatedData }; if (!updatedRecord.stages[TradeStage.CLEARANCE_DOCS]) updatedRecord.stages[TradeStage.CLEARANCE_DOCS] = getStageData(updatedRecord, TradeStage.CLEARANCE_DOCS); updatedRecord.stages[TradeStage.CLEARANCE_DOCS].costRial = totalCost; await updateTradeRecord(updatedRecord); setSelectedRecord(updatedRecord); };
     const handleDeleteClearancePayment = async (id: string) => { if (!selectedRecord) return; const updatedPayments = (clearanceForm.payments || []).filter(p => p.id !== id); const updatedData = { ...clearanceForm, payments: updatedPayments }; setClearanceForm(updatedData); const totalCost = updatedPayments.reduce((acc, p) => acc + p.amount, 0); const updatedRecord = { ...selectedRecord, clearanceData: updatedData }; if (!updatedRecord.stages[TradeStage.CLEARANCE_DOCS]) updatedRecord.stages[TradeStage.CLEARANCE_DOCS] = getStageData(updatedRecord, TradeStage.CLEARANCE_DOCS); updatedRecord.stages[TradeStage.CLEARANCE_DOCS].costRial = totalCost; await updateTradeRecord(updatedRecord); setSelectedRecord(updatedRecord); };
 
+    // Green Leaf Handlers
+    const calculateGreenLeafTotal = (data: GreenLeafData) => {
+        let total = 0;
+        // 1. Bank payments from Customs Duties
+        total += data.duties.filter(d => d.paymentMethod === 'Bank').reduce((acc, d) => acc + d.amount, 0);
+        // 2. Cash deposits from Guarantees
+        total += data.guarantees.reduce((acc, g) => acc + (g.cashAmount || 0), 0);
+        // 3. Tax
+        total += data.taxes.reduce((acc, t) => acc + t.amount, 0);
+        // 4. Road Tolls
+        total += data.roadTolls.reduce((acc, r) => acc + r.amount, 0);
+        return total;
+    };
+
+    const updateGreenLeafRecord = async (newData: GreenLeafData) => {
+        if (!selectedRecord) return;
+        setGreenLeafForm(newData);
+        const totalCost = calculateGreenLeafTotal(newData);
+        const updatedRecord = { ...selectedRecord, greenLeafData: newData };
+        
+        if (!updatedRecord.stages[TradeStage.GREEN_LEAF]) updatedRecord.stages[TradeStage.GREEN_LEAF] = getStageData(updatedRecord, TradeStage.GREEN_LEAF);
+        updatedRecord.stages[TradeStage.GREEN_LEAF].costRial = totalCost;
+        updatedRecord.stages[TradeStage.GREEN_LEAF].isCompleted = (newData.duties.length > 0);
+        
+        await updateTradeRecord(updatedRecord);
+        setSelectedRecord(updatedRecord);
+    };
+
+    const handleAddCustomsDuty = async () => {
+        if (!newCustomsDuty.cottageNumber || !newCustomsDuty.amount) return;
+        const duty: GreenLeafCustomsDuty = {
+            id: generateUUID(),
+            cottageNumber: newCustomsDuty.cottageNumber,
+            part: newCustomsDuty.part || '',
+            amount: Number(newCustomsDuty.amount),
+            paymentMethod: newCustomsDuty.paymentMethod || 'Bank',
+            bank: newCustomsDuty.bank,
+            date: newCustomsDuty.date
+        };
+        const updatedDuties = [...greenLeafForm.duties, duty];
+        await updateGreenLeafRecord({ ...greenLeafForm, duties: updatedDuties });
+        setNewCustomsDuty({ cottageNumber: '', part: '', amount: 0, paymentMethod: 'Bank', bank: '', date: '' });
+    };
+
+    const handleDeleteCustomsDuty = async (id: string) => {
+        // Also remove related guarantee if any
+        const updatedDuties = greenLeafForm.duties.filter(d => d.id !== id);
+        const updatedGuarantees = greenLeafForm.guarantees.filter(g => g.relatedDutyId !== id);
+        await updateGreenLeafRecord({ ...greenLeafForm, duties: updatedDuties, guarantees: updatedGuarantees });
+    };
+
+    const handleAddGuarantee = async () => {
+        if (!selectedDutyForGuarantee || !newGuaranteeDetails.guaranteeNumber) return;
+        
+        const duty = greenLeafForm.duties.find(d => d.id === selectedDutyForGuarantee);
+        const guarantee: GreenLeafGuarantee = {
+            id: generateUUID(),
+            relatedDutyId: selectedDutyForGuarantee,
+            guaranteeNumber: newGuaranteeDetails.guaranteeNumber,
+            chequeNumber: newGuaranteeDetails.chequeNumber,
+            chequeBank: newGuaranteeDetails.chequeBank,
+            chequeDate: newGuaranteeDetails.chequeDate,
+            cashAmount: Number(newGuaranteeDetails.cashAmount) || 0,
+            cashBank: newGuaranteeDetails.cashBank,
+            cashDate: newGuaranteeDetails.cashDate,
+            part: duty?.part // Inherit part from duty
+        };
+        const updatedGuarantees = [...greenLeafForm.guarantees, guarantee];
+        await updateGreenLeafRecord({ ...greenLeafForm, guarantees: updatedGuarantees });
+        setNewGuaranteeDetails({ guaranteeNumber: '', chequeNumber: '', chequeBank: '', chequeDate: '', cashAmount: 0, cashBank: '', cashDate: '' });
+        setSelectedDutyForGuarantee('');
+    };
+
+    const handleDeleteGuarantee = async (id: string) => {
+        const updatedGuarantees = greenLeafForm.guarantees.filter(g => g.id !== id);
+        await updateGreenLeafRecord({ ...greenLeafForm, guarantees: updatedGuarantees });
+    };
+
+    const handleAddTax = async () => {
+        if (!newTax.amount) return;
+        const tax: GreenLeafTax = { id: generateUUID(), amount: Number(newTax.amount), part: newTax.part || '', bank: newTax.bank || '', date: newTax.date || '' };
+        const updatedTaxes = [...greenLeafForm.taxes, tax];
+        await updateGreenLeafRecord({ ...greenLeafForm, taxes: updatedTaxes });
+        setNewTax({ part: '', amount: 0, bank: '', date: '' });
+    };
+    
+    const handleDeleteTax = async (id: string) => {
+        const updatedTaxes = greenLeafForm.taxes.filter(t => t.id !== id);
+        await updateGreenLeafRecord({ ...greenLeafForm, taxes: updatedTaxes });
+    };
+
+    const handleAddRoadToll = async () => {
+        if (!newRoadToll.amount) return;
+        const toll: GreenLeafRoadToll = { id: generateUUID(), amount: Number(newRoadToll.amount), part: newRoadToll.part || '', bank: newRoadToll.bank || '', date: newRoadToll.date || '' };
+        const updatedTolls = [...greenLeafForm.roadTolls, toll];
+        await updateGreenLeafRecord({ ...greenLeafForm, roadTolls: updatedTolls });
+        setNewRoadToll({ part: '', amount: 0, bank: '', date: '' });
+    };
+
+    const handleDeleteRoadToll = async (id: string) => {
+        const updatedTolls = greenLeafForm.roadTolls.filter(t => t.id !== id);
+        await updateGreenLeafRecord({ ...greenLeafForm, roadTolls: updatedTolls });
+    };
+
+
     // Currency Handlers
     const handleAddCurrencyTranche = async () => { if (!selectedRecord || !newCurrencyTranche.amount) return; const tranche: CurrencyTranche = { id: generateUUID(), date: newCurrencyTranche.date || '', amount: Number(newCurrencyTranche.amount), currencyType: newCurrencyTranche.currencyType || selectedRecord.mainCurrency || 'EUR', brokerName: newCurrencyTranche.brokerName || '', exchangeName: newCurrencyTranche.exchangeName || '', rate: Number(newCurrencyTranche.rate) || 0, isDelivered: newCurrencyTranche.isDelivered, deliveryDate: newCurrencyTranche.deliveryDate }; const currentTranches = currencyForm.tranches || []; const updatedTranches = [...currentTranches, tranche]; const totalPurchased = updatedTranches.reduce((acc, t) => acc + t.amount, 0); const totalDelivered = updatedTranches.filter(t => t.isDelivered).reduce((acc, t) => acc + t.amount, 0); const updatedForm = { ...currencyForm, tranches: updatedTranches, purchasedAmount: totalPurchased, deliveredAmount: totalDelivered }; setCurrencyForm(updatedForm); const updatedRecord = { ...selectedRecord, currencyPurchaseData: updatedForm }; await updateTradeRecord(updatedRecord); setSelectedRecord(updatedRecord); setNewCurrencyTranche({ amount: 0, currencyType: selectedRecord.mainCurrency || 'EUR', date: '', exchangeName: '', brokerName: '', isDelivered: false }); };
     const handleRemoveTranche = async (id: string) => { if (!selectedRecord) return; if (!confirm('آیا از حذف این پارت مطمئن هستید؟')) return; const updatedTranches = (currencyForm.tranches || []).filter(t => t.id !== id); const totalPurchased = updatedTranches.reduce((acc, t) => acc + t.amount, 0); const totalDelivered = updatedTranches.filter(t => t.isDelivered).reduce((acc, t) => acc + t.amount, 0); const updatedForm = { ...currencyForm, tranches: updatedTranches, purchasedAmount: totalPurchased, deliveredAmount: totalDelivered }; setCurrencyForm(updatedForm); const updatedRecord = { ...selectedRecord, currencyPurchaseData: updatedForm }; await updateTradeRecord(updatedRecord); setSelectedRecord(updatedRecord); }
 
     // Shipping Docs Handlers
-    const handleAddInvoiceItem = () => { if (!newInvoiceItem.name) return; const newItem: InvoiceItem = { id: generateUUID(), name: newInvoiceItem.name, weight: Number(newInvoiceItem.weight), unitPrice: Number(newInvoiceItem.unitPrice), totalPrice: Number(newInvoiceItem.totalPrice) || (Number(newInvoiceItem.weight) * Number(newInvoiceItem.unitPrice)) }; setShippingDocForm({ ...shippingDocForm, invoiceItems: [...(shippingDocForm.invoiceItems || []), newItem] }); setNewInvoiceItem({ name: '', weight: 0, unitPrice: 0, totalPrice: 0 }); };
-    const handleRemoveInvoiceItem = (id: string) => { setShippingDocForm({ ...shippingDocForm, invoiceItems: (shippingDocForm.invoiceItems || []).filter(i => i.id !== id) }); };
-    const handleSaveShippingDoc = async () => { if (!selectedRecord || !shippingDocForm.documentNumber) { alert("شماره سند الزامی است"); return; } let totalAmount = 0; if (activeShippingSubTab === 'Commercial Invoice') { totalAmount = (shippingDocForm.invoiceItems || []).reduce((sum, i) => sum + i.totalPrice, 0) + (Number(shippingDocForm.freightCost) || 0); } else { totalAmount = Number(shippingDocForm.amount) || 0; } const newDoc: ShippingDocument = { id: generateUUID(), type: activeShippingSubTab, status: activeShippingSubTab === 'Commercial Invoice' ? (shippingDocForm.status as DocStatus || 'Draft') : 'Final', documentNumber: shippingDocForm.documentNumber || '', documentDate: shippingDocForm.documentDate || '', attachments: shippingDocForm.attachments || [], partNumber: shippingDocForm.partNumber, description: shippingDocForm.description, invoiceItems: activeShippingSubTab === 'Commercial Invoice' ? shippingDocForm.invoiceItems : undefined, amount: totalAmount, freightCost: activeShippingSubTab === 'Commercial Invoice' ? Number(shippingDocForm.freightCost) : undefined, currency: activeShippingSubTab === 'Commercial Invoice' ? shippingDocForm.currency : undefined, netWeight: activeShippingSubTab === 'Packing List' ? Number(shippingDocForm.netWeight) : undefined, grossWeight: activeShippingSubTab === 'Packing List' ? Number(shippingDocForm.grossWeight) : undefined, packagesCount: activeShippingSubTab === 'Packing List' ? Number(shippingDocForm.packagesCount) : undefined, chamberOfCommerce: activeShippingSubTab === 'Certificate of Origin' ? shippingDocForm.chamberOfCommerce : undefined, vesselName: activeShippingSubTab === 'Bill of Lading' ? shippingDocForm.vesselName : undefined, portOfLoading: activeShippingSubTab === 'Bill of Lading' ? shippingDocForm.portOfLoading : undefined, portOfDischarge: activeShippingSubTab === 'Bill of Lading' ? shippingDocForm.portOfDischarge : undefined, createdAt: Date.now(), createdBy: currentUser.fullName }; const updatedDocs = [newDoc, ...(selectedRecord.shippingDocuments || [])]; const updatedRecord = { ...selectedRecord, shippingDocuments: updatedDocs }; if (!updatedRecord.stages[TradeStage.SHIPPING_DOCS]) updatedRecord.stages[TradeStage.SHIPPING_DOCS] = getStageData(updatedRecord, TradeStage.SHIPPING_DOCS); updatedRecord.stages[TradeStage.SHIPPING_DOCS].isCompleted = true; await updateTradeRecord(updatedRecord); setSelectedRecord(updatedRecord); setShippingDocForm({ status: 'Draft', documentNumber: '', documentDate: '', attachments: [], invoiceItems: [], amount: 0, freightCost: 0, netWeight: 0, grossWeight: 0, packagesCount: 0, chamberOfCommerce: '', vesselName: '', portOfLoading: '', portOfDischarge: '', description: '', partNumber: '', currency: selectedRecord.mainCurrency || 'EUR' }); setNewInvoiceItem({ name: '', weight: 0, unitPrice: 0, totalPrice: 0 }); };
-    const handleDeleteShippingDoc = async (id: string) => { if (!selectedRecord) return; if (!confirm('حذف شود؟')) return; const updatedDocs = (selectedRecord.shippingDocuments || []).filter(d => d.id !== id); const updatedRecord = { ...selectedRecord, shippingDocuments: updatedDocs }; await updateTradeRecord(updatedRecord); setSelectedRecord(updatedRecord); };
-    const handleDocFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => { const file = e.target.files?.[0]; if (!file) return; setUploadingDocFile(true); const reader = new FileReader(); reader.onload = async (ev) => { const base64 = ev.target?.result as string; try { const result = await uploadFile(file.name, base64); setShippingDocForm({ ...shippingDocForm, attachments: [...(shippingDocForm.attachments || []), { fileName: result.fileName, url: result.url }] }); } catch (error) { alert('خطا در آپلود'); } finally { setUploadingDocFile(false); } }; reader.readAsDataURL(file); };
+    const handleAddInvoiceItem = () => { if (!newInvoiceItem.name) return; const newItem: InvoiceItem = { id: generateUUID(), name: newInvoiceItem.name, weight: Number(newInvoiceItem.weight), unitPrice: Number(newInvoiceItem.unitPrice), totalPrice: Number(newInvoiceItem.totalPrice) || (Number(newInvoiceItem.weight) * Number(newInvoiceItem.unitPrice)) }; setShippingDocForm(prev => ({ ...prev, invoiceItems: [...(prev.invoiceItems || []), newItem] })); setNewInvoiceItem({ name: '', weight: 0, unitPrice: 0, totalPrice: 0 }); };
+    const handleRemoveInvoiceItem = (id: string) => { setShippingDocForm(prev => ({ ...prev, invoiceItems: (prev.invoiceItems || []).filter(i => i.id !== id) })); };
+    const handleDocFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => { const file = e.target.files?.[0]; if (!file) return; setUploadingDocFile(true); const reader = new FileReader(); reader.onload = async (ev) => { const base64 = ev.target?.result as string; try { const result = await uploadFile(file.name, base64); setShippingDocForm(prev => ({ ...prev, attachments: [...(prev.attachments || []), { fileName: result.fileName, url: result.url }] })); } catch (error) { alert('خطا در آپلود فایل'); } finally { setUploadingDocFile(false); } }; reader.readAsDataURL(file); e.target.value = ''; };
+    const handleSaveShippingDoc = async () => { if (!selectedRecord || !shippingDocForm.documentNumber) return; const newDoc: ShippingDocument = { id: generateUUID(), type: activeShippingSubTab, status: shippingDocForm.status || 'Draft', documentNumber: shippingDocForm.documentNumber, documentDate: shippingDocForm.documentDate || '', createdAt: Date.now(), createdBy: currentUser.fullName, attachments: shippingDocForm.attachments || [], invoiceItems: activeShippingSubTab === 'Commercial Invoice' ? shippingDocForm.invoiceItems : undefined, freightCost: activeShippingSubTab === 'Commercial Invoice' ? Number(shippingDocForm.freightCost) : undefined, currency: shippingDocForm.currency, netWeight: shippingDocForm.netWeight, grossWeight: shippingDocForm.grossWeight, packagesCount: shippingDocForm.packagesCount, vesselName: shippingDocForm.vesselName, portOfLoading: shippingDocForm.portOfLoading, portOfDischarge: shippingDocForm.portOfDischarge, description: shippingDocForm.description }; const updatedDocs = [...(selectedRecord.shippingDocuments || []), newDoc]; const updatedRecord = { ...selectedRecord, shippingDocuments: updatedDocs }; if (!updatedRecord.stages[TradeStage.SHIPPING_DOCS]) updatedRecord.stages[TradeStage.SHIPPING_DOCS] = getStageData(updatedRecord, TradeStage.SHIPPING_DOCS); if (activeShippingSubTab === 'Commercial Invoice') { updatedRecord.stages[TradeStage.SHIPPING_DOCS].costCurrency = updatedDocs.filter(d => d.type === 'Commercial Invoice').reduce((acc, d) => acc + (d.invoiceItems?.reduce((sum, i) => sum + i.totalPrice, 0) || 0) + (d.freightCost || 0), 0); } await updateTradeRecord(updatedRecord); setSelectedRecord(updatedRecord); setShippingDocForm({ status: 'Draft', documentNumber: '', documentDate: '', attachments: [], invoiceItems: [], freightCost: 0 }); };
+    const handleDeleteShippingDoc = async (id: string) => { if (!selectedRecord) return; const updatedDocs = (selectedRecord.shippingDocuments || []).filter(d => d.id !== id); const updatedRecord = { ...selectedRecord, shippingDocuments: updatedDocs }; await updateTradeRecord(updatedRecord); setSelectedRecord(updatedRecord); };
 
     // Timeline Modal Handlers
-    const handleOpenStage = (stage: TradeStage) => { if (!selectedRecord) return; const data = getStageData(selectedRecord, stage); setStageFormData(data); setEditingStage(stage); };
-    const handleSaveStage = async () => { if (!selectedRecord || !editingStage) return; const updatedStageData: TradeStageData = { ...getStageData(selectedRecord, editingStage), ...stageFormData, updatedAt: Date.now(), updatedBy: currentUser.fullName }; const updatedStages = { ...selectedRecord.stages, [editingStage]: updatedStageData }; const updatedRecord = { ...selectedRecord, stages: updatedStages }; await updateTradeRecord(updatedRecord); setSelectedRecord(updatedRecord); setEditingStage(null); };
-    const handleStageFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => { const file = e.target.files?.[0]; if (!file) return; setUploadingStageFile(true); const reader = new FileReader(); reader.onload = async (ev) => { const base64 = ev.target?.result as string; try { const result = await uploadFile(file.name, base64); setStageFormData({ ...stageFormData, attachments: [...(stageFormData.attachments || []), { fileName: result.fileName, url: result.url }] }); } catch (error) { alert('خطا در آپلود'); } finally { setUploadingStageFile(false); } }; reader.readAsDataURL(file); };
-    const removeStageAttachment = (index: number) => { setStageFormData({ ...stageFormData, attachments: (stageFormData.attachments || []).filter((_, i) => i !== index) }); };
+    const handleStageClick = (stage: TradeStage) => { const data = getStageData(selectedRecord, stage); setEditingStage(stage); setStageFormData(data); };
+    const handleStageFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => { const file = e.target.files?.[0]; if (!file) return; setUploadingStageFile(true); const reader = new FileReader(); reader.onload = async (ev) => { const base64 = ev.target?.result as string; try { const result = await uploadFile(file.name, base64); setStageFormData(prev => ({ ...prev, attachments: [...(prev.attachments || []), { fileName: result.fileName, url: result.url }] })); } catch (error) { alert('خطا در آپلود'); } finally { setUploadingStageFile(false); } }; reader.readAsDataURL(file); e.target.value = ''; };
+    const handleSaveStage = async () => { if (!selectedRecord || !editingStage) return; const updatedRecord = { ...selectedRecord }; updatedRecord.stages[editingStage] = { ...getStageData(selectedRecord, editingStage), ...stageFormData, updatedAt: Date.now(), updatedBy: currentUser.fullName }; if (editingStage === TradeStage.ALLOCATION_QUEUE && stageFormData.queueDate) { updatedRecord.stages[TradeStage.ALLOCATION_QUEUE].queueDate = stageFormData.queueDate; } if (editingStage === TradeStage.ALLOCATION_APPROVED) { updatedRecord.stages[TradeStage.ALLOCATION_APPROVED].allocationDate = stageFormData.allocationDate; updatedRecord.stages[TradeStage.ALLOCATION_APPROVED].allocationCode = stageFormData.allocationCode; updatedRecord.stages[TradeStage.ALLOCATION_APPROVED].allocationExpiry = stageFormData.allocationExpiry; } await updateTradeRecord(updatedRecord); setSelectedRecord(updatedRecord); setEditingStage(null); };
 
-    const getFilteredRecords = () => { const term = searchTerm.toLowerCase(); let subset = records; if (!term) { if (navLevel === 'COMPANY' && selectedCompany) { subset = records.filter(r => (r.company || 'بدون شرکت') === selectedCompany); } else if (navLevel === 'GROUP' && selectedCompany && selectedGroup) { subset = records.filter(r => (r.company || 'بدون شرکت') === selectedCompany && (r.commodityGroup || 'سایر') === selectedGroup); } else if (navLevel === 'ROOT') { return []; } } return subset.filter(r => { if (!term) return true; return r.fileNumber.toLowerCase().includes(term) || (r.registrationNumber || '').toLowerCase().includes(term) || r.goodsName?.toLowerCase().includes(term); }); };
-    
-    // Cost Calculations for Sidebar
-    const getTotalRialCost = (record: TradeRecord) => {
-        return Object.values(record.stages).reduce((sum, stage) => sum + (stage.costRial || 0), 0);
-    };
-
-    const getActiveStagesCosts = (record: TradeRecord) => {
-        return Object.values(record.stages)
-            .filter(s => (s.costRial || 0) > 0 || (s.costCurrency || 0) > 0)
-            .map(s => ({
-                name: s.stage,
-                rial: s.costRial || 0,
-                currency: s.costCurrency || 0,
-                currType: s.currencyType || record.mainCurrency || 'EUR'
-            }));
-    };
-
-    // Report Logic
-    const getReportData = () => {
-        let data = records;
-        if (reportFilterCompany) data = data.filter(r => r.company === reportFilterCompany);
+    // Reports Logic
+    const renderReportContent = () => {
+        let filteredRecords = records;
+        if (reportFilterCompany) filteredRecords = records.filter(r => r.company === reportFilterCompany);
         
         switch (activeReport) {
-            case 'allocation_queue':
-                return data.filter(r => !r.stages[TradeStage.ALLOCATION_APPROVED]?.isCompleted && r.stages[TradeStage.ALLOCATION_QUEUE]?.isCompleted);
-            case 'allocated':
-                return data.filter(r => r.stages[TradeStage.ALLOCATION_APPROVED]?.isCompleted && !r.stages[TradeStage.CURRENCY_PURCHASE]?.isCompleted);
+            case 'general':
+                return (<div className="overflow-x-auto"><table className="w-full text-sm text-right"><thead className="bg-gray-100 text-gray-700"><tr><th className="p-3">شماره پرونده</th><th className="p-3">فروشنده</th><th className="p-3">کالا</th><th className="p-3">شرکت</th><th className="p-3">مرحله جاری</th><th className="p-3">وضعیت</th></tr></thead><tbody>{filteredRecords.map(r => { const currentStage = STAGES.slice().reverse().find(s => r.stages[s]?.isCompleted) || 'شروع نشده'; return (<tr key={r.id} className="border-b hover:bg-gray-50"><td className="p-3 font-mono">{r.fileNumber}</td><td className="p-3">{r.sellerName}</td><td className="p-3">{r.goodsName}</td><td className="p-3">{r.company}</td><td className="p-3"><span className="bg-blue-100 text-blue-700 px-2 py-1 rounded text-xs">{currentStage}</span></td><td className="p-3">{r.status}</td></tr>); })}</tbody></table></div>);
             case 'currency':
-                return data.filter(r => (r.currencyPurchaseData?.purchasedAmount || 0) > 0);
-            case 'inspection':
-                return data.filter(r => (r.inspectionData?.certificates?.length || 0) > 0);
+                return (<div className="overflow-x-auto"><table className="w-full text-sm text-right"><thead className="bg-gray-100 text-gray-700"><tr><th className="p-3">شماره پرونده</th><th className="p-3">ارز</th><th className="p-3">خریداری شده</th><th className="p-3">تحویل شده</th><th className="p-3">باقیمانده</th></tr></thead><tbody>{filteredRecords.map(r => { const d = r.currencyPurchaseData; if (!d) return null; const purchased = d.purchasedAmount || 0; const delivered = d.deliveredAmount || 0; return (<tr key={r.id} className="border-b hover:bg-gray-50"><td className="p-3 font-mono">{r.fileNumber}</td><td className="p-3">{r.mainCurrency}</td><td className="p-3 font-bold text-blue-600">{formatCurrency(purchased)}</td><td className="p-3 font-bold text-green-600">{formatCurrency(delivered)}</td><td className="p-3 font-bold text-red-600">{formatCurrency(purchased - delivered)}</td></tr>); })}</tbody></table></div>);
+            case 'allocation_queue':
+                return (<div className="overflow-x-auto"><table className="w-full text-sm text-right"><thead className="bg-gray-100 text-gray-700"><tr><th className="p-3">شماره پرونده</th><th className="p-3">کالا</th><th className="p-3">تاریخ ورود به صف</th><th className="p-3">مدت انتظار</th><th className="p-3">وضعیت</th></tr></thead><tbody>{filteredRecords.filter(r => r.stages[TradeStage.ALLOCATION_QUEUE]?.isCompleted && !r.stages[TradeStage.ALLOCATION_APPROVED]?.isCompleted).map(r => { const queueDate = r.stages[TradeStage.ALLOCATION_QUEUE].queueDate; const days = queueDate ? calculateDaysDiff(queueDate) : '-'; return (<tr key={r.id} className="border-b hover:bg-gray-50"><td className="p-3 font-mono">{r.fileNumber}</td><td className="p-3">{r.goodsName}</td><td className="p-3">{queueDate || '-'}</td><td className="p-3"><span className="bg-amber-100 text-amber-700 px-2 py-1 rounded text-xs font-bold">{days} روز</span></td><td className="p-3 text-amber-600">در صف</td></tr>); })}</tbody></table></div>);
             case 'clearance':
-                return data.filter(r => (r.clearanceData?.receipts?.length || 0) > 0);
-            default:
-                return data;
+                return (<div className="overflow-x-auto"><table className="w-full text-sm text-right"><thead className="bg-gray-100 text-gray-700"><tr><th className="p-3">شماره پرونده</th><th className="p-3">قبض انبار(ها)</th><th className="p-3">هزینه ترخیصیه</th><th className="p-3">تعداد پارت</th></tr></thead><tbody>{filteredRecords.filter(r => r.clearanceData?.receipts.length).map(r => { return (<tr key={r.id} className="border-b hover:bg-gray-50"><td className="p-3 font-mono">{r.fileNumber}</td><td className="p-3">{r.clearanceData?.receipts.map(rc => rc.number).join(', ')}</td><td className="p-3">{formatCurrency(r.clearanceData?.payments.reduce((acc,p)=>acc+p.amount,0) || 0)}</td><td className="p-3">{r.clearanceData?.receipts.length}</td></tr>); })}</tbody></table></div>);
+            case 'green_leaf':
+                return (<div className="overflow-x-auto"><table className="w-full text-sm text-right"><thead className="bg-gray-100 text-gray-700"><tr><th className="p-3">شماره پرونده</th><th className="p-3">کوتاژها</th><th className="p-3">حقوق گمرکی (بانک)</th><th className="p-3">ضمانت‌نامه‌ها</th><th className="p-3">جمع هزینه‌های گمرکی</th></tr></thead><tbody>{filteredRecords.filter(r => r.greenLeafData?.duties.length).map(r => { const d = r.greenLeafData; if(!d) return null; const total = calculateGreenLeafTotal(d); return (<tr key={r.id} className="border-b hover:bg-gray-50"><td className="p-3 font-mono">{r.fileNumber}</td><td className="p-3">{d.duties.map(x => x.cottageNumber).join(', ')}</td><td className="p-3">{formatCurrency(d.duties.filter(x=>x.paymentMethod==='Bank').reduce((a,b)=>a+b.amount,0))}</td><td className="p-3">{d.guarantees.length} مورد</td><td className="p-3 font-bold">{formatCurrency(total)}</td></tr>); })}</tbody></table></div>);
+            default: return <div>گزارش در حال تکمیل است...</div>;
         }
     };
 
-    const handlePrintReport = () => {
-        window.print();
-    };
-
     if (viewMode === 'reports') {
-        const reportData = getReportData();
         return (
-             <div className="flex h-[calc(100vh-80px)] bg-gray-50 animate-fade-in overflow-hidden">
-                {/* Reports Sidebar */}
-                <aside className="w-64 bg-white border-l border-gray-200 flex-shrink-0 flex flex-col no-print">
-                    <div className="p-4 border-b flex items-center gap-2 text-gray-700 bg-gray-50">
-                        <PieChart size={20}/>
-                        <span className="font-bold">انواع گزارشات</span>
-                    </div>
-                    <div className="flex-1 overflow-y-auto p-2 space-y-1">
-                        {[
-                            { id: 'general', label: 'گزارش جامع پرونده‌ها' },
-                            { id: 'allocation_queue', label: 'پرونده‌های در صف تخصیص' },
-                            { id: 'allocated', label: 'پرونده‌های تخصیص یافته' },
-                            { id: 'currency', label: 'گزارش خرید ارز' },
-                            { id: 'insurance', label: 'گزارش بیمه باربری' },
-                            { id: 'shipping', label: 'گزارش حمل و نقل' },
-                            { id: 'inspection', label: 'گزارش بازرسی' },
-                            { id: 'clearance', label: 'گزارش ترخیصیه و قبض انبار' },
-                        ].map(item => (
-                            <button
-                                key={item.id}
-                                onClick={() => setActiveReport(item.id as ReportType)}
-                                className={`w-full text-right px-4 py-3 rounded-lg text-sm transition-colors ${activeReport === item.id ? 'bg-blue-50 text-blue-700 font-bold' : 'text-gray-600 hover:bg-gray-50'}`}
-                            >
-                                {item.label}
-                            </button>
-                        ))}
-                    </div>
-                    <div className="p-4 border-t space-y-2">
-                        <label className="text-xs font-bold text-gray-500 block">فیلتر شرکت</label>
-                        <select className="w-full border rounded-lg p-2 text-sm" value={reportFilterCompany} onChange={e => setReportFilterCompany(e.target.value)}>
-                            <option value="">همه شرکت‌ها</option>
-                            {availableCompanies.map(c => <option key={c} value={c}>{c}</option>)}
-                        </select>
-                        <button onClick={() => setViewMode('dashboard')} className="w-full mt-2 border border-gray-300 text-gray-600 px-4 py-2 rounded-lg text-sm hover:bg-gray-100">بازگشت به داشبورد</button>
-                    </div>
-                </aside>
-
-                {/* Main Report Content */}
-                <main className="flex-1 flex flex-col min-w-0 bg-gray-50">
-                    <div className="bg-white p-4 border-b flex justify-between items-center no-print shadow-sm">
-                        <div>
-                             <h2 className="text-lg font-bold text-gray-800">
-                                 {activeReport === 'general' && 'گزارش جامع وضعیت پرونده‌ها'}
-                                 {activeReport === 'allocation_queue' && 'لیست پرونده‌های در انتظار تخصیص ارز'}
-                                 {activeReport === 'allocated' && 'لیست پرونده‌های دارای تخصیص معتبر'}
-                                 {activeReport === 'currency' && 'گزارش خرید و تحویل ارز'}
-                                 {activeReport === 'clearance' && 'گزارش قبض انبار و ترخیصیه'}
-                                 {activeReport === 'inspection' && 'گزارش گواهی‌های بازرسی'}
-                             </h2>
-                             <p className="text-xs text-gray-500 mt-1">تعداد رکورد: {reportData.length}</p>
-                        </div>
-                        <button onClick={handlePrintReport} className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm flex items-center gap-2 hover:bg-blue-700 shadow"><Printer size={16}/> چاپ / خروجی PDF</button>
-                    </div>
-
-                    <div className="flex-1 overflow-auto p-4 md:p-8" id="print-area">
-                        <div className="bg-white border rounded-xl shadow-sm overflow-hidden">
-                             <table className="w-full text-sm text-right">
-                                <thead className="bg-gray-100 text-gray-700 border-b">
-                                    <tr>
-                                        <th className="p-3">شماره پرونده</th>
-                                        <th className="p-3">شرکت</th>
-                                        <th className="p-3">کالا</th>
-                                        {activeReport === 'allocation_queue' && <th className="p-3">تاریخ صف</th>}
-                                        {activeReport === 'allocated' && <th className="p-3">کد تخصیص / انقضا</th>}
-                                        {activeReport === 'currency' && <th className="p-3">ارز خریداری شده</th>}
-                                        {activeReport === 'currency' && <th className="p-3">ارز تحویل شده</th>}
-                                        {activeReport === 'clearance' && <th className="p-3">شماره قبض انبار / تاریخ</th>}
-                                        {activeReport === 'inspection' && <th className="p-3">شماره گواهی بازرسی</th>}
-                                        <th className="p-3">وضعیت فعلی</th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-gray-100">
-                                    {reportData.length === 0 ? (
-                                        <tr><td colSpan={8} className="p-8 text-center text-gray-400">هیچ داده‌ای مطابق فیلترها یافت نشد.</td></tr>
-                                    ) : (
-                                        reportData.map(r => (
-                                            <tr key={r.id} className="hover:bg-gray-50 print:break-inside-avoid">
-                                                <td className="p-3 font-bold text-blue-600">{r.fileNumber}</td>
-                                                <td className="p-3">{r.company}</td>
-                                                <td className="p-3">{r.goodsName}</td>
-                                                
-                                                {activeReport === 'allocation_queue' && (
-                                                    <td className="p-3 font-mono dir-ltr text-right">{r.stages[TradeStage.ALLOCATION_QUEUE]?.queueDate || '-'}</td>
-                                                )}
-                                                
-                                                {activeReport === 'allocated' && (
-                                                    <td className="p-3">
-                                                        <div className="font-mono font-bold">{r.stages[TradeStage.ALLOCATION_APPROVED]?.allocationCode || '-'}</div>
-                                                        <div className="text-xs text-red-500">{r.stages[TradeStage.ALLOCATION_APPROVED]?.allocationExpiry}</div>
-                                                    </td>
-                                                )}
-
-                                                {activeReport === 'currency' && (
-                                                    <>
-                                                        <td className="p-3 font-mono dir-ltr text-right text-blue-600 font-bold">{formatCurrency(r.currencyPurchaseData?.purchasedAmount || 0)} {r.mainCurrency}</td>
-                                                        <td className="p-3 font-mono dir-ltr text-right text-green-600">{formatCurrency(r.currencyPurchaseData?.deliveredAmount || 0)} {r.mainCurrency}</td>
-                                                    </>
-                                                )}
-
-                                                {activeReport === 'clearance' && (
-                                                    <td className="p-3">
-                                                        {(r.clearanceData?.receipts || []).map((receipt, i) => (
-                                                            <div key={i} className="text-xs border-b last:border-0 pb-1 mb-1">
-                                                                <span className="font-bold">{receipt.number}</span>
-                                                                <span className="text-gray-500 mx-1">({receipt.issueDate})</span>
-                                                            </div>
-                                                        ))}
-                                                        {(r.clearanceData?.receipts || []).length === 0 && '-'}
-                                                    </td>
-                                                )}
-
-                                                {activeReport === 'inspection' && (
-                                                    <td className="p-3">
-                                                        {(r.inspectionData?.certificates || []).map((c, i) => (
-                                                            <div key={i} className="text-xs font-mono">{c.certificateNumber}</div>
-                                                        ))}
-                                                    </td>
-                                                )}
-
-                                                <td className="p-3">
-                                                    <span className="inline-block px-2 py-1 rounded text-xs bg-gray-100 text-gray-600">{r.status}</span>
-                                                </td>
-                                            </tr>
-                                        ))
-                                    )}
-                                </tbody>
-                             </table>
-                        </div>
-                    </div>
-                </main>
-             </div>
+            <div className="flex h-[calc(100vh-100px)] bg-gray-50 rounded-2xl overflow-hidden border">
+                <div className="w-64 bg-white border-l p-4 flex flex-col gap-2">
+                    <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2"><FileSpreadsheet size={20}/> گزارشات بازرگانی</h3>
+                    <div className="mb-4"><label className="text-xs font-bold text-gray-500 mb-1 block">فیلتر شرکت</label><select className="w-full border rounded p-1 text-sm" value={reportFilterCompany} onChange={e => setReportFilterCompany(e.target.value)}><option value="">همه شرکت‌ها</option>{availableCompanies.map(c => <option key={c} value={c}>{c}</option>)}</select></div>
+                    <button onClick={() => setActiveReport('general')} className={`p-2 rounded text-right text-sm ${activeReport === 'general' ? 'bg-blue-50 text-blue-700 font-bold' : 'hover:bg-gray-50'}`}>📄 لیست کلی پرونده‌ها</button>
+                    <button onClick={() => setActiveReport('allocation_queue')} className={`p-2 rounded text-right text-sm ${activeReport === 'allocation_queue' ? 'bg-blue-50 text-blue-700 font-bold' : 'hover:bg-gray-50'}`}>⏳ در صف تخصیص</button>
+                    <button onClick={() => setActiveReport('currency')} className={`p-2 rounded text-right text-sm ${activeReport === 'currency' ? 'bg-blue-50 text-blue-700 font-bold' : 'hover:bg-gray-50'}`}>💰 وضعیت خرید ارز</button>
+                    <button onClick={() => setActiveReport('clearance')} className={`p-2 rounded text-right text-sm ${activeReport === 'clearance' ? 'bg-blue-50 text-blue-700 font-bold' : 'hover:bg-gray-50'}`}>🏭 ترخیصیه و قبض انبار</button>
+                    <button onClick={() => setActiveReport('green_leaf')} className={`p-2 rounded text-right text-sm ${activeReport === 'green_leaf' ? 'bg-blue-50 text-blue-700 font-bold' : 'hover:bg-gray-50'}`}>🍃 برگ سبز و گمرک</button>
+                    <div className="mt-auto"><button onClick={() => window.print()} className="w-full flex items-center justify-center gap-2 border p-2 rounded hover:bg-gray-50 text-gray-600"><Printer size={16}/> چاپ گزارش</button><button onClick={() => setViewMode('dashboard')} className="w-full mt-2 flex items-center justify-center gap-2 bg-gray-800 text-white p-2 rounded hover:bg-gray-900">بازگشت به داشبورد</button></div>
+                </div>
+                <div className="flex-1 p-6 overflow-auto">
+                    <h2 className="text-xl font-bold mb-4">{activeReport === 'general' ? 'لیست کلی پرونده‌ها' : activeReport === 'allocation_queue' ? 'گزارش صف تخصیص' : activeReport === 'currency' ? 'گزارش ارزی' : 'گزارش'}</h2>
+                    {renderReportContent()}
+                </div>
+            </div>
         );
     }
 
-    if (viewMode === 'details' && selectedRecord) {
-        const activeCosts = getActiveStagesCosts(selectedRecord);
-        const totalRial = getTotalRialCost(selectedRecord);
-        const totalItemsValue = selectedRecord.items.reduce((sum, item) => sum + item.totalPrice, 0);
+    if (selectedRecord && viewMode === 'details') {
+        // ... (Details View Implementation remains same as restored version with Tabs)
+        // Calculating total cost for sidebar
+        const totalRial = STAGES.reduce((sum, stage) => sum + (selectedRecord.stages[stage]?.costRial || 0), 0);
+        const totalCurrency = STAGES.reduce((sum, stage) => sum + (selectedRecord.stages[stage]?.costCurrency || 0), 0);
 
         return (
-            <div className="space-y-6 animate-fade-in bg-white rounded-2xl shadow-sm border border-gray-200 min-h-screen flex flex-col relative">
-                
-                {/* MODAL FOR STAGE EDITING MOVED HERE */}
+            <div className="flex flex-col h-[calc(100vh-100px)] animate-fade-in relative">
+                {/* Stage Edit Modal */}
                 {editingStage && (
                     <div className="fixed inset-0 bg-black/50 z-[100] flex items-center justify-center p-4">
-                        <div className="bg-white rounded-xl shadow-xl w-full max-w-lg overflow-hidden max-h-[90vh] overflow-y-auto">
-                            <div className="flex justify-between items-center p-4 border-b">
-                                <h3 className="font-bold text-lg">{editingStage}</h3>
-                                <button onClick={() => setEditingStage(null)}><X size={20} className="text-gray-400"/></button>
-                            </div>
-                            <div className="p-4 space-y-4">
-                                <div><label className="text-sm font-bold block mb-1">وضعیت</label><div className="flex items-center gap-2"><input type="checkbox" className="w-5 h-5" checked={stageFormData.isCompleted || false} onChange={e => setStageFormData({...stageFormData, isCompleted: e.target.checked})} /><span className="text-sm">تکمیل شده</span></div></div>
-                                
-                                <div><label className="text-sm font-bold block mb-1">یادداشت / توضیحات</label><textarea className="w-full border rounded-lg p-2 text-sm h-24" value={stageFormData.description || ''} onChange={e => setStageFormData({...stageFormData, description: e.target.value})} placeholder="توضیحات مربوط به این مرحله..." /></div>
-                                
-                                <div className="grid grid-cols-2 gap-4 bg-gray-50 p-3 rounded-lg border">
-                                    <div>
-                                        <label className="text-xs font-bold block mb-1">هزینه (ریال)</label>
-                                        <input className="w-full border rounded p-2 text-sm dir-ltr" value={formatNumberString(stageFormData.costRial?.toString())} onChange={e => setStageFormData({...stageFormData, costRial: deformatNumberString(e.target.value)})} placeholder="0" />
-                                    </div>
-                                    <div>
-                                         <label className="text-xs font-bold block mb-1">هزینه ارزی</label>
-                                         <div className="flex">
-                                             <input className="w-full border rounded-r p-2 text-sm dir-ltr" value={stageFormData.costCurrency || ''} onChange={e => setStageFormData({...stageFormData, costCurrency: Number(e.target.value)})} placeholder="0" />
-                                             <select className="border border-l-0 rounded-l p-1 text-xs bg-gray-100" value={stageFormData.currencyType} onChange={e => setStageFormData({...stageFormData, currencyType: e.target.value})}>{CURRENCIES.map(c => <option key={c.code} value={c.code}>{c.code}</option>)}</select>
-                                         </div>
-                                    </div>
-                                </div>
-
+                        <div className="bg-white rounded-xl shadow-xl w-full max-w-lg p-6">
+                            <div className="flex justify-between items-center mb-4"><h3 className="font-bold text-lg">ویرایش مرحله: {editingStage}</h3><button onClick={() => setEditingStage(null)}><X size={20}/></button></div>
+                            <div className="space-y-4">
+                                <label className="flex items-center gap-2"><input type="checkbox" checked={stageFormData.isCompleted} onChange={e => setStageFormData({...stageFormData, isCompleted: e.target.checked})} className="w-5 h-5"/> <span className="font-bold">مرحله تکمیل شده است</span></label>
                                 {editingStage === TradeStage.ALLOCATION_QUEUE && (
-                                    <div className="grid grid-cols-2 gap-2 bg-amber-50 p-3 rounded-lg border border-amber-100 ring-2 ring-amber-200">
-                                        <div className="col-span-2"><span className="text-amber-700 text-xs font-bold mb-1 flex items-center gap-1"><Clock size={12}/> اطلاعات صف تخصیص</span></div>
-                                        <div><label className="text-xs font-bold block mb-1 text-amber-800">تاریخ شروع (ورود به صف)</label><input className="w-full border border-amber-300 rounded p-2 text-sm dir-ltr text-right bg-white focus:ring-2 focus:ring-amber-500" placeholder="YYYY/MM/DD" value={stageFormData.queueDate || ''} onChange={e => setStageFormData({...stageFormData, queueDate: e.target.value})} /></div>
-                                        <div><label className="text-xs font-bold block mb-1 text-amber-800">نرخ ارز (تخمینی)</label><input className="w-full border border-amber-300 rounded p-2 text-sm dir-ltr bg-white" value={stageFormData.currencyRate || ''} onChange={e => setStageFormData({...stageFormData, currencyRate: Number(e.target.value)})} /></div>
+                                    <div className="bg-amber-50 p-3 rounded border border-amber-200 space-y-2">
+                                        <div><label className="text-xs font-bold block">تاریخ ورود به صف</label><input type="text" className="w-full border rounded p-2 text-sm" placeholder="1403/01/01" value={stageFormData.queueDate || ''} onChange={e => setStageFormData({...stageFormData, queueDate: e.target.value})} /></div>
+                                        {stageFormData.queueDate && <div className="text-xs text-amber-700 font-bold">مدت انتظار: {calculateDaysDiff(stageFormData.queueDate)} روز</div>}
                                     </div>
                                 )}
-
                                 {editingStage === TradeStage.ALLOCATION_APPROVED && (
-                                    <div className="grid grid-cols-2 gap-2 bg-green-50 p-3 rounded-lg border border-green-100">
-                                        <div><label className="text-xs font-bold block mb-1">تاریخ تخصیص</label><input className="w-full border rounded p-2 text-sm dir-ltr text-right" placeholder="YYYY/MM/DD" value={stageFormData.allocationDate || ''} onChange={e => setStageFormData({...stageFormData, allocationDate: e.target.value})} /></div>
-                                        <div><label className="text-xs font-bold block mb-1">مهلت انقضا</label><input className="w-full border rounded p-2 text-sm dir-ltr text-right" placeholder="YYYY/MM/DD" value={stageFormData.allocationExpiry || ''} onChange={e => setStageFormData({...stageFormData, allocationExpiry: e.target.value})} /></div>
-                                        <div className="col-span-2"><label className="text-xs font-bold block mb-1">کد تخصیص (فیش)</label><input className="w-full border rounded p-2 text-sm" value={stageFormData.allocationCode || ''} onChange={e => setStageFormData({...stageFormData, allocationCode: e.target.value})} /></div>
+                                    <div className="bg-green-50 p-3 rounded border border-green-200 space-y-2">
+                                        <div><label className="text-xs font-bold block">شماره فیش/تخصیص</label><input type="text" className="w-full border rounded p-2 text-sm" value={stageFormData.allocationCode || ''} onChange={e => setStageFormData({...stageFormData, allocationCode: e.target.value})} /></div>
+                                        <div className="grid grid-cols-2 gap-2">
+                                            <div><label className="text-xs font-bold block">تاریخ تخصیص</label><input type="text" className="w-full border rounded p-2 text-sm" placeholder="1403/01/01" value={stageFormData.allocationDate || ''} onChange={e => setStageFormData({...stageFormData, allocationDate: e.target.value})} /></div>
+                                            <div><label className="text-xs font-bold block">مهلت انقضا</label><input type="text" className="w-full border rounded p-2 text-sm" placeholder="1403/02/01" value={stageFormData.allocationExpiry || ''} onChange={e => setStageFormData({...stageFormData, allocationExpiry: e.target.value})} /></div>
+                                        </div>
                                     </div>
                                 )}
-
-                                <div className="border-t pt-2">
-                                    <label className="text-sm font-bold block mb-2 flex items-center gap-2"><Paperclip size={16}/> فایل‌های ضمیمه</label>
-                                    <div className="space-y-2 mb-2">{(stageFormData.attachments || []).map((att, idx) => (<div key={idx} className="flex justify-between items-center bg-gray-50 p-2 rounded text-xs border"><a href={att.url} target="_blank" className="text-blue-600 truncate max-w-[200px] hover:underline">{att.fileName}</a><button onClick={() => removeStageAttachment(idx)} className="text-red-500"><X size={14}/></button></div>))}</div>
-                                    <button onClick={() => fileInputRef.current?.click()} disabled={uploadingStageFile} className="bg-gray-100 text-gray-700 px-3 py-1.5 rounded text-xs hover:bg-gray-200 border w-full">{uploadingStageFile ? 'در حال آپلود...' : 'افزودن فایل جدید'}</button>
-                                    <input type="file" ref={fileInputRef} className="hidden" onChange={handleStageFileChange} />
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div><label className="text-xs font-bold block">هزینه ریالی</label><input type="text" className="w-full border rounded p-2 text-sm" value={formatNumberString(stageFormData.costRial)} onChange={e => setStageFormData({...stageFormData, costRial: deformatNumberString(e.target.value)})} /></div>
+                                    <div><label className="text-xs font-bold block">هزینه ارزی</label><input type="text" className="w-full border rounded p-2 text-sm" value={formatNumberString(stageFormData.costCurrency)} onChange={e => setStageFormData({...stageFormData, costCurrency: deformatNumberString(e.target.value)})} /></div>
                                 </div>
+                                <div><label className="text-xs font-bold block">توضیحات</label><textarea className="w-full border rounded p-2 text-sm h-24" value={stageFormData.description || ''} onChange={e => setStageFormData({...stageFormData, description: e.target.value})} /></div>
+                                <div><label className="text-xs font-bold block mb-1">فایل‌های ضمیمه</label><div className="flex items-center gap-2 mb-2"><input type="file" ref={fileInputRef} className="hidden" onChange={handleStageFileChange} /><button onClick={() => fileInputRef.current?.click()} disabled={uploadingStageFile} className="bg-gray-100 border px-3 py-1 rounded text-xs hover:bg-gray-200">{uploadingStageFile ? 'در حال آپلود...' : 'افزودن فایل'}</button></div><div className="space-y-1">{stageFormData.attachments?.map((att, i) => (<div key={i} className="flex justify-between items-center bg-gray-50 p-2 rounded text-xs"><a href={att.url} target="_blank" className="text-blue-600 truncate max-w-[200px]">{att.fileName}</a><button onClick={() => setStageFormData({...stageFormData, attachments: stageFormData.attachments?.filter((_, idx) => idx !== i)})} className="text-red-500"><X size={14}/></button></div>))}</div></div>
+                                <button onClick={handleSaveStage} className="w-full bg-blue-600 text-white py-2 rounded-lg font-bold hover:bg-blue-700">ذخیره تغییرات</button>
                             </div>
-                            <div className="p-4 border-t bg-gray-50 flex justify-end gap-2"><button onClick={() => setEditingStage(null)} className="px-4 py-2 text-sm text-gray-600">انصراف</button><button onClick={handleSaveStage} className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg">ذخیره تغییرات</button></div>
                         </div>
                     </div>
                 )}
 
-                <div className="bg-gradient-to-l from-blue-600 to-blue-800 text-white p-6 rounded-t-2xl shadow-lg relative">
-                    <div className="flex justify-between items-start">
-                        <div>
-                            <div className="flex items-center gap-3 mb-2 opacity-90"><Building2 size={16}/><span className="text-sm">{selectedRecord.company}</span></div>
-                            <h1 className="text-2xl font-bold mb-2">{selectedRecord.fileNumber}</h1>
-                            <p className="text-blue-100 text-sm">{selectedRecord.goodsName}</p>
-                        </div>
-                        <button onClick={() => { setViewMode('dashboard'); setSelectedRecord(null); }} className="p-2 bg-white/20 hover:bg-white/30 rounded-lg text-white"><X size={20}/></button>
+                <div className="bg-white border-b p-4 flex justify-between items-center shadow-sm z-10">
+                    <div className="flex items-center gap-4"><button onClick={() => setViewMode('dashboard')} className="p-2 hover:bg-gray-100 rounded-full"><ArrowRight /></button><div><h1 className="text-xl font-bold flex items-center gap-2">{selectedRecord.goodsName}<span className="text-sm font-normal text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">{selectedRecord.fileNumber}</span></h1><p className="text-xs text-gray-500">{selectedRecord.company} | {selectedRecord.sellerName}</p></div></div>
+                    <div className="flex gap-2">
+                        <button onClick={() => setActiveTab('timeline')} className={`px-4 py-2 rounded-lg text-sm font-bold transition-colors ${activeTab === 'timeline' ? 'bg-blue-100 text-blue-700' : 'hover:bg-gray-100'}`}>تایم‌لاین</button>
+                        <button onClick={() => setActiveTab('proforma')} className={`px-4 py-2 rounded-lg text-sm font-bold transition-colors ${activeTab === 'proforma' ? 'bg-blue-100 text-blue-700' : 'hover:bg-gray-100'}`}>پروفرما</button>
+                        <button onClick={() => setActiveTab('insurance')} className={`px-4 py-2 rounded-lg text-sm font-bold transition-colors ${activeTab === 'insurance' ? 'bg-blue-100 text-blue-700' : 'hover:bg-gray-100'}`}>بیمه</button>
+                        <button onClick={() => setActiveTab('currency_purchase')} className={`px-4 py-2 rounded-lg text-sm font-bold transition-colors ${activeTab === 'currency_purchase' ? 'bg-blue-100 text-blue-700' : 'hover:bg-gray-100'}`}>خرید ارز</button>
+                        <button onClick={() => setActiveTab('shipping_docs')} className={`px-4 py-2 rounded-lg text-sm font-bold transition-colors ${activeTab === 'shipping_docs' ? 'bg-blue-100 text-blue-700' : 'hover:bg-gray-100'}`}>اسناد حمل</button>
+                        <button onClick={() => setActiveTab('inspection')} className={`px-4 py-2 rounded-lg text-sm font-bold transition-colors ${activeTab === 'inspection' ? 'bg-blue-100 text-blue-700' : 'hover:bg-gray-100'}`}>بازرسی</button>
+                        <button onClick={() => setActiveTab('clearance_docs')} className={`px-4 py-2 rounded-lg text-sm font-bold transition-colors ${activeTab === 'clearance_docs' ? 'bg-blue-100 text-blue-700' : 'hover:bg-gray-100'}`}>ترخیصیه و انبار</button>
+                        <button onClick={() => setActiveTab('green_leaf')} className={`px-4 py-2 rounded-lg text-sm font-bold transition-colors ${activeTab === 'green_leaf' ? 'bg-green-100 text-green-700' : 'hover:bg-gray-100'}`}>برگ سبز</button>
                     </div>
                 </div>
 
-                <div className="flex flex-col lg:flex-row h-full">
-                    {/* COST SIDEBAR */}
-                    <aside className="w-full lg:w-80 bg-gray-50 border-l border-gray-200 p-4 lg:min-h-screen">
-                        <div className="bg-white rounded-xl shadow-sm p-4 border border-gray-100 mb-4">
-                            <h3 className="font-bold text-gray-700 mb-3 flex items-center gap-2"><Calculator size={18}/> خلاصه هزینه‌ها</h3>
-                            <div className="space-y-3">
-                                <div className="flex justify-between text-sm"><span>ارز پایه:</span><span className="font-bold">{selectedRecord.mainCurrency}</span></div>
-                                <div className="h-px bg-gray-100 my-2"></div>
-                                {activeCosts.length === 0 ? <p className="text-xs text-gray-400 text-center py-2">هنوز هزینه‌ای ثبت نشده</p> : activeCosts.map((c, i) => (
-                                    <div key={i} className="flex justify-between text-xs items-center">
-                                        <span className="text-gray-600 truncate max-w-[100px]" title={c.name}>{c.name}</span>
-                                        <div className="text-left">
-                                            {c.rial > 0 && <div className="font-mono">{formatCurrency(c.rial)} R</div>}
-                                            {c.currency > 0 && <div className="font-mono text-blue-600">{formatCurrency(c.currency)} {c.currType}</div>}
+                <div className="flex flex-1 overflow-hidden">
+                    <div className="flex-1 overflow-y-auto p-6 bg-gray-50">
+                        {/* TAB CONTENT */}
+                        {activeTab === 'timeline' && (
+                             <div className="space-y-4 relative before:absolute before:inset-0 before:ml-5 before:-translate-x-px md:before:mx-auto md:before:translate-x-0 before:h-full before:w-0.5 before:bg-gradient-to-b before:from-transparent before:via-slate-300 before:to-transparent">
+                                {STAGES.map((stage, i) => {
+                                    const data = selectedRecord.stages[stage];
+                                    const isCompleted = data?.isCompleted;
+                                    const isPending = !isCompleted && (i === 0 || selectedRecord.stages[STAGES[i-1]]?.isCompleted);
+                                    
+                                    // Day Counter Logic for Allocation Queue
+                                    let dayCounter = null;
+                                    if (stage === TradeStage.ALLOCATION_QUEUE && data?.queueDate) {
+                                        const endDate = selectedRecord.stages[TradeStage.ALLOCATION_APPROVED]?.isCompleted && selectedRecord.stages[TradeStage.ALLOCATION_APPROVED]?.allocationDate 
+                                            ? selectedRecord.stages[TradeStage.ALLOCATION_APPROVED].allocationDate 
+                                            : undefined;
+                                        const days = calculateDaysDiff(data.queueDate, endDate);
+                                        dayCounter = <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded font-bold ml-2">{days} روز</span>;
+                                    }
+
+                                    return (
+                                        <div key={stage} className="relative flex items-center justify-between md:justify-normal md:odd:flex-row-reverse group is-active">
+                                            <div className="flex items-center justify-center w-10 h-10 rounded-full border border-white bg-slate-300 group-[.is-active]:bg-emerald-500 text-slate-500 group-[.is-active]:text-emerald-50 shadow shrink-0 md:order-1 md:group-odd:-translate-x-1/2 md:group-even:translate-x-1/2 z-10 cursor-pointer hover:scale-110 transition-transform" onClick={() => handleStageClick(stage)}>
+                                                {isCompleted ? <CheckCircle2 size={20}/> : <Clock size={20}/>}
+                                            </div>
+                                            <div className="w-[calc(100%-4rem)] md:w-[calc(50%-2.5rem)] bg-white p-4 rounded-xl border border-slate-200 shadow-sm cursor-pointer hover:border-blue-300 transition-colors" onClick={() => handleStageClick(stage)}>
+                                                <div className="flex items-center justify-between mb-1">
+                                                    <div className="font-bold text-gray-700">{stage} {dayCounter}</div>
+                                                    <time className="font-mono text-xs text-slate-500">{data?.updatedAt ? new Date(data.updatedAt).toLocaleDateString('fa-IR') : '-'}</time>
+                                                </div>
+                                                <div className="text-slate-500 text-sm">{data?.description || 'بدون توضیحات'}</div>
+                                                <div className="flex gap-2 mt-2">
+                                                    {data?.costRial ? <span className="text-xs bg-gray-100 px-2 py-1 rounded">هزینه: {formatCurrency(data.costRial)}</span> : null}
+                                                    {data?.attachments?.length ? <span className="text-xs bg-blue-50 text-blue-600 px-2 py-1 rounded flex items-center gap-1"><Paperclip size={12}/> {data.attachments.length} فایل</span> : null}
+                                                </div>
+                                            </div>
                                         </div>
+                                    );
+                                })}
+                             </div>
+                        )}
+
+                        {activeTab === 'proforma' && (
+                             <div className="bg-white p-6 rounded-xl border shadow-sm space-y-6">
+                                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                                     <div className="space-y-1"><label className="text-xs font-bold text-gray-500">شماره پرونده</label><input className="w-full border rounded p-2" value={selectedRecord.fileNumber} onChange={(e) => handleUpdateProforma('fileNumber', e.target.value)} /></div>
+                                     <div className="space-y-1"><label className="text-xs font-bold text-gray-500">فروشنده</label><input className="w-full border rounded p-2" value={selectedRecord.sellerName} onChange={(e) => handleUpdateProforma('sellerName', e.target.value)} /></div>
+                                     <div className="space-y-1"><label className="text-xs font-bold text-gray-500">ارز پایه</label><select className="w-full border rounded p-2 bg-white" value={selectedRecord.mainCurrency} onChange={(e) => handleUpdateProforma('mainCurrency', e.target.value)}>{CURRENCIES.map(c => <option key={c.code} value={c.code}>{c.label}</option>)}</select></div>
+                                 </div>
+                                 
+                                 {/* License Costs */}
+                                 <div className="border-t pt-4">
+                                     <h3 className="font-bold text-gray-700 mb-3 flex items-center gap-2"><Wallet size={18} /> هزینه‌های مجوز و ثبت سفارش</h3>
+                                     <div className="flex gap-2 items-end bg-gray-50 p-3 rounded mb-2">
+                                         <div className="flex-1"><label className="text-xs block mb-1">مبلغ (ریال)</label><input className="w-full border rounded p-1 text-sm" value={formatNumberString(newLicenseTx.amount)} onChange={e => setNewLicenseTx({...newLicenseTx, amount: deformatNumberString(e.target.value)})}/></div>
+                                         <div className="flex-1"><label className="text-xs block mb-1">بانک</label><input className="w-full border rounded p-1 text-sm" value={newLicenseTx.bank} onChange={e => setNewLicenseTx({...newLicenseTx, bank: e.target.value})}/></div>
+                                         <div className="flex-1"><label className="text-xs block mb-1">تاریخ</label><input className="w-full border rounded p-1 text-sm" value={newLicenseTx.date} onChange={e => setNewLicenseTx({...newLicenseTx, date: e.target.value})}/></div>
+                                         <div className="flex-[2]"><label className="text-xs block mb-1">شرح</label><input className="w-full border rounded p-1 text-sm" value={newLicenseTx.description} onChange={e => setNewLicenseTx({...newLicenseTx, description: e.target.value})}/></div>
+                                         <button onClick={handleAddLicenseTx} className="bg-blue-600 text-white p-1.5 rounded h-[30px] w-[30px] flex items-center justify-center"><Plus size={18}/></button>
+                                     </div>
+                                     <div className="space-y-1">{selectedRecord.licenseData?.transactions.map(tx => (<div key={tx.id} className="flex justify-between items-center bg-white border p-2 rounded text-sm"><span className="font-mono">{formatCurrency(tx.amount)}</span><span>{tx.bank}</span><span>{tx.date}</span><span className="text-gray-500">{tx.description}</span><button onClick={()=>handleRemoveLicenseTx(tx.id)} className="text-red-500"><Trash2 size={14}/></button></div>))}</div>
+                                 </div>
+
+                                 <div className="border-t pt-4">
+                                     <h3 className="font-bold text-gray-700 mb-3">اقلام کالا</h3>
+                                     <div className="flex gap-2 items-end bg-gray-50 p-3 rounded mb-2">
+                                         <div className="flex-[2]"><label className="text-xs block mb-1">نام کالا</label><input className="w-full border rounded p-1 text-sm" value={newItem.name} onChange={e => setNewItem({...newItem, name: e.target.value})}/></div>
+                                         <div className="flex-1"><label className="text-xs block mb-1">وزن (KG)</label><input className="w-full border rounded p-1 text-sm" type="number" value={newItem.weight} onChange={e => setNewItem({...newItem, weight: Number(e.target.value)})}/></div>
+                                         <div className="flex-1"><label className="text-xs block mb-1">فی ({selectedRecord.mainCurrency})</label><input className="w-full border rounded p-1 text-sm" type="number" value={newItem.unitPrice} onChange={e => setNewItem({...newItem, unitPrice: Number(e.target.value)})}/></div>
+                                         <button onClick={handleAddItem} className="bg-blue-600 text-white p-1.5 rounded"><Plus size={18}/></button>
+                                     </div>
+                                     <div className="space-y-1">{selectedRecord.items.map(item => (<div key={item.id} className="flex justify-between items-center bg-white border p-2 rounded text-sm"><span>{item.name}</span><div className="flex gap-4"><span className="bg-gray-100 px-2 rounded">{item.weight} KG</span><span className="font-mono">{formatCurrency(item.totalPrice)} {selectedRecord.mainCurrency}</span><button onClick={()=>handleRemoveItem(item.id)} className="text-red-500"><Trash2 size={14}/></button></div></div>))}</div>
+                                 </div>
+                             </div>
+                        )}
+
+                        {activeTab === 'insurance' && (
+                            <div className="bg-white p-6 rounded-xl border shadow-sm space-y-6">
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                    <div className="space-y-1"><label className="text-xs font-bold text-gray-500">شماره بیمه‌نامه</label><input className="w-full border rounded p-2" value={insuranceForm.policyNumber} onChange={(e) => setInsuranceForm({...insuranceForm, policyNumber: e.target.value})} /></div>
+                                    <div className="space-y-1"><label className="text-xs font-bold text-gray-500">شرکت بیمه</label><input className="w-full border rounded p-2" value={insuranceForm.company} onChange={(e) => setInsuranceForm({...insuranceForm, company: e.target.value})} /></div>
+                                    <div className="space-y-1"><label className="text-xs font-bold text-gray-500">هزینه اولیه (ریال)</label><input className="w-full border rounded p-2" value={formatNumberString(insuranceForm.cost)} onChange={(e) => setInsuranceForm({...insuranceForm, cost: deformatNumberString(e.target.value)})} /></div>
+                                    <div className="space-y-1"><label className="text-xs font-bold text-gray-500">بانک پرداخت کننده</label><input className="w-full border rounded p-2" value={insuranceForm.bank} onChange={(e) => setInsuranceForm({...insuranceForm, bank: e.target.value})} /></div>
+                                </div>
+                                <div className="border-t pt-4">
+                                    <h3 className="font-bold text-gray-700 mb-3">الحاقیه‌ها</h3>
+                                    <div className="bg-gray-50 p-3 rounded mb-2 flex gap-2 items-end">
+                                        <div className="flex items-center gap-2 bg-white border rounded px-2 py-1 h-[34px]"><button onClick={() => setEndorsementType('increase')} className={`text-xs px-2 py-1 rounded ${endorsementType === 'increase' ? 'bg-green-100 text-green-700 font-bold' : 'text-gray-500'}`}>افزایش</button><button onClick={() => setEndorsementType('refund')} className={`text-xs px-2 py-1 rounded ${endorsementType === 'refund' ? 'bg-red-100 text-red-700 font-bold' : 'text-gray-500'}`}>برگشت</button></div>
+                                        <input className="border rounded p-1 text-sm flex-1" placeholder="مبلغ (ریال)" value={formatNumberString(newEndorsement.amount)} onChange={e => setNewEndorsement({...newEndorsement, amount: deformatNumberString(e.target.value)})} />
+                                        <input className="border rounded p-1 text-sm flex-1" placeholder="تاریخ" value={newEndorsement.date} onChange={e => setNewEndorsement({...newEndorsement, date: e.target.value})} />
+                                        <input className="border rounded p-1 text-sm flex-[2]" placeholder="توضیحات" value={newEndorsement.description} onChange={e => setNewEndorsement({...newEndorsement, description: e.target.value})} />
+                                        <button onClick={handleAddEndorsement} className="bg-blue-600 text-white p-1.5 rounded"><Plus size={18}/></button>
                                     </div>
-                                ))}
-                                <div className="h-px bg-gray-200 my-2"></div>
-                                <div className="flex justify-between text-sm font-bold bg-blue-50 p-2 rounded">
-                                    <span>جمع ریالی:</span>
-                                    <span className="font-mono dir-ltr">{formatCurrency(totalRial)}</span>
+                                    <div className="space-y-1">{insuranceForm.endorsements?.map(e => (<div key={e.id} className="flex justify-between items-center bg-white border p-2 rounded text-sm"><span className={`font-bold ${e.amount > 0 ? 'text-green-600' : 'text-red-600'}`}>{e.amount > 0 ? 'افزایش' : 'برگشت'}: {formatCurrency(Math.abs(e.amount))}</span><span>{e.date}</span><span className="text-gray-500">{e.description}</span><button onClick={() => handleDeleteEndorsement(e.id)} className="text-red-500"><Trash2 size={14}/></button></div>))}</div>
+                                </div>
+                                <button onClick={handleSaveInsurance} className="w-full bg-blue-600 text-white py-2 rounded font-bold hover:bg-blue-700 mt-4"><Save size={18} className="inline mr-1"/> ذخیره اطلاعات بیمه</button>
+                            </div>
+                        )}
+
+                        {activeTab === 'currency_purchase' && (
+                            <div className="bg-white p-6 rounded-xl border shadow-sm space-y-6">
+                                {/* Tranches Section */}
+                                <div className="border-b pb-4 mb-4">
+                                    <h3 className="font-bold text-gray-700 mb-3 flex items-center gap-2"><Coins size={20} className="text-amber-500"/> پارت‌های خریداری شده</h3>
+                                    <div className="grid grid-cols-1 md:grid-cols-6 gap-2 bg-amber-50 p-3 rounded mb-2 items-end">
+                                        <div><label className="text-[10px] block mb-1">مبلغ ارزی</label><input className="w-full border rounded p-1 text-sm" value={formatNumberString(newCurrencyTranche.amount)} onChange={e => setNewCurrencyTranche({...newCurrencyTranche, amount: deformatNumberString(e.target.value)})}/></div>
+                                        <div><label className="text-[10px] block mb-1">نوع ارز</label><select className="w-full border rounded p-1 text-sm bg-white" value={newCurrencyTranche.currencyType} onChange={e => setNewCurrencyTranche({...newCurrencyTranche, currencyType: e.target.value})}>{CURRENCIES.map(c => <option key={c.code} value={c.code}>{c.label}</option>)}</select></div>
+                                        <div><label className="text-[10px] block mb-1">نرخ (ریال)</label><input className="w-full border rounded p-1 text-sm" value={formatNumberString(newCurrencyTranche.rate)} onChange={e => setNewCurrencyTranche({...newCurrencyTranche, rate: deformatNumberString(e.target.value)})}/></div>
+                                        <div><label className="text-[10px] block mb-1">صرافی</label><input className="w-full border rounded p-1 text-sm" value={newCurrencyTranche.exchangeName} onChange={e => setNewCurrencyTranche({...newCurrencyTranche, exchangeName: e.target.value})}/></div>
+                                        <div><label className="text-[10px] block mb-1">تاریخ خرید</label><input className="w-full border rounded p-1 text-sm" value={newCurrencyTranche.date} onChange={e => setNewCurrencyTranche({...newCurrencyTranche, date: e.target.value})}/></div>
+                                        <button onClick={handleAddCurrencyTranche} className="bg-amber-600 text-white p-1.5 rounded h-[30px] w-full flex items-center justify-center gap-1 font-bold"><Plus size={16}/> افزودن</button>
+                                    </div>
+                                    <div className="space-y-1">{currencyForm.tranches?.map((t, idx) => (<div key={t.id} className="flex justify-between items-center bg-white border p-2 rounded text-sm"><span className="font-bold text-blue-600">{formatCurrency(t.amount)} {t.currencyType}</span><span>نرخ: {formatCurrency(t.rate || 0)}</span><span>{t.exchangeName}</span><span>{t.date}</span><button onClick={() => handleRemoveTranche(t.id)} className="text-red-500"><Trash2 size={14}/></button></div>))}</div>
+                                    <div className="bg-gray-100 p-2 rounded mt-2 text-center text-sm font-bold">مجموع خریداری شده: <span className="text-blue-600">{formatCurrency(currencyForm.purchasedAmount)} {selectedRecord.mainCurrency}</span></div>
                                 </div>
                             </div>
-                        </div>
-                    </aside>
+                        )}
 
-                    <main className="flex-1 min-w-0">
-                        <div className="px-6 border-b flex gap-6 overflow-x-auto no-scrollbar">
-                            {['timeline', 'proforma', 'insurance', 'currency_purchase', 'shipping_docs', 'inspection', 'clearance'].map(tab => (
-                                <button key={tab} onClick={() => setActiveTab(tab as any)} className={`pb-4 pt-2 text-sm font-medium border-b-2 whitespace-nowrap ${activeTab === tab ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500'}`}>
-                                    {tab === 'timeline' ? 'تایم‌لاین' : tab === 'proforma' ? 'پروفرما' : tab === 'insurance' ? 'بیمه' : tab === 'currency_purchase' ? 'خرید ارز' : tab === 'shipping_docs' ? 'اسناد حمل' : tab === 'inspection' ? 'بازرسی' : 'ترخیصیه و قبض انبار'}
-                                </button>
-                            ))}
-                        </div>
+                        {activeTab === 'shipping_docs' && (
+                             <div className="bg-white p-6 rounded-xl border shadow-sm space-y-6">
+                                 <div className="flex gap-2 overflow-x-auto pb-2 border-b">
+                                     {['Commercial Invoice', 'Packing List', 'Certificate of Origin', 'Bill of Lading'].map(t => (
+                                         <button key={t} onClick={() => setActiveShippingSubTab(t as ShippingDocType)} className={`px-3 py-1.5 rounded-lg whitespace-nowrap text-sm ${activeShippingSubTab === t ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600'}`}>{t}</button>
+                                     ))}
+                                 </div>
+                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                     <div className="space-y-1"><label className="text-xs font-bold text-gray-500">شماره سند</label><input className="w-full border rounded p-2" value={shippingDocForm.documentNumber} onChange={e => setShippingDocForm({...shippingDocForm, documentNumber: e.target.value})} /></div>
+                                     <div className="space-y-1"><label className="text-xs font-bold text-gray-500">تاریخ سند</label><input className="w-full border rounded p-2" value={shippingDocForm.documentDate} onChange={e => setShippingDocForm({...shippingDocForm, documentDate: e.target.value})} /></div>
+                                 </div>
+                                 
+                                 {activeShippingSubTab === 'Commercial Invoice' && (
+                                     <div className="border-t pt-4">
+                                         <h4 className="font-bold text-gray-700 mb-2">اقلام اینویس</h4>
+                                         <div className="flex gap-2 items-end bg-gray-50 p-2 rounded mb-2">
+                                             <input className="border rounded p-1 text-sm flex-1" placeholder="نام کالا" value={newInvoiceItem.name} onChange={e => setNewInvoiceItem({...newInvoiceItem, name: e.target.value})} />
+                                             <input className="border rounded p-1 text-sm w-20" placeholder="قیمت کل" type="number" value={newInvoiceItem.totalPrice} onChange={e => setNewInvoiceItem({...newInvoiceItem, totalPrice: Number(e.target.value)})} />
+                                             <button onClick={handleAddInvoiceItem} className="bg-blue-600 text-white p-1 rounded"><Plus size={16}/></button>
+                                         </div>
+                                         <div className="space-y-1">{shippingDocForm.invoiceItems?.map(i => (<div key={i.id} className="flex justify-between bg-white border p-2 rounded text-sm"><span>{i.name}</span><span>{i.totalPrice}</span><button onClick={()=>handleRemoveInvoiceItem(i.id)} className="text-red-500"><X size={14}/></button></div>))}</div>
+                                     </div>
+                                 )}
 
-                        <div className="p-4 md:p-6 bg-white">
-                            
-                            {/* TIMELINE TAB */}
-                            {activeTab === 'timeline' && (
-                                <div className="grid grid-cols-1 gap-6">
-                                    {STAGES.map((stageName, idx) => {
-                                        const stageInfo = getStageData(selectedRecord, stageName);
-                                        
-                                        // Custom logic for Allocation Queue Day Counter
-                                        let dayCounter = null;
-                                        if (stageName === TradeStage.ALLOCATION_QUEUE && stageInfo.queueDate) {
-                                            const isApproved = getStageData(selectedRecord, TradeStage.ALLOCATION_APPROVED)?.isCompleted;
-                                            const approvalDate = getStageData(selectedRecord, TradeStage.ALLOCATION_APPROVED)?.allocationDate;
-                                            const days = calculateDaysDiff(stageInfo.queueDate, isApproved ? approvalDate : undefined);
-                                            
-                                            dayCounter = (
-                                                <div className={`mt-2 flex items-center gap-2 text-xs font-bold px-2 py-1 rounded w-fit ${isApproved ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
-                                                    <Clock size={14}/>
-                                                    <span>{days} روز در صف {isApproved ? '(تایید شده)' : ''}</span>
-                                                </div>
-                                            );
-                                        }
+                                 <div className="border-t pt-4"><label className="text-xs font-bold block mb-2">فایل اسکن شده</label><div className="flex gap-2"><input type="file" className="hidden" ref={docFileInputRef} onChange={handleDocFileChange} /><button onClick={() => docFileInputRef.current?.click()} disabled={uploadingDocFile} className="bg-gray-100 border px-3 py-1 rounded text-xs">{uploadingDocFile ? '...' : 'آپلود فایل'}</button></div><div className="mt-2 space-y-1">{shippingDocForm.attachments?.map((a,i) => (<div key={i} className="text-xs text-blue-600"><a href={a.url} target="_blank">{a.fileName}</a></div>))}</div></div>
+                                 <button onClick={handleSaveShippingDoc} className="w-full bg-blue-600 text-white py-2 rounded font-bold hover:bg-blue-700">ذخیره سند</button>
+                                 <div className="mt-6 border-t pt-4"><h4 className="font-bold text-gray-700 mb-2">اسناد ثبت شده</h4><div className="space-y-2">{selectedRecord.shippingDocuments?.filter(d => d.type === activeShippingSubTab).map(d => (<div key={d.id} className="bg-gray-50 p-3 rounded border flex justify-between items-center"><div><div className="font-bold text-sm">{d.documentNumber}</div><div className="text-xs text-gray-500">{d.documentDate}</div></div><button onClick={() => handleDeleteShippingDoc(d.id)} className="text-red-500"><Trash2 size={16}/></button></div>))}</div></div>
+                             </div>
+                        )}
 
-                                        return (
-                                            <div key={idx} className={`relative pl-8 border-l-2 ${stageInfo.isCompleted ? 'border-blue-500' : 'border-gray-200'} pb-8 last:pb-0 group`}>
-                                                <div className={`absolute -left-[9px] top-0 w-4 h-4 rounded-full border-2 cursor-pointer transition-colors ${stageInfo.isCompleted ? 'bg-blue-500 border-blue-500' : 'bg-white border-gray-300 group-hover:border-blue-400'}`} onClick={() => handleOpenStage(stageName)}></div>
-                                                <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm hover:shadow-md transition-shadow cursor-pointer" onClick={() => handleOpenStage(stageName)}>
-                                                    <div className="flex justify-between items-start mb-2">
-                                                        <h3 className={`font-bold text-lg ${stageInfo.isCompleted ? 'text-blue-700' : 'text-gray-600'}`}>{stageName}</h3>
-                                                        <div className="flex gap-2">
-                                                            {stageInfo.attachments && stageInfo.attachments.length > 0 && <Paperclip size={18} className="text-gray-400" />}
-                                                            {stageInfo.isCompleted && <CheckCircle2 className="text-green-500" size={20} />}
-                                                        </div>
-                                                    </div>
-                                                    
-                                                    {dayCounter}
+                        {activeTab === 'inspection' && (
+                             <div className="bg-white p-6 rounded-xl border shadow-sm space-y-6">
+                                 {/* Certificates */}
+                                 <div>
+                                     <h3 className="font-bold text-gray-700 mb-3 flex items-center gap-2"><Microscope size={20}/> گواهی‌های بازرسی (COI / IC)</h3>
+                                     <div className="flex gap-2 items-end bg-blue-50 p-3 rounded mb-2">
+                                         <input className="border rounded p-1 text-sm flex-1" placeholder="نوع (Original/Amendment)" value={newInspectionCertificate.part} onChange={e => setNewInspectionCertificate({...newInspectionCertificate, part: e.target.value})} />
+                                         <input className="border rounded p-1 text-sm flex-1" placeholder="شماره گواهی" value={newInspectionCertificate.certificateNumber} onChange={e => setNewInspectionCertificate({...newInspectionCertificate, certificateNumber: e.target.value})} />
+                                         <input className="border rounded p-1 text-sm flex-1" placeholder="شرکت بازرسی" value={newInspectionCertificate.company} onChange={e => setNewInspectionCertificate({...newInspectionCertificate, company: e.target.value})} />
+                                         <input className="border rounded p-1 text-sm flex-1" placeholder="مبلغ صورتحساب" value={formatNumberString(newInspectionCertificate.amount)} onChange={e => setNewInspectionCertificate({...newInspectionCertificate, amount: deformatNumberString(e.target.value)})} />
+                                         <button onClick={handleAddInspectionCertificate} className="bg-blue-600 text-white p-1.5 rounded"><Plus size={18}/></button>
+                                     </div>
+                                     <div className="space-y-1">{inspectionForm.certificates.map(c => (<div key={c.id} className="flex justify-between items-center bg-white border p-2 rounded text-sm"><span>{c.part} - {c.certificateNumber}</span><span>{c.company}</span><span className="font-mono">{formatCurrency(c.amount)}</span><button onClick={() => handleDeleteInspectionCertificate(c.id)} className="text-red-500"><Trash2 size={14}/></button></div>))}</div>
+                                 </div>
+                                 {/* Payments */}
+                                 <div className="border-t pt-4">
+                                     <h3 className="font-bold text-gray-700 mb-3 flex items-center gap-2"><Banknote size={20}/> پرداخت‌های بازرسی</h3>
+                                     <div className="flex gap-2 items-end bg-gray-50 p-3 rounded mb-2">
+                                         <input className="border rounded p-1 text-sm flex-1" placeholder="بابت (پارت)" value={newInspectionPayment.part} onChange={e => setNewInspectionPayment({...newInspectionPayment, part: e.target.value})} />
+                                         <input className="border rounded p-1 text-sm flex-1" placeholder="مبلغ (ریال)" value={formatNumberString(newInspectionPayment.amount)} onChange={e => setNewInspectionPayment({...newInspectionPayment, amount: deformatNumberString(e.target.value)})} />
+                                         <input className="border rounded p-1 text-sm flex-1" placeholder="بانک" value={newInspectionPayment.bank} onChange={e => setNewInspectionPayment({...newInspectionPayment, bank: e.target.value})} />
+                                         <input className="border rounded p-1 text-sm flex-1" placeholder="تاریخ" value={newInspectionPayment.date} onChange={e => setNewInspectionPayment({...newInspectionPayment, date: e.target.value})} />
+                                         <button onClick={handleAddInspectionPayment} className="bg-green-600 text-white p-1.5 rounded"><Plus size={18}/></button>
+                                     </div>
+                                     <div className="space-y-1">{inspectionForm.payments.map(p => (<div key={p.id} className="flex justify-between items-center bg-white border p-2 rounded text-sm"><span>{p.part}</span><span className="font-mono">{formatCurrency(p.amount)}</span><span>{p.bank}</span><span>{p.date}</span><button onClick={() => handleDeleteInspectionPayment(p.id)} className="text-red-500"><Trash2 size={14}/></button></div>))}</div>
+                                     <div className="mt-2 text-left font-bold text-sm">جمع هزینه بازرسی: <span className="text-blue-600">{formatCurrency(inspectionForm.payments.reduce((a,b)=>a+b.amount,0))}</span></div>
+                                 </div>
+                             </div>
+                        )}
 
-                                                    <div className="text-sm text-gray-500 mt-2">
-                                                        {stageInfo.costRial > 0 && <span>هزینه: {formatCurrency(stageInfo.costRial)} </span>}
-                                                        {stageInfo.description && <span className="italic block mt-1">"{stageInfo.description}"</span>}
-                                                        <span className="text-xs text-blue-500 mt-2 block">برای مشاهده جزئیات و افزودن فایل کلیک کنید</span>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        );
-                                    })}
-                                </div>
-                            )}
+                        {activeTab === 'clearance_docs' && (
+                             <div className="bg-white p-6 rounded-xl border shadow-sm space-y-6">
+                                 {/* Warehouse Receipts */}
+                                 <div>
+                                     <h3 className="font-bold text-gray-700 mb-3 flex items-center gap-2"><Warehouse size={20}/> لیست قبض انبار</h3>
+                                     <div className="flex gap-2 items-end bg-blue-50 p-3 rounded mb-2">
+                                         <input className="border rounded p-1 text-sm flex-1" placeholder="شماره قبض انبار" value={newWarehouseReceipt.number} onChange={e => setNewWarehouseReceipt({...newWarehouseReceipt, number: e.target.value})} />
+                                         <input className="border rounded p-1 text-sm flex-1" placeholder="پارت (اختیاری)" value={newWarehouseReceipt.part} onChange={e => setNewWarehouseReceipt({...newWarehouseReceipt, part: e.target.value})} />
+                                         <input className="border rounded p-1 text-sm flex-1" placeholder="تاریخ صدور" value={newWarehouseReceipt.issueDate} onChange={e => setNewWarehouseReceipt({...newWarehouseReceipt, issueDate: e.target.value})} />
+                                         <button onClick={handleAddWarehouseReceipt} className="bg-blue-600 text-white p-1.5 rounded"><Plus size={18}/></button>
+                                     </div>
+                                     <div className="space-y-1">{clearanceForm.receipts.map(r => (<div key={r.id} className="flex justify-between items-center bg-white border p-2 rounded text-sm"><span className="font-bold">{r.number}</span><span>{r.part}</span><span>{r.issueDate}</span><button onClick={() => handleDeleteWarehouseReceipt(r.id)} className="text-red-500"><Trash2 size={14}/></button></div>))}</div>
+                                 </div>
+                                 {/* Payments */}
+                                 <div className="border-t pt-4">
+                                     <h3 className="font-bold text-gray-700 mb-3 flex items-center gap-2"><Banknote size={20}/> هزینه‌های ترخیصیه</h3>
+                                     <div className="flex gap-2 items-end bg-gray-50 p-3 rounded mb-2 flex-wrap">
+                                         <input className="border rounded p-1 text-sm w-32" placeholder="پارت" value={newClearancePayment.part} onChange={e => setNewClearancePayment({...newClearancePayment, part: e.target.value})} />
+                                         <input className="border rounded p-1 text-sm flex-1" placeholder="مبلغ (ریال)" value={formatNumberString(newClearancePayment.amount)} onChange={e => setNewClearancePayment({...newClearancePayment, amount: deformatNumberString(e.target.value)})} />
+                                         <input className="border rounded p-1 text-sm flex-1" placeholder="بانک گیرنده" value={newClearancePayment.bank} onChange={e => setNewClearancePayment({...newClearancePayment, bank: e.target.value})} />
+                                         <input className="border rounded p-1 text-sm flex-1" placeholder="بانک پرداخت کننده" value={newClearancePayment.payingBank} onChange={e => setNewClearancePayment({...newClearancePayment, payingBank: e.target.value})} />
+                                         <input className="border rounded p-1 text-sm w-32" placeholder="تاریخ" value={newClearancePayment.date} onChange={e => setNewClearancePayment({...newClearancePayment, date: e.target.value})} />
+                                         <button onClick={handleAddClearancePayment} className="bg-green-600 text-white p-1.5 rounded"><Plus size={18}/></button>
+                                     </div>
+                                     <div className="space-y-1">{clearanceForm.payments.map(p => (<div key={p.id} className="flex justify-between items-center bg-white border p-2 rounded text-sm"><span>{p.part}</span><span className="font-mono">{formatCurrency(p.amount)}</span><span>به: {p.bank}</span><span>از: {p.payingBank}</span><span>{p.date}</span><button onClick={() => handleDeleteClearancePayment(p.id)} className="text-red-500"><Trash2 size={14}/></button></div>))}</div>
+                                     <div className="mt-2 text-left font-bold text-sm">جمع هزینه ترخیصیه: <span className="text-blue-600">{formatCurrency(clearanceForm.payments.reduce((a,b)=>a+b.amount,0))}</span></div>
+                                 </div>
+                             </div>
+                        )}
 
-                            {/* PROFORMA TAB */}
-                            {activeTab === 'proforma' && (
-                                <div className="space-y-6">
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-gray-50 p-4 rounded-xl border">
-                                        <div className="space-y-1"><label className="text-xs font-bold text-gray-500">فروشنده</label><input className="w-full border rounded p-2 text-sm" value={selectedRecord.sellerName} onChange={e => handleUpdateProforma('sellerName', e.target.value)} /></div>
-                                        <div className="space-y-1"><label className="text-xs font-bold text-gray-500">گروه کالایی</label><select className="w-full border rounded p-2 text-sm bg-white" value={selectedRecord.commodityGroup} onChange={e => handleUpdateProforma('commodityGroup', e.target.value)}><option value="">انتخاب...</option>{commodityGroups.map(c => <option key={c} value={c}>{c}</option>)}</select></div>
-                                        <div className="space-y-1"><label className="text-xs font-bold text-gray-500">ارز پایه</label><select className="w-full border rounded p-2 text-sm bg-white" value={selectedRecord.mainCurrency} onChange={e => handleUpdateProforma('mainCurrency', e.target.value)}>{CURRENCIES.map(c => <option key={c.code} value={c.code}>{c.label}</option>)}</select></div>
-                                        <div className="space-y-1"><label className="text-xs font-bold text-gray-500">هزینه حمل</label><input className="w-full border rounded p-2 text-sm dir-ltr" value={selectedRecord.freightCost} onChange={e => handleUpdateProforma('freightCost', Number(e.target.value))} /></div>
-                                    </div>
-                                    <div className="bg-white p-4 rounded-xl border">
-                                        <h3 className="font-bold text-gray-700 mb-4 flex items-center gap-2"><Package size={18}/> اقلام پروفرما</h3>
-                                        <div className="grid grid-cols-5 gap-2 mb-2">
-                                            <input className="col-span-2 border rounded p-2 text-sm" placeholder="نام کالا" value={newItem.name} onChange={e => setNewItem({...newItem, name: e.target.value})} />
-                                            <input className="border rounded p-2 text-sm dir-ltr" placeholder="وزن (KG)" value={newItem.weight || ''} onChange={e => setNewItem({...newItem, weight: Number(e.target.value)})} />
-                                            <input className="border rounded p-2 text-sm dir-ltr" placeholder="فی" value={newItem.unitPrice || ''} onChange={e => setNewItem({...newItem, unitPrice: Number(e.target.value)})} />
-                                            <button onClick={handleAddItem} className="bg-blue-600 text-white rounded p-2 text-xs">افزودن</button>
+                        {activeTab === 'green_leaf' && (
+                            <div className="bg-white p-6 rounded-xl border shadow-sm space-y-6 animate-fade-in">
+                                {/* SECTION 1: Customs Duties */}
+                                <div>
+                                    <h3 className="font-bold text-gray-700 mb-3 flex items-center gap-2"><Building2 size={20} className="text-blue-600"/> حقوق گمرکی (کوتاژ)</h3>
+                                    <div className="bg-blue-50 p-3 rounded mb-2 border border-blue-100">
+                                        <div className="grid grid-cols-1 md:grid-cols-5 gap-2 mb-2 items-end">
+                                            <div><label className="text-[10px] block mb-1 font-bold">شماره کوتاژ</label><input className="w-full border rounded p-1.5 text-sm" value={newCustomsDuty.cottageNumber} onChange={e => setNewCustomsDuty({...newCustomsDuty, cottageNumber: e.target.value})}/></div>
+                                            <div><label className="text-[10px] block mb-1 font-bold">پارت</label><input className="w-full border rounded p-1.5 text-sm" value={newCustomsDuty.part} onChange={e => setNewCustomsDuty({...newCustomsDuty, part: e.target.value})}/></div>
+                                            <div><label className="text-[10px] block mb-1 font-bold">مبلغ (ریال)</label><input className="w-full border rounded p-1.5 text-sm font-mono dir-ltr" value={formatNumberString(newCustomsDuty.amount)} onChange={e => setNewCustomsDuty({...newCustomsDuty, amount: deformatNumberString(e.target.value)})}/></div>
+                                            <div><label className="text-[10px] block mb-1 font-bold">روش پرداخت</label><select className="w-full border rounded p-1.5 text-sm bg-white" value={newCustomsDuty.paymentMethod} onChange={e => setNewCustomsDuty({...newCustomsDuty, paymentMethod: e.target.value as any})}><option value="Bank">بانکی</option><option value="Guarantee">ضمانت‌نامه</option></select></div>
+                                            <button onClick={handleAddCustomsDuty} className="bg-blue-600 text-white p-1.5 rounded h-[34px] flex items-center justify-center font-bold"><Plus size={16}/> ثبت</button>
                                         </div>
-                                        <table className="w-full text-sm text-right">
-                                            <thead className="bg-gray-100 text-gray-600"><tr><th className="p-2">کالا</th><th className="p-2">وزن</th><th className="p-2">فی</th><th className="p-2">کل</th><th className="p-2"></th></tr></thead>
-                                            <tbody>
-                                                {selectedRecord.items.map(item => (
-                                                    <tr key={item.id} className="border-b last:border-0"><td className="p-2">{item.name}</td><td className="p-2 font-mono">{item.weight}</td><td className="p-2 font-mono">{item.unitPrice}</td><td className="p-2 font-mono">{item.totalPrice}</td><td className="p-2"><button onClick={() => handleRemoveItem(item.id)} className="text-red-500"><Trash2 size={14}/></button></td></tr>
-                                                ))}
-                                                <tr className="bg-blue-50 font-bold"><td colSpan={3} className="p-2 text-left">جمع کل:</td><td className="p-2 font-mono">{totalItemsValue}</td><td></td></tr>
-                                            </tbody>
-                                        </table>
-                                    </div>
-                                    <div className="bg-white p-4 rounded-xl border">
-                                        <h3 className="font-bold text-gray-700 mb-4 flex items-center gap-2"><Wallet size={18}/> هزینه‌های مجوز و ثبت سفارش</h3>
-                                        <div className="flex gap-2 mb-2 bg-gray-50 p-2 rounded">
-                                            <input className="border rounded p-2 text-sm flex-1" placeholder="شرح هزینه" value={newLicenseTx.description} onChange={e => setNewLicenseTx({...newLicenseTx, description: e.target.value})} />
-                                            <input className="border rounded p-2 text-sm dir-ltr w-32" placeholder="مبلغ (ریال)" value={formatNumberString(newLicenseTx.amount?.toString())} onChange={e => setNewLicenseTx({...newLicenseTx, amount: deformatNumberString(e.target.value)})} />
-                                            <button onClick={handleAddLicenseTx} className="bg-green-600 text-white rounded p-2 text-xs">ثبت</button>
-                                        </div>
-                                        <div className="space-y-1">
-                                            {(selectedRecord.licenseData?.transactions || []).map(t => (
-                                                <div key={t.id} className="flex justify-between items-center p-2 border-b text-sm"><span>{t.description}</span><div className="flex items-center gap-2"><span className="font-mono">{formatCurrency(t.amount)}</span><button onClick={() => handleRemoveLicenseTx(t.id)} className="text-red-400"><Trash2 size={12}/></button></div></div>
-                                            ))}
-                                        </div>
-                                    </div>
-                                </div>
-                            )}
-
-                            {/* INSURANCE TAB */}
-                            {activeTab === 'insurance' && (
-                                <div className="space-y-6">
-                                    <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm">
-                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-                                            <div className="space-y-1"><label className="text-xs font-bold text-gray-500">شماره بیمه‌نامه</label><input className="w-full border rounded-lg p-3 text-sm" value={insuranceForm.policyNumber} onChange={e => setInsuranceForm({...insuranceForm, policyNumber: e.target.value})} /></div>
-                                            <div className="space-y-1"><label className="text-xs font-bold text-gray-500">شرکت بیمه</label><input className="w-full border rounded-lg p-3 text-sm" value={insuranceForm.company} onChange={e => setInsuranceForm({...insuranceForm, company: e.target.value})} /></div>
-                                            <div className="space-y-1"><label className="text-xs font-bold text-gray-500">حق بیمه اولیه (ریال)</label><input className="w-full border rounded-lg p-3 text-sm dir-ltr" value={formatNumberString(insuranceForm.cost.toString())} onChange={e => setInsuranceForm({...insuranceForm, cost: deformatNumberString(e.target.value)})} /></div>
-                                            <div className="space-y-1"><label className="text-xs font-bold text-gray-500">بانک پرداخت کننده</label><select className="w-full border rounded-lg p-3 text-sm bg-white" value={insuranceForm.bank} onChange={e => setInsuranceForm({...insuranceForm, bank: e.target.value})}><option value="">انتخاب بانک...</option>{availableBanks.map(b => <option key={b} value={b}>{b}</option>)}</select></div>
-                                        </div>
-                                        <button onClick={handleSaveInsurance} className="bg-blue-600 text-white px-6 py-2 rounded-lg text-sm font-bold flex items-center gap-2 mr-auto"><Save size={16}/> ذخیره اطلاعات پایه</button>
-                                    </div>
-                                    <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm">
-                                        <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2"><Shield className="text-green-600"/> الحاقیه‌ها</h3>
-                                        <div className="bg-gray-50 p-4 rounded-xl border mb-4 space-y-2">
-                                            <div className="flex gap-2">
-                                                <div className="flex bg-white rounded border overflow-hidden"><button onClick={() => setEndorsementType('increase')} className={`px-3 py-1 text-xs font-bold ${endorsementType === 'increase' ? 'bg-red-100 text-red-700' : 'text-gray-500'}`}>افزایش</button><button onClick={() => setEndorsementType('refund')} className={`px-3 py-1 text-xs font-bold ${endorsementType === 'refund' ? 'bg-green-100 text-green-700' : 'text-gray-500'}`}>برگشت</button></div>
-                                                <input className="flex-1 border rounded p-2 text-sm" placeholder="شرح الحاقیه" value={newEndorsement.description} onChange={e => setNewEndorsement({...newEndorsement, description: e.target.value})} />
-                                                <input className="w-32 border rounded p-2 text-sm dir-ltr" placeholder="مبلغ" value={formatNumberString(newEndorsement.amount?.toString())} onChange={e => setNewEndorsement({...newEndorsement, amount: deformatNumberString(e.target.value)})} />
-                                                <button onClick={handleAddEndorsement} className="bg-gray-800 text-white rounded px-4 text-sm">ثبت</button>
-                                            </div>
-                                        </div>
-                                        <div className="space-y-2">
-                                            {(insuranceForm.endorsements || []).map(e => (
-                                                <div key={e.id} className="flex justify-between items-center p-3 bg-gray-50 rounded border">
-                                                    <span className="text-sm">{e.description}</span>
-                                                    <div className="flex items-center gap-3"><span className={`font-mono font-bold ${e.amount > 0 ? 'text-red-600' : 'text-green-600'}`}>{formatCurrency(Math.abs(e.amount))} {e.amount > 0 ? '+' : '-'}</span><button onClick={() => handleDeleteEndorsement(e.id)} className="text-red-400 hover:text-red-600"><Trash2 size={14}/></button></div>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    </div>
-                                </div>
-                            )}
-
-                            {/* CURRENCY PURCHASE TAB */}
-                            {activeTab === 'currency_purchase' && (
-                                <div className="space-y-6">
-                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                        <div className="bg-blue-50 p-4 rounded-xl border border-blue-100"><span className="text-xs text-blue-600 block mb-1">کل ارز خریداری شده</span><div className="text-xl font-bold font-mono text-blue-800">{formatCurrency(currencyForm.purchasedAmount)} {selectedRecord.mainCurrency}</div></div>
-                                        <div className="bg-green-50 p-4 rounded-xl border border-green-100"><span className="text-xs text-green-600 block mb-1">کل ارز تحویل شده</span><div className="text-xl font-bold font-mono text-green-800">{formatCurrency(currencyForm.deliveredAmount)} {selectedRecord.mainCurrency}</div></div>
-                                        <div className="bg-amber-50 p-4 rounded-xl border border-amber-100"><span className="text-xs text-amber-600 block mb-1">مانده</span><div className="text-xl font-bold font-mono text-amber-800">{formatCurrency(currencyForm.purchasedAmount - currencyForm.deliveredAmount)} {selectedRecord.mainCurrency}</div></div>
-                                    </div>
-                                    <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm">
-                                        <h3 className="font-bold text-gray-800 mb-6 flex items-center gap-2"><Coins className="text-amber-500"/> پارت‌های خرید ارز</h3>
-                                        <div className="bg-gray-50 p-4 rounded-xl border mb-4 space-y-2">
-                                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
-                                                <input className="border rounded p-2 text-sm dir-ltr" placeholder="مقدار ارز" value={formatNumberString(newCurrencyTranche.amount?.toString())} onChange={e => setNewCurrencyTranche({...newCurrencyTranche, amount: deformatNumberString(e.target.value)})} />
-                                                <input className="border rounded p-2 text-sm dir-ltr" placeholder="نرخ (ریال)" value={formatNumberString(newCurrencyTranche.rate?.toString())} onChange={e => setNewCurrencyTranche({...newCurrencyTranche, rate: deformatNumberString(e.target.value)})} />
-                                                <input className="border rounded p-2 text-sm" placeholder="نام صرافی" value={newCurrencyTranche.exchangeName} onChange={e => setNewCurrencyTranche({...newCurrencyTranche, exchangeName: e.target.value})} />
-                                                <input className="border rounded p-2 text-sm" placeholder="کارگزار (اختیاری)" value={newCurrencyTranche.brokerName} onChange={e => setNewCurrencyTranche({...newCurrencyTranche, brokerName: e.target.value})} />
-                                            </div>
-                                            <div className="flex items-center gap-2">
-                                                <input type="checkbox" id="isDelivered" checked={newCurrencyTranche.isDelivered} onChange={e => setNewCurrencyTranche({...newCurrencyTranche, isDelivered: e.target.checked})} className="w-4 h-4"/>
-                                                <label htmlFor="isDelivered" className="text-sm">تحویل شده است</label>
-                                                {newCurrencyTranche.isDelivered && <input className="border rounded p-1 text-sm dir-ltr" placeholder="تاریخ تحویل" value={newCurrencyTranche.deliveryDate} onChange={e => setNewCurrencyTranche({...newCurrencyTranche, deliveryDate: e.target.value})} />}
-                                                <button onClick={handleAddCurrencyTranche} disabled={!newCurrencyTranche.amount} className="mr-auto bg-blue-600 text-white px-6 py-2 rounded-lg text-sm">افزودن پارت</button>
-                                            </div>
-                                        </div>
-                                        <div className="space-y-2">
-                                            {(currencyForm.tranches || []).map(t => (
-                                                <div key={t.id} className={`flex justify-between items-center p-3 rounded border ${t.isDelivered ? 'bg-green-50 border-green-100' : 'bg-gray-50 border-gray-200'}`}>
-                                                    <div>
-                                                        <div className="font-bold text-sm text-gray-800 flex items-center gap-2"><span className="font-mono dir-ltr">{formatCurrency(t.amount)} {t.currencyType}</span> {t.isDelivered && <CheckCircle2 size={14} className="text-green-600"/>}</div>
-                                                        <div className="text-xs text-gray-500">نرخ: {formatCurrency(t.rate || 0)} | {t.exchangeName}</div>
-                                                    </div>
-                                                    <button onClick={() => handleRemoveTranche(t.id)} className="text-red-400 hover:text-red-600"><Trash2 size={14}/></button>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    </div>
-                                </div>
-                            )}
-
-                            {/* SHIPPING DOCS TAB */}
-                            {activeTab === 'shipping_docs' && (
-                                <div className="space-y-6">
-                                    <div className="flex gap-2 overflow-x-auto pb-2">
-                                        {['Commercial Invoice', 'Packing List', 'Certificate of Origin', 'Bill of Lading'].map(t => (
-                                            <button key={t} onClick={() => setActiveShippingSubTab(t as any)} className={`px-4 py-2 rounded-lg text-sm whitespace-nowrap ${activeShippingSubTab === t ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700'}`}>{t}</button>
-                                        ))}
-                                    </div>
-                                    <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm">
-                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                                            <input className="border rounded p-2 text-sm" placeholder="شماره سند / اینویس" value={shippingDocForm.documentNumber} onChange={e => setShippingDocForm({...shippingDocForm, documentNumber: e.target.value})} />
-                                            <input className="border rounded p-2 text-sm dir-ltr text-right" placeholder="تاریخ سند" value={shippingDocForm.documentDate} onChange={e => setShippingDocForm({...shippingDocForm, documentDate: e.target.value})} />
-                                        </div>
-
-                                        {/* INVOICE SPECIFIC FIELDS */}
-                                        {activeShippingSubTab === 'Commercial Invoice' && (
-                                            <div className="space-y-4 border-t pt-4">
-                                                <div className="flex gap-2 items-end">
-                                                    <input className="flex-1 border rounded p-2 text-sm" placeholder="شرح کالا" value={newInvoiceItem.name} onChange={e => setNewInvoiceItem({...newInvoiceItem, name: e.target.value})} />
-                                                    <input className="w-24 border rounded p-2 text-sm dir-ltr" placeholder="وزن" value={newInvoiceItem.weight || ''} onChange={e => setNewInvoiceItem({...newInvoiceItem, weight: Number(e.target.value)})} />
-                                                    <input className="w-32 border rounded p-2 text-sm dir-ltr" placeholder="مبلغ کل" value={newInvoiceItem.totalPrice || ''} onChange={e => setNewInvoiceItem({...newInvoiceItem, totalPrice: Number(e.target.value)})} />
-                                                    <button onClick={handleAddInvoiceItem} className="bg-gray-800 text-white p-2 rounded text-xs">افزودن</button>
-                                                </div>
-                                                <div className="space-y-1 bg-gray-50 p-2 rounded max-h-40 overflow-y-auto">
-                                                    {(shippingDocForm.invoiceItems || []).map(i => (
-                                                        <div key={i.id} className="flex justify-between text-xs border-b pb-1 last:border-0"><span>{i.name}</span><div className="flex gap-2"><span>{i.totalPrice}</span><button onClick={() => handleRemoveInvoiceItem(i.id)} className="text-red-500"><X size={12}/></button></div></div>
-                                                    ))}
-                                                </div>
-                                                <div><label className="text-xs font-bold block mb-1">هزینه حمل (Freight)</label><input className="border rounded p-2 text-sm dir-ltr" value={shippingDocForm.freightCost || ''} onChange={e => setShippingDocForm({...shippingDocForm, freightCost: Number(e.target.value)})} /></div>
+                                        {newCustomsDuty.paymentMethod === 'Bank' && (
+                                            <div className="flex gap-2 animate-fade-in">
+                                                <input className="w-full border rounded p-1.5 text-sm" placeholder="نام بانک پرداخت کننده" value={newCustomsDuty.bank} onChange={e => setNewCustomsDuty({...newCustomsDuty, bank: e.target.value})} />
+                                                <input className="w-full border rounded p-1.5 text-sm" placeholder="تاریخ پرداخت" value={newCustomsDuty.date} onChange={e => setNewCustomsDuty({...newCustomsDuty, date: e.target.value})} />
                                             </div>
                                         )}
-
-                                        <div className="mt-4 pt-4 border-t flex justify-between items-center">
-                                            <div className="flex gap-2 items-center">
-                                                <input type="file" ref={docFileInputRef} className="hidden" onChange={handleDocFileChange} />
-                                                <button onClick={() => docFileInputRef.current?.click()} className="text-blue-600 text-sm hover:underline">{uploadingDocFile ? '...' : 'آپلود فایل ضمیمه'}</button>
-                                                <span className="text-xs text-gray-500">{(shippingDocForm.attachments || []).length} فایل</span>
-                                            </div>
-                                            <button onClick={handleSaveShippingDoc} className="bg-green-600 text-white px-6 py-2 rounded-lg text-sm">ذخیره سند</button>
-                                        </div>
                                     </div>
-                                    
-                                    {/* LIST OF SAVED DOCS */}
-                                    <div className="space-y-2">
-                                        {(selectedRecord.shippingDocuments || []).filter(d => d.type === activeShippingSubTab).map(doc => (
-                                            <div key={doc.id} className="flex justify-between items-center p-3 bg-white border rounded shadow-sm">
-                                                <div><span className="font-bold text-sm block">{doc.documentNumber}</span><span className="text-xs text-gray-500">{doc.documentDate} | {formatCurrency(doc.amount || 0)}</span></div>
-                                                <button onClick={() => handleDeleteShippingDoc(doc.id)} className="text-red-400 hover:text-red-600"><Trash2 size={16}/></button>
+                                    <div className="space-y-1">
+                                        {greenLeafForm.duties.map(d => (
+                                            <div key={d.id} className="flex justify-between items-center bg-white border p-2 rounded text-sm hover:bg-gray-50">
+                                                <span className="font-bold text-gray-700 w-24">{d.cottageNumber}</span>
+                                                <span className="w-16 text-gray-500">{d.part}</span>
+                                                <span className={`px-2 py-0.5 rounded text-xs ${d.paymentMethod === 'Guarantee' ? 'bg-purple-100 text-purple-700' : 'bg-gray-100 text-gray-700'}`}>{d.paymentMethod === 'Guarantee' ? 'ضمانت‌نامه' : 'بانکی'}</span>
+                                                <span className="font-mono">{formatCurrency(d.amount)}</span>
+                                                {d.paymentMethod === 'Bank' && <span className="text-xs text-gray-500">{d.bank} | {d.date}</span>}
+                                                <button onClick={() => handleDeleteCustomsDuty(d.id)} className="text-red-500"><Trash2 size={14}/></button>
                                             </div>
                                         ))}
                                     </div>
                                 </div>
-                            )}
 
-                            {/* INSPECTION TAB */}
-                            {activeTab === 'inspection' && (
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                    <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm">
-                                        <h3 className="font-bold text-gray-800 mb-6 flex items-center gap-2"><Microscope className="text-purple-600"/> گواهی‌های بازرسی (COI/IC)</h3>
-                                        <div className="bg-gray-50 p-4 rounded-xl border mb-4 space-y-2">
-                                            <input className="w-full border rounded p-2 text-sm" placeholder="شرکت بازرسی" value={newInspectionCertificate.company} onChange={e => setNewInspectionCertificate({...newInspectionCertificate, company: e.target.value})} />
-                                            <input className="w-full border rounded p-2 text-sm" placeholder="شماره گواهی" value={newInspectionCertificate.certificateNumber} onChange={e => setNewInspectionCertificate({...newInspectionCertificate, certificateNumber: e.target.value})} />
-                                            <input className="w-full border rounded p-2 text-sm dir-ltr" placeholder="مبلغ فاکتور بازرسی" value={formatNumberString(newInspectionCertificate.amount?.toString())} onChange={e => setNewInspectionCertificate({...newInspectionCertificate, amount: deformatNumberString(e.target.value)})} />
-                                            <button onClick={handleAddInspectionCertificate} disabled={!newInspectionCertificate.certificateNumber} className="w-full bg-purple-600 text-white py-2 rounded-lg hover:bg-purple-700 text-sm">افزودن گواهی</button>
+                                {/* SECTION 2: Guarantees */}
+                                <div className="border-t pt-6">
+                                    <h3 className="font-bold text-gray-700 mb-3 flex items-center gap-2"><ShieldCheck size={20} className="text-purple-600"/> ضمانت‌نامه‌ها</h3>
+                                    
+                                    <div className="bg-purple-50 p-3 rounded mb-2 border border-purple-100">
+                                        <label className="text-xs font-bold block mb-2">انتخاب کوتاژ جهت ثبت ضمانت‌نامه</label>
+                                        <div className="flex gap-2 mb-3">
+                                            <select 
+                                                className="flex-1 border rounded p-1.5 text-sm bg-white" 
+                                                value={selectedDutyForGuarantee} 
+                                                onChange={e => setSelectedDutyForGuarantee(e.target.value)}
+                                            >
+                                                <option value="">-- انتخاب کنید --</option>
+                                                {greenLeafForm.duties
+                                                    .filter(d => d.paymentMethod === 'Guarantee' && !greenLeafForm.guarantees.some(g => g.relatedDutyId === d.id))
+                                                    .map(d => (
+                                                        <option key={d.id} value={d.id}>کوتاژ {d.cottageNumber} (پارت {d.part}) - {formatCurrency(d.amount)}</option>
+                                                    ))
+                                                }
+                                            </select>
                                         </div>
-                                        <div className="space-y-2 max-h-[300px] overflow-y-auto">
-                                            {(inspectionForm.certificates || []).map(c => (
-                                                <div key={c.id} className="flex justify-between items-center p-3 bg-gray-50 rounded border">
-                                                    <div><div className="font-bold text-sm text-gray-800">{c.certificateNumber}</div><div className="text-xs text-gray-500">{c.company}</div></div>
-                                                    <div className="flex items-center gap-3"><span className="font-mono dir-ltr text-xs">{formatCurrency(c.amount)}</span><button onClick={() => handleDeleteInspectionCertificate(c.id)} className="text-red-400 hover:text-red-600"><Trash2 size={14}/></button></div>
+                                        
+                                        {selectedDutyForGuarantee && (
+                                            <div className="space-y-3 animate-fade-in">
+                                                <div className="grid grid-cols-2 gap-2">
+                                                    <div><label className="text-[10px] block mb-1 font-bold">شماره ضمانت‌نامه</label><input className="w-full border rounded p-1.5 text-sm" value={newGuaranteeDetails.guaranteeNumber} onChange={e => setNewGuaranteeDetails({...newGuaranteeDetails, guaranteeNumber: e.target.value})} /></div>
+                                                    <div><label className="text-[10px] block mb-1 font-bold">شماره چک</label><input className="w-full border rounded p-1.5 text-sm" value={newGuaranteeDetails.chequeNumber} onChange={e => setNewGuaranteeDetails({...newGuaranteeDetails, chequeNumber: e.target.value})} /></div>
                                                 </div>
-                                            ))}
-                                        </div>
-                                    </div>
-                                    <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm">
-                                        <h3 className="font-bold text-gray-800 mb-6 flex items-center gap-2"><Banknote className="text-green-600"/> پرداخت‌های بازرسی</h3>
-                                        <div className="bg-gray-50 p-4 rounded-xl border mb-4 space-y-2">
-                                            <div className="flex gap-2">
-                                                <input className="flex-1 border rounded p-2 text-sm" placeholder="عنوان (پیش پرداخت...)" value={newInspectionPayment.part} onChange={e => setNewInspectionPayment({...newInspectionPayment, part: e.target.value})} />
-                                                <input className="w-32 border rounded p-2 text-sm dir-ltr" placeholder="مبلغ" value={formatNumberString(newInspectionPayment.amount?.toString())} onChange={e => setNewInspectionPayment({...newInspectionPayment, amount: deformatNumberString(e.target.value)})} />
+                                                <div className="grid grid-cols-2 gap-2">
+                                                    <div><label className="text-[10px] block mb-1 font-bold">بانک چک</label><input className="w-full border rounded p-1.5 text-sm" value={newGuaranteeDetails.chequeBank} onChange={e => setNewGuaranteeDetails({...newGuaranteeDetails, chequeBank: e.target.value})} /></div>
+                                                    <div><label className="text-[10px] block mb-1 font-bold">تاریخ سررسید</label><input className="w-full border rounded p-1.5 text-sm" value={newGuaranteeDetails.chequeDate} onChange={e => setNewGuaranteeDetails({...newGuaranteeDetails, chequeDate: e.target.value})} /></div>
+                                                </div>
+                                                <div className="bg-white p-2 rounded border border-purple-200">
+                                                    <div className="text-xs font-bold text-purple-700 mb-2 border-b pb-1">بخش نقدی ضمانت‌نامه</div>
+                                                    <div className="flex gap-2 items-end">
+                                                        <input className="flex-1 border rounded p-1 text-sm" placeholder="مبلغ (ریال)" value={formatNumberString(newGuaranteeDetails.cashAmount)} onChange={e => setNewGuaranteeDetails({...newGuaranteeDetails, cashAmount: deformatNumberString(e.target.value)})} />
+                                                        <input className="flex-1 border rounded p-1 text-sm" placeholder="بانک" value={newGuaranteeDetails.cashBank} onChange={e => setNewGuaranteeDetails({...newGuaranteeDetails, cashBank: e.target.value})} />
+                                                        <input className="w-24 border rounded p-1 text-sm" placeholder="تاریخ" value={newGuaranteeDetails.cashDate} onChange={e => setNewGuaranteeDetails({...newGuaranteeDetails, cashDate: e.target.value})} />
+                                                    </div>
+                                                </div>
+                                                <button onClick={handleAddGuarantee} className="w-full bg-purple-600 text-white py-1.5 rounded font-bold hover:bg-purple-700">ثبت ضمانت‌نامه</button>
                                             </div>
-                                            <select className="w-full border rounded p-2 text-sm bg-white" value={newInspectionPayment.bank} onChange={e => setNewInspectionPayment({...newInspectionPayment, bank: e.target.value})}><option value="">بانک...</option>{availableBanks.map(b => <option key={b} value={b}>{b}</option>)}</select>
-                                            <button onClick={handleAddInspectionPayment} disabled={!newInspectionPayment.amount} className="w-full bg-green-600 text-white py-2 rounded-lg hover:bg-green-700 text-sm">ثبت پرداخت</button>
-                                        </div>
-                                        <div className="space-y-2 max-h-[300px] overflow-y-auto">
-                                            {(inspectionForm.payments || []).map(p => (
-                                                <div key={p.id} className="flex justify-between items-center p-3 bg-gray-50 rounded border">
-                                                    <div><div className="font-bold text-sm text-gray-800">{p.part}</div><div className="text-xs text-gray-500">{p.bank}</div></div>
-                                                    <div className="flex items-center gap-3"><span className="font-mono font-bold text-gray-700 dir-ltr">{formatCurrency(p.amount)}</span><button onClick={() => handleDeleteInspectionPayment(p.id)} className="text-red-400 hover:text-red-600"><Trash2 size={14}/></button></div>
+                                        )}
+                                    </div>
+
+                                    <div className="space-y-1">
+                                        {greenLeafForm.guarantees.map(g => {
+                                            const duty = greenLeafForm.duties.find(d => d.id === g.relatedDutyId);
+                                            return (
+                                                <div key={g.id} className="bg-white border p-3 rounded text-sm hover:bg-gray-50">
+                                                    <div className="flex justify-between items-center mb-1">
+                                                        <span className="font-bold text-purple-700">ضمانت: {g.guaranteeNumber}</span>
+                                                        <span className="text-xs text-gray-500">برای کوتاژ: {duty?.cottageNumber}</span>
+                                                        <button onClick={() => handleDeleteGuarantee(g.id)} className="text-red-500"><Trash2 size={14}/></button>
+                                                    </div>
+                                                    <div className="flex gap-4 text-xs text-gray-600">
+                                                        <span>چک: {g.chequeNumber} ({g.chequeBank})</span>
+                                                        <span className="font-bold text-green-600">نقدی: {formatCurrency(g.cashAmount)}</span>
+                                                    </div>
                                                 </div>
-                                            ))}
-                                        </div>
+                                            );
+                                        })}
                                     </div>
                                 </div>
-                            )}
 
-                            {/* CLEARANCE TAB */}
-                            {activeTab === 'clearance' && (
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                    <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm">
-                                        <h3 className="font-bold text-gray-800 mb-6 flex items-center gap-2"><Warehouse className="text-orange-600"/> لیست قبض انبار</h3>
-                                        <div className="bg-gray-50 p-4 rounded-xl border mb-4 space-y-2">
-                                            <div className="flex gap-2">
-                                                <input className="flex-1 border rounded-lg p-2 bg-white text-sm" value={newWarehouseReceipt.number} onChange={e => setNewWarehouseReceipt({...newWarehouseReceipt, number: e.target.value})} placeholder="شماره قبض انبار" />
-                                                <input className="flex-1 border rounded-lg p-2 bg-white text-sm" value={newWarehouseReceipt.part} onChange={e => setNewWarehouseReceipt({...newWarehouseReceipt, part: e.target.value})} placeholder="پارت" />
-                                            </div>
-                                            <input type="text" className="w-full border rounded-lg p-2 bg-white text-sm dir-ltr text-right" value={newWarehouseReceipt.issueDate} onChange={e => setNewWarehouseReceipt({...newWarehouseReceipt, issueDate: e.target.value})} placeholder="تاریخ صدور (YYYY/MM/DD)" />
-                                            <button onClick={handleAddWarehouseReceipt} disabled={!newWarehouseReceipt.number} className="w-full bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700 text-sm">افزودن قبض انبار</button>
-                                        </div>
-                                        <div className="space-y-2 max-h-[300px] overflow-y-auto">
-                                            {(clearanceForm.receipts || []).map(r => (
-                                                <div key={r.id} className="flex justify-between items-center p-3 bg-gray-50 rounded border">
-                                                    <div><div className="font-bold text-sm text-gray-800">شماره: {r.number}</div><div className="text-xs text-gray-500">پارت: {r.part} | تاریخ: {r.issueDate}</div></div>
-                                                    <button onClick={() => handleDeleteWarehouseReceipt(r.id)} className="text-red-400 hover:text-red-600"><Trash2 size={14}/></button>
-                                                </div>
-                                            ))}
-                                        </div>
+                                {/* SECTION 3: Tax */}
+                                <div className="border-t pt-6">
+                                    <h3 className="font-bold text-gray-700 mb-3 flex items-center gap-2"><Percent size={20} className="text-orange-500"/> مالیات</h3>
+                                    <div className="flex gap-2 items-end bg-orange-50 p-3 rounded mb-2 border border-orange-100">
+                                        <input className="w-20 border rounded p-1 text-sm" placeholder="پارت" value={newTax.part} onChange={e => setNewTax({...newTax, part: e.target.value})} />
+                                        <input className="flex-1 border rounded p-1 text-sm" placeholder="مبلغ (ریال)" value={formatNumberString(newTax.amount)} onChange={e => setNewTax({...newTax, amount: deformatNumberString(e.target.value)})} />
+                                        <input className="flex-1 border rounded p-1 text-sm" placeholder="بانک" value={newTax.bank} onChange={e => setNewTax({...newTax, bank: e.target.value})} />
+                                        <input className="w-24 border rounded p-1 text-sm" placeholder="تاریخ" value={newTax.date} onChange={e => setNewTax({...newTax, date: e.target.value})} />
+                                        <button onClick={handleAddTax} className="bg-orange-500 text-white p-1.5 rounded"><Plus size={18}/></button>
                                     </div>
-
-                                    <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm">
-                                        <h3 className="font-bold text-gray-800 mb-6 flex items-center gap-2"><Banknote className="text-green-600"/> هزینه‌های ترخیصیه</h3>
-                                        <div className="bg-gray-50 p-4 rounded-xl border mb-4 space-y-2">
-                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                                                <input className="border rounded p-2 text-sm" placeholder="عنوان هزینه / پارت" value={newClearancePayment.part} onChange={e => setNewClearancePayment({...newClearancePayment, part: e.target.value})} />
-                                                <input className="border rounded p-2 text-sm dir-ltr" placeholder="مبلغ (ریال)" value={formatNumberString(newClearancePayment.amount?.toString())} onChange={e => setNewClearancePayment({...newClearancePayment, amount: deformatNumberString(e.target.value)})} />
-                                                <select className="border rounded p-2 text-sm bg-white" value={newClearancePayment.bank} onChange={e => setNewClearancePayment({...newClearancePayment, bank: e.target.value})}><option value="">بانک مقصد...</option>{availableBanks.map(b => <option key={b} value={b}>{b}</option>)}</select>
-                                                <select className="border rounded p-2 text-sm bg-white" value={newClearancePayment.payingBank} onChange={e => setNewClearancePayment({...newClearancePayment, payingBank: e.target.value})}><option value="">بانک پرداخت کننده...</option>{availableBanks.map(b => <option key={b} value={b}>{b}</option>)}</select>
-                                                <input className="border rounded p-2 text-sm dir-ltr text-right col-span-2" placeholder="تاریخ پرداخت" value={newClearancePayment.date} onChange={e => setNewClearancePayment({...newClearancePayment, date: e.target.value})} />
-                                            </div>
-                                            <button onClick={handleAddClearancePayment} disabled={!newClearancePayment.amount} className="w-full bg-green-600 text-white py-2 rounded-lg hover:bg-green-700 text-sm">افزودن هزینه</button>
-                                        </div>
-                                        <div className="space-y-2 max-h-[300px] overflow-y-auto">
-                                            {(clearanceForm.payments || []).map(p => (
-                                                <div key={p.id} className="flex justify-between items-center p-3 bg-gray-50 rounded border">
-                                                    <div><div className="font-bold text-sm text-gray-800">{p.part}</div><div className="text-xs text-gray-500">{p.date} - {p.payingBank ? `از ${p.payingBank} به ` : ''}{p.bank}</div></div>
-                                                    <div className="flex items-center gap-3"><span className="font-mono font-bold text-gray-700 dir-ltr">{formatCurrency(p.amount)}</span><button onClick={() => handleDeleteClearancePayment(p.id)} className="text-red-400 hover:text-red-600"><Trash2 size={14}/></button></div>
-                                                </div>
-                                            ))}
-                                        </div>
-                                        <div className="mt-6 pt-4 border-t flex justify-between text-base"><span className="font-bold text-gray-800">جمع کل هزینه‌ها:</span><span className="font-black font-mono dir-ltr text-blue-700">{formatCurrency((clearanceForm.payments || []).reduce((acc, p) => acc + p.amount, 0))}</span></div>
-                                    </div>
+                                    <div className="space-y-1">{greenLeafForm.taxes.map(t => (<div key={t.id} className="flex justify-between items-center bg-white border p-2 rounded text-sm"><span>{t.part}</span><span className="font-mono">{formatCurrency(t.amount)}</span><span>{t.bank}</span><span>{t.date}</span><button onClick={() => handleDeleteTax(t.id)} className="text-red-500"><Trash2 size={14}/></button></div>))}</div>
                                 </div>
-                            )}
 
+                                {/* SECTION 4: Road Tolls */}
+                                <div className="border-t pt-6">
+                                    <h3 className="font-bold text-gray-700 mb-3 flex items-center gap-2"><Truck size={20} className="text-slate-600"/> عوارض جاده‌ای</h3>
+                                    <div className="flex gap-2 items-end bg-slate-100 p-3 rounded mb-2 border border-slate-200">
+                                        <input className="w-20 border rounded p-1 text-sm" placeholder="پارت" value={newRoadToll.part} onChange={e => setNewRoadToll({...newRoadToll, part: e.target.value})} />
+                                        <input className="flex-1 border rounded p-1 text-sm" placeholder="مبلغ (ریال)" value={formatNumberString(newRoadToll.amount)} onChange={e => setNewRoadToll({...newRoadToll, amount: deformatNumberString(e.target.value)})} />
+                                        <input className="flex-1 border rounded p-1 text-sm" placeholder="بانک" value={newRoadToll.bank} onChange={e => setNewRoadToll({...newRoadToll, bank: e.target.value})} />
+                                        <input className="w-24 border rounded p-1 text-sm" placeholder="تاریخ" value={newRoadToll.date} onChange={e => setNewRoadToll({...newRoadToll, date: e.target.value})} />
+                                        <button onClick={handleAddRoadToll} className="bg-slate-600 text-white p-1.5 rounded"><Plus size={18}/></button>
+                                    </div>
+                                    <div className="space-y-1">{greenLeafForm.roadTolls.map(t => (<div key={t.id} className="flex justify-between items-center bg-white border p-2 rounded text-sm"><span>{t.part}</span><span className="font-mono">{formatCurrency(t.amount)}</span><span>{t.bank}</span><span>{t.date}</span><button onClick={() => handleDeleteRoadToll(t.id)} className="text-red-500"><Trash2 size={14}/></button></div>))}</div>
+                                </div>
+
+                                <div className="mt-4 p-4 bg-green-50 rounded-xl border border-green-200 text-center">
+                                    <div className="text-sm text-green-800 mb-1">جمع کل هزینه‌های برگ سبز (قابل انتقال به تایم‌لاین)</div>
+                                    <div className="text-2xl font-bold text-green-700">{formatCurrency(calculateGreenLeafTotal(greenLeafForm))}</div>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                    {/* COST SIDEBAR */}
+                    <div className="w-72 bg-white border-r p-4 hidden lg:flex flex-col h-full shadow-lg z-20">
+                        <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2"><Calculator size={20}/> خلاصه هزینه‌ها</h3>
+                        <div className="flex-1 overflow-y-auto space-y-3">
+                            {STAGES.map(stage => {
+                                const data = selectedRecord.stages[stage];
+                                if (!data || (!data.costRial && !data.costCurrency)) return null;
+                                return (
+                                    <div key={stage} className="text-sm border-b pb-2">
+                                        <div className="text-gray-600 mb-1">{stage}</div>
+                                        {data.costRial > 0 && <div className="flex justify-between"><span className="text-gray-400 text-xs">ریال:</span><span className="font-mono font-bold">{formatCurrency(data.costRial)}</span></div>}
+                                        {data.costCurrency > 0 && <div className="flex justify-between"><span className="text-gray-400 text-xs">ارز:</span><span className="font-mono font-bold text-blue-600">{formatCurrency(data.costCurrency)}</span></div>}
+                                    </div>
+                                );
+                            })}
                         </div>
-                    </main>
+                        <div className="mt-auto border-t pt-4 bg-gray-50 -mx-4 -mb-4 p-4">
+                            <div className="flex justify-between items-center mb-2"><span className="text-sm font-bold text-gray-600">جمع ریالی</span><span className="font-bold text-lg">{formatCurrency(totalRial)}</span></div>
+                            <div className="flex justify-between items-center"><span className="text-sm font-bold text-gray-600">جمع ارزی</span><span className="font-bold text-lg text-blue-600">{formatCurrency(totalCurrency)}</span></div>
+                        </div>
+                    </div>
                 </div>
             </div>
         );
     }
 
     return (
-        <div className="space-y-6 animate-fade-in min-w-0 pb-20">
-            <div className="flex justify-between items-center bg-white p-4 rounded-xl border shadow-sm">
-                <h1 className="text-2xl font-bold text-gray-800">داشبورد بازرگانی</h1>
-                <div className="flex gap-2">
-                    <button onClick={() => setViewMode('reports')} className="px-4 py-2 bg-gray-100 text-gray-700 hover:bg-gray-200 rounded-lg flex items-center gap-2"><PieChart size={18}/> گزارشات</button>
-                    <button onClick={() => setShowNewModal(true)} className="px-4 py-2 bg-blue-600 text-white rounded-lg shadow flex items-center gap-2"><Plus size={18}/> ثبت پرونده</button>
-                </div>
-            </div>
-
-            {/* FOLDER VIEW */}
-            {(navLevel === 'GROUP' || (navLevel === 'COMPANY' && getGroupedData().length === 0)) && (
-                <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">
-                    <div className="p-4 border-b flex justify-between items-center gap-4 bg-gray-50/50">
-                        <div className="flex items-center gap-2">
-                             {navLevel !== 'ROOT' && <button onClick={goRoot} className="p-1 hover:bg-gray-200 rounded"><ArrowRight size={18}/></button>}
-                             <h3 className="font-bold text-gray-700">لیست پرونده‌ها {selectedGroup ? `(${selectedGroup})` : ''}</h3>
-                        </div>
-                        <div className="relative w-64"><Search className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} /><input type="text" placeholder="جستجو..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full pl-4 pr-10 py-2 border rounded-lg text-sm" /></div>
-                    </div>
-                    {getFilteredRecords().length > 0 ? (
-                        <table className="w-full text-sm text-right">
-                            <thead className="bg-gray-100 text-gray-600"><tr><th className="px-6 py-3">شماره پرونده</th><th className="px-6 py-3">کالا</th><th className="px-6 py-3">وضعیت</th><th className="px-6 py-3 text-center">عملیات</th></tr></thead>
-                            <tbody className="divide-y divide-gray-100">{getFilteredRecords().map(record => (<tr key={record.id} className="hover:bg-gray-50 cursor-pointer" onClick={() => { setSelectedRecord(record); setViewMode('details'); }}><td className="px-6 py-4 font-bold text-blue-600">{record.fileNumber}</td><td className="px-6 py-4">{record.goodsName}</td><td className="px-6 py-4">{record.status}</td><td className="px-6 py-4 text-center"><button className="text-blue-600 text-xs font-bold">مشاهده</button></td></tr>))}</tbody>
-                        </table>
-                    ) : <div className="p-8 text-center text-gray-400">موردی یافت نشد.</div>}
-                </div>
-            )}
-
-            {/* DASHBOARD GRID */}
-            {navLevel !== 'GROUP' && (
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                    {getGroupedData().map((item) => (
-                        <div key={item.name} onClick={() => item.type === 'company' ? goCompany(item.name) : goGroup(item.name)} className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm hover:shadow-md cursor-pointer flex justify-between items-center">
-                            <div className="flex items-center gap-3"><div className={`p-3 rounded-lg ${item.type === 'company' ? 'bg-blue-100 text-blue-600' : 'bg-amber-100 text-amber-600'}`}>{item.type === 'company' ? <Building2 size={24}/> : <Package size={24}/>}</div><div><h3 className="font-bold text-gray-800">{item.name}</h3><p className="text-xs text-gray-500">{item.type === 'company' ? 'شرکت' : 'گروه کالایی'}</p></div></div>
-                            <span className="text-lg font-bold text-gray-700">{item.count}</span>
-                        </div>
-                    ))}
-                </div>
-            )}
-
-            {/* NEW RECORD MODAL */}
-            {showNewModal && (
-                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-                    <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg p-6">
-                        <div className="flex justify-between items-center mb-6"><h3 className="text-xl font-bold text-gray-800">ایجاد پرونده جدید</h3><button onClick={() => setShowNewModal(false)}><X size={24} className="text-gray-400" /></button></div>
+        <div className="p-4 md:p-8 space-y-6 min-w-0">
+             {/* New Record Modal */}
+             {showNewModal && (
+                <div className="fixed inset-0 bg-black/50 z-[100] flex items-center justify-center p-4">
+                    <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6 animate-fade-in">
+                        <div className="flex justify-between items-center mb-6"><h3 className="font-bold text-lg">ایجاد پرونده جدید</h3><button onClick={() => setShowNewModal(false)}><X size={20} className="text-gray-400 hover:text-red-500"/></button></div>
                         <div className="space-y-4">
-                            <div><label className="text-sm font-bold text-gray-700 block mb-1">شماره پرونده</label><input autoFocus className="w-full border rounded-xl px-4 py-3 bg-gray-50" value={newFileNumber} onChange={e => setNewFileNumber(e.target.value)} /></div>
-                            <div><label className="text-sm font-bold text-gray-700 block mb-1">نام کالا</label><input className="w-full border rounded-xl px-4 py-3 bg-gray-50" value={newGoodsName} onChange={e => setNewGoodsName(e.target.value)} /></div>
-                            <button onClick={handleCreateRecord} disabled={!newFileNumber || !newGoodsName} className="w-full bg-blue-600 text-white py-3 rounded-xl font-bold mt-4">ایجاد پرونده</button>
+                            <div><label className="text-sm font-bold text-gray-700 block mb-1">شماره پرونده / سفارش</label><input autoFocus className="w-full border rounded-lg px-3 py-2" value={newFileNumber} onChange={(e) => setNewFileNumber(e.target.value)} /></div>
+                            <div><label className="text-sm font-bold text-gray-700 block mb-1">نام کالا</label><input className="w-full border rounded-lg px-3 py-2" value={newGoodsName} onChange={(e) => setNewGoodsName(e.target.value)} /></div>
+                            <div><label className="text-sm font-bold text-gray-700 block mb-1">فروشنده</label><input className="w-full border rounded-lg px-3 py-2" value={newSellerName} onChange={(e) => setNewSellerName(e.target.value)} /></div>
+                            <div><label className="text-sm font-bold text-gray-700 block mb-1">شرکت</label><select className="w-full border rounded-lg px-3 py-2 bg-white" value={newRecordCompany} onChange={(e) => setNewRecordCompany(e.target.value)}><option value="">-- انتخاب کنید --</option>{availableCompanies.map(c => <option key={c} value={c}>{c}</option>)}</select></div>
+                            <div><label className="text-sm font-bold text-gray-700 block mb-1">گروه کالایی</label><select className="w-full border rounded-lg px-3 py-2 bg-white" value={newCommodityGroup} onChange={(e) => setNewCommodityGroup(e.target.value)}><option value="">انتخاب کنید...</option>{commodityGroups.map(g => <option key={g} value={g}>{g}</option>)}</select></div>
+                            <div><label className="text-sm font-bold text-gray-700 block mb-1">ارز پایه</label><select className="w-full border rounded-lg px-3 py-2 bg-white" value={newMainCurrency} onChange={(e) => setNewMainCurrency(e.target.value)}>{CURRENCIES.map(c => <option key={c.code} value={c.code}>{c.label}</option>)}</select></div>
+                            <button onClick={handleCreateRecord} disabled={!newFileNumber || !newGoodsName} className="w-full bg-blue-600 text-white py-3 rounded-xl font-bold hover:bg-blue-700 disabled:opacity-50 mt-2">ایجاد پرونده</button>
                         </div>
                     </div>
                 </div>
+            )}
+            
+            {/* Dashboard View */}
+            {viewMode === 'dashboard' && (
+                <>
+                    <div className="flex flex-col md:flex-row justify-between items-center gap-4 bg-white p-4 rounded-2xl border shadow-sm">
+                        <div className="flex items-center gap-2 overflow-x-auto w-full md:w-auto pb-2 md:pb-0">
+                            <button onClick={goRoot} className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-bold transition-colors ${navLevel === 'ROOT' ? 'bg-gray-800 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}><Home size={16}/> خانه</button>
+                            {selectedCompany && <><ArrowRight size={14} className="text-gray-400"/><button onClick={() => goCompany(selectedCompany)} className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-bold transition-colors ${navLevel === 'COMPANY' ? 'bg-gray-800 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}><Building2 size={16}/> {selectedCompany}</button></>}
+                            {selectedGroup && <><ArrowRight size={14} className="text-gray-400"/><div className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-bold bg-gray-800 text-white"><Package size={16}/> {selectedGroup}</div></>}
+                        </div>
+                        <div className="flex gap-2 w-full md:w-auto">
+                            <div className="relative flex-1 md:w-64"><Search className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400" size={18}/><input type="text" placeholder="جستجو در پرونده‌ها..." className="w-full pl-4 pr-10 py-2 border rounded-xl text-sm" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)}/></div>
+                            <button onClick={() => setViewMode('reports')} className="bg-teal-600 text-white px-4 py-2 rounded-xl flex items-center gap-2 font-bold hover:bg-teal-700"><FileSpreadsheet size={18}/> <span className="hidden md:inline">گزارشات</span></button>
+                            <button onClick={() => setShowNewModal(true)} className="bg-blue-600 text-white px-4 py-2 rounded-xl flex items-center gap-2 font-bold hover:bg-blue-700"><Plus size={18}/> <span className="hidden md:inline">پرونده جدید</span></button>
+                        </div>
+                    </div>
+
+                    {/* FOLDERS VIEW */}
+                    {!searchTerm && (navLevel === 'ROOT' || navLevel === 'COMPANY') && (
+                        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4 animate-fade-in">
+                            {getGroupedData().map((item) => (
+                                <div key={item.name} onClick={() => item.type === 'company' ? goCompany(item.name) : goGroup(item.name)} className="bg-white p-4 rounded-xl border hover:shadow-md cursor-pointer transition-all hover:border-blue-300 group">
+                                    <div className={`w-12 h-12 rounded-xl flex items-center justify-center mb-3 ${item.type === 'company' ? 'bg-blue-50 text-blue-600' : 'bg-amber-50 text-amber-600'}`}>{item.type === 'company' ? <Building2 size={24}/> : <FolderOpen size={24}/>}</div>
+                                    <h3 className="font-bold text-gray-800 truncate" title={item.name}>{item.name}</h3>
+                                    <p className="text-xs text-gray-500 mt-1">{item.count} پرونده</p>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+
+                    {/* FILES LIST */}
+                    {(searchTerm || navLevel === 'GROUP') && (
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 animate-fade-in">
+                            {records
+                                .filter(r => {
+                                    if (searchTerm) return r.goodsName.includes(searchTerm) || r.fileNumber.includes(searchTerm) || r.sellerName.includes(searchTerm);
+                                    if (selectedGroup && r.commodityGroup !== selectedGroup) return false;
+                                    if (selectedCompany && r.company !== selectedCompany) return false;
+                                    return true;
+                                })
+                                .map(record => {
+                                    const currentStage = STAGES.slice().reverse().find(s => record.stages[s]?.isCompleted);
+                                    return (
+                                        <div key={record.id} onClick={() => { setSelectedRecord(record); setViewMode('details'); }} className="bg-white p-5 rounded-2xl border hover:shadow-lg cursor-pointer transition-all hover:border-blue-400 group relative">
+                                            <div className="flex justify-between items-start mb-3">
+                                                <div className="bg-gray-100 text-gray-600 px-3 py-1 rounded-lg text-sm font-mono font-bold group-hover:bg-blue-600 group-hover:text-white transition-colors">{record.fileNumber}</div>
+                                                <div className={`text-xs px-2 py-1 rounded font-bold ${currentStage ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>{currentStage || 'شروع نشده'}</div>
+                                            </div>
+                                            <h3 className="font-bold text-lg text-gray-800 mb-1">{record.goodsName}</h3>
+                                            <p className="text-sm text-gray-500 mb-4">{record.sellerName}</p>
+                                            <div className="flex items-center justify-between text-xs text-gray-400 border-t pt-3">
+                                                <span className="flex items-center gap-1"><History size={12}/> {new Date(record.createdAt).toLocaleDateString('fa-IR')}</span>
+                                                <button onClick={(e) => { e.stopPropagation(); handleDeleteRecord(record.id); }} className="hover:text-red-500 p-1"><Trash2 size={16}/></button>
+                                            </div>
+                                        </div>
+                                    );
+                                })
+                            }
+                        </div>
+                    )}
+                </>
             )}
         </div>
     );
 };
-
 export default TradeModule;

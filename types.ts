@@ -267,6 +267,59 @@ export interface ClearanceData {
     payments: ClearancePayment[];
 }
 
+// --- GREEN LEAF (برگ سبز) TYPES ---
+
+export interface GreenLeafCustomsDuty {
+    id: string;
+    cottageNumber: string; // کوتاژ
+    part: string; // پارت
+    amount: number; // مبلغ
+    paymentMethod: 'Bank' | 'Guarantee'; // روش پرداخت
+    // If Bank
+    bank?: string;
+    date?: string;
+}
+
+export interface GreenLeafGuarantee {
+    id: string;
+    relatedDutyId: string; // Link to the specific Customs Duty
+    guaranteeNumber: string; // شماره ضمانت‌نامه
+    
+    // Cheque Info
+    chequeNumber?: string;
+    chequeBank?: string;
+    chequeDate?: string;
+    
+    // Cash Deposit (نقدی ضمانت‌نامه)
+    cashAmount: number;
+    cashBank?: string;
+    cashDate?: string;
+    part?: string; // Inherited or manual
+}
+
+export interface GreenLeafTax {
+    id: string;
+    part: string;
+    amount: number;
+    bank: string;
+    date: string;
+}
+
+export interface GreenLeafRoadToll {
+    id: string;
+    part: string;
+    amount: number;
+    bank: string;
+    date: string;
+}
+
+export interface GreenLeafData {
+    duties: GreenLeafCustomsDuty[];
+    guarantees: GreenLeafGuarantee[];
+    taxes: GreenLeafTax[];
+    roadTolls: GreenLeafRoadToll[];
+}
+
 export interface CurrencyPayment {
     id: string;
     date: string;
@@ -416,6 +469,9 @@ export interface TradeRecord {
     
     // Clearance Data (New)
     clearanceData?: ClearanceData;
+
+    // Green Leaf Data (New)
+    greenLeafData?: GreenLeafData;
     
     // Currency Purchase Details
     currencyPurchaseData?: CurrencyPurchaseData;
