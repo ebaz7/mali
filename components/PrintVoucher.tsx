@@ -61,16 +61,25 @@ const PrintVoucher: React.FC<PrintVoucherProps> = ({ order, onClose, settings, o
                 height: 100%;
             }
             
-            /* CRITICAL: Override any global 'display: none' for print */
+            /* Hide scripts and other non-visual elements explicitly */
+            script, style, link {
+                display: none !important;
+            }
+
+            /* CRITICAL: Only target the wrapper for display */
             @media print {
                 body { 
-                    display: block !important; 
                     visibility: visible !important;
                 }
-                body > * { 
+                #print-wrapper { 
                     display: block !important; 
                     visibility: visible !important; 
-                    position: static !important;
+                    position: absolute !important;
+                    top: 0 !important;
+                    left: 0 !important;
+                    width: 100% !important;
+                    margin: 0 !important;
+                    padding: 5mm !important;
                 }
                 @page { 
                     size: A5 landscape; 
@@ -80,9 +89,7 @@ const PrintVoucher: React.FC<PrintVoucherProps> = ({ order, onClose, settings, o
 
             #print-wrapper { 
                 width: 100%; 
-                padding: 5mm; 
                 box-sizing: border-box;
-                display: block !important;
             }
 
             /* Ensure background colors print */

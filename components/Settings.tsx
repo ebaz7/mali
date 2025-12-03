@@ -2,14 +2,14 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { getSettings, saveSettings, restoreSystemData, uploadFile } from '../services/storageService';
 import { SystemSettings, UserRole, RolePermissions, Company } from '../types';
-import { Settings as SettingsIcon, Save, Loader2, Download, Database, Bell, Plus, Trash2, Building, ShieldCheck, Landmark, Package, AppWindow, BellRing, BellOff, Send, Crown, Image as ImageIcon, Pencil, X, Check } from 'lucide-react';
+import { Settings as SettingsIcon, Save, Loader2, Download, Database, Bell, Plus, Trash2, Building, ShieldCheck, Landmark, Package, AppWindow, BellRing, BellOff, Send, Crown, Image as ImageIcon, Pencil, X, Check, MessageSquare } from 'lucide-react';
 import { apiCall } from '../services/apiService';
 import { requestNotificationPermission, setNotificationPreference, isNotificationEnabledInApp } from '../services/notificationService';
 import { generateUUID } from '../constants';
 
 const Settings: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'general' | 'permissions'>('general');
-  const [settings, setSettings] = useState<SystemSettings>({ currentTrackingNumber: 1000, companyNames: [], companies: [], defaultCompany: '', bankNames: [], commodityGroups: [], rolePermissions: {} as any, pwaIcon: '', telegramBotToken: '', telegramAdminId: '' });
+  const [settings, setSettings] = useState<SystemSettings>({ currentTrackingNumber: 1000, companyNames: [], companies: [], defaultCompany: '', bankNames: [], commodityGroups: [], rolePermissions: {} as any, pwaIcon: '', telegramBotToken: '', telegramAdminId: '', smsApiKey: '', smsSenderNumber: '' });
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
   
@@ -43,7 +43,9 @@ const Settings: React.FC = () => {
               rolePermissions: data.rolePermissions || {}, 
               pwaIcon: data.pwaIcon || '', 
               telegramBotToken: data.telegramBotToken || '', 
-              telegramAdminId: data.telegramAdminId || '' 
+              telegramAdminId: data.telegramAdminId || '',
+              smsApiKey: data.smsApiKey || '',
+              smsSenderNumber: data.smsSenderNumber || ''
           }; 
           
           // Migrate old string companies to object structure if empty
@@ -243,6 +245,36 @@ const Settings: React.FC = () => {
                                 onChange={(e) => setSettings({...settings, telegramAdminId: e.target.value})}
                              />
                              <p className="text-[10px] text-gray-500 mt-1">فایل‌های بک‌آپ خودکار (هر ۸ ساعت) به این آیدی ارسال می‌شود. خودتان به ربات پیام دهید و /id را بزنید.</p>
+                        </div>
+                    </div>
+                </div>
+
+                {/* SMS PANEL SECTION */}
+                <div className="space-y-4 border-t pt-6">
+                    <div className="flex items-center gap-2 mb-2"><MessageSquare className="text-green-500" size={20} /><h3 className="font-bold text-gray-800">تنظیمات پنل پیامک</h3></div>
+                    <div className="bg-green-50 p-4 rounded-xl border border-green-100 grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <label className="text-xs font-bold text-gray-700 block mb-2">کلید دسترسی (API Key)</label>
+                            <input 
+                                type="password" 
+                                className="w-full border border-green-200 rounded-lg p-2 text-sm dir-ltr" 
+                                placeholder="SMS Panel API Key"
+                                value={settings.smsApiKey}
+                                onChange={(e) => setSettings({...settings, smsApiKey: e.target.value})}
+                            />
+                        </div>
+                        <div>
+                            <label className="text-xs font-bold text-gray-700 block mb-2">شماره خط ارسال کننده</label>
+                            <input 
+                                type="text" 
+                                className="w-full border border-green-200 rounded-lg p-2 text-sm dir-ltr" 
+                                placeholder="Example: 3000xxxx"
+                                value={settings.smsSenderNumber}
+                                onChange={(e) => setSettings({...settings, smsSenderNumber: e.target.value})}
+                            />
+                        </div>
+                        <div className="md:col-span-2">
+                            <p className="text-xs text-gray-500">در حال حاضر این تنظیمات جهت اتصال آینده به سامانه پیامکی ذخیره می‌شوند.</p>
                         </div>
                     </div>
                 </div>

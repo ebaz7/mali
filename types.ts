@@ -105,6 +105,8 @@ export interface SystemSettings {
   pwaIcon?: string; // Custom PWA Icon URL
   telegramBotToken?: string; // Token for Telegram Bot Notifications
   telegramAdminId?: string; // Chat ID of the main admin for backups
+  smsApiKey?: string; // API Key for SMS Panel
+  smsSenderNumber?: string; // Sender Number for SMS
 }
 
 export interface DashboardStats {
