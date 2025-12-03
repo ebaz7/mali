@@ -259,6 +259,7 @@ export interface ClearancePayment {
     amount: number;
     date: string;
     bank: string;
+    payingBank?: string; // بانک پرداخت کننده
 }
 
 export interface ClearanceData {

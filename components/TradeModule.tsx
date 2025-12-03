@@ -72,7 +72,7 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
     // Clearance State
     const [clearanceForm, setClearanceForm] = useState<ClearanceData>({ receipts: [], payments: [] });
     const [newWarehouseReceipt, setNewWarehouseReceipt] = useState<Partial<WarehouseReceipt>>({ number: '', part: '', issueDate: '' });
-    const [newClearancePayment, setNewClearancePayment] = useState<Partial<ClearancePayment>>({ amount: 0, part: '', bank: '', date: '' });
+    const [newClearancePayment, setNewClearancePayment] = useState<Partial<ClearancePayment>>({ amount: 0, part: '', bank: '', date: '', payingBank: '' });
 
     // License Transactions State
     const [newLicenseTx, setNewLicenseTx] = useState<Partial<TradeTransaction>>({ amount: 0, bank: '', date: '', description: 'هزینه ثبت سفارش' });
@@ -97,9 +97,6 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
     const [newInvoiceItem, setNewInvoiceItem] = useState<Partial<InvoiceItem>>({ name: '', weight: 0, unitPrice: 0, totalPrice: 0 });
     const [uploadingDocFile, setUploadingDocFile] = useState(false);
     const docFileInputRef = useRef<HTMLInputElement>(null);
-
-    // PDF Generation State
-    const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
 
     useEffect(() => {
         loadRecords();
@@ -135,7 +132,7 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
             setNewInspectionPayment({ part: '', amount: 0, date: '', bank: '' });
             setNewInspectionCertificate({ part: '', company: '', certificateNumber: '', amount: 0 });
             setNewWarehouseReceipt({ number: '', part: '', issueDate: '' });
-            setNewClearancePayment({ amount: 0, part: '', bank: '', date: '' });
+            setNewClearancePayment({ amount: 0, part: '', bank: '', date: '', payingBank: '' });
             setShippingDocForm({ status: 'Draft', documentNumber: '', documentDate: '', attachments: [], currency: selectedRecord.mainCurrency || 'EUR', invoiceItems: [], freightCost: 0 });
             setNewInvoiceItem({ name: '', weight: 0, unitPrice: 0, totalPrice: 0 });
         }
@@ -189,7 +186,7 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
     // Clearance Handlers
     const handleAddWarehouseReceipt = async () => { if (!selectedRecord || !newWarehouseReceipt.number) return; const receipt: WarehouseReceipt = { id: generateUUID(), number: newWarehouseReceipt.number || '', part: newWarehouseReceipt.part || '', issueDate: newWarehouseReceipt.issueDate || '' }; const updatedReceipts = [...(clearanceForm.receipts || []), receipt]; const updatedData = { ...clearanceForm, receipts: updatedReceipts }; setClearanceForm(updatedData); setNewWarehouseReceipt({ number: '', part: '', issueDate: '' }); const updatedRecord = { ...selectedRecord, clearanceData: updatedData }; if (!updatedRecord.stages[TradeStage.CLEARANCE_DOCS]) updatedRecord.stages[TradeStage.CLEARANCE_DOCS] = getStageData(updatedRecord, TradeStage.CLEARANCE_DOCS); updatedRecord.stages[TradeStage.CLEARANCE_DOCS].isCompleted = updatedReceipts.length > 0; await updateTradeRecord(updatedRecord); setSelectedRecord(updatedRecord); };
     const handleDeleteWarehouseReceipt = async (id: string) => { if (!selectedRecord) return; const updatedReceipts = (clearanceForm.receipts || []).filter(r => r.id !== id); const updatedData = { ...clearanceForm, receipts: updatedReceipts }; setClearanceForm(updatedData); const updatedRecord = { ...selectedRecord, clearanceData: updatedData }; await updateTradeRecord(updatedRecord); setSelectedRecord(updatedRecord); };
-    const handleAddClearancePayment = async () => { if (!selectedRecord || !newClearancePayment.amount) return; const payment: ClearancePayment = { id: generateUUID(), amount: Number(newClearancePayment.amount), part: newClearancePayment.part || '', bank: newClearancePayment.bank || '', date: newClearancePayment.date || '' }; const updatedPayments = [...(clearanceForm.payments || []), payment]; const updatedData = { ...clearanceForm, payments: updatedPayments }; setClearanceForm(updatedData); setNewClearancePayment({ amount: 0, part: '', bank: '', date: '' }); const totalCost = updatedPayments.reduce((acc, p) => acc + p.amount, 0); const updatedRecord = { ...selectedRecord, clearanceData: updatedData }; if (!updatedRecord.stages[TradeStage.CLEARANCE_DOCS]) updatedRecord.stages[TradeStage.CLEARANCE_DOCS] = getStageData(updatedRecord, TradeStage.CLEARANCE_DOCS); updatedRecord.stages[TradeStage.CLEARANCE_DOCS].costRial = totalCost; await updateTradeRecord(updatedRecord); setSelectedRecord(updatedRecord); };
+    const handleAddClearancePayment = async () => { if (!selectedRecord || !newClearancePayment.amount) return; const payment: ClearancePayment = { id: generateUUID(), amount: Number(newClearancePayment.amount), part: newClearancePayment.part || '', bank: newClearancePayment.bank || '', date: newClearancePayment.date || '', payingBank: newClearancePayment.payingBank }; const updatedPayments = [...(clearanceForm.payments || []), payment]; const updatedData = { ...clearanceForm, payments: updatedPayments }; setClearanceForm(updatedData); setNewClearancePayment({ amount: 0, part: '', bank: '', date: '', payingBank: '' }); const totalCost = updatedPayments.reduce((acc, p) => acc + p.amount, 0); const updatedRecord = { ...selectedRecord, clearanceData: updatedData }; if (!updatedRecord.stages[TradeStage.CLEARANCE_DOCS]) updatedRecord.stages[TradeStage.CLEARANCE_DOCS] = getStageData(updatedRecord, TradeStage.CLEARANCE_DOCS); updatedRecord.stages[TradeStage.CLEARANCE_DOCS].costRial = totalCost; await updateTradeRecord(updatedRecord); setSelectedRecord(updatedRecord); };
     const handleDeleteClearancePayment = async (id: string) => { if (!selectedRecord) return; const updatedPayments = (clearanceForm.payments || []).filter(p => p.id !== id); const updatedData = { ...clearanceForm, payments: updatedPayments }; setClearanceForm(updatedData); const totalCost = updatedPayments.reduce((acc, p) => acc + p.amount, 0); const updatedRecord = { ...selectedRecord, clearanceData: updatedData }; if (!updatedRecord.stages[TradeStage.CLEARANCE_DOCS]) updatedRecord.stages[TradeStage.CLEARANCE_DOCS] = getStageData(updatedRecord, TradeStage.CLEARANCE_DOCS); updatedRecord.stages[TradeStage.CLEARANCE_DOCS].costRial = totalCost; await updateTradeRecord(updatedRecord); setSelectedRecord(updatedRecord); };
 
     // Currency Handlers
@@ -273,15 +270,16 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
                                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                                         <input className="border rounded p-2 text-sm" placeholder="عنوان هزینه / پارت" value={newClearancePayment.part} onChange={e => setNewClearancePayment({...newClearancePayment, part: e.target.value})} />
                                         <input className="border rounded p-2 text-sm dir-ltr" placeholder="مبلغ (ریال)" value={formatNumberString(newClearancePayment.amount?.toString())} onChange={e => setNewClearancePayment({...newClearancePayment, amount: deformatNumberString(e.target.value)})} />
-                                        <select className="border rounded p-2 text-sm bg-white" value={newClearancePayment.bank} onChange={e => setNewClearancePayment({...newClearancePayment, bank: e.target.value})}><option value="">بانک پرداخت کننده...</option>{availableBanks.map(b => <option key={b} value={b}>{b}</option>)}</select>
-                                        <input className="border rounded p-2 text-sm dir-ltr text-right" placeholder="تاریخ پرداخت" value={newClearancePayment.date} onChange={e => setNewClearancePayment({...newClearancePayment, date: e.target.value})} />
+                                        <select className="border rounded p-2 text-sm bg-white" value={newClearancePayment.bank} onChange={e => setNewClearancePayment({...newClearancePayment, bank: e.target.value})}><option value="">بانک مقصد...</option>{availableBanks.map(b => <option key={b} value={b}>{b}</option>)}</select>
+                                        <select className="border rounded p-2 text-sm bg-white" value={newClearancePayment.payingBank} onChange={e => setNewClearancePayment({...newClearancePayment, payingBank: e.target.value})}><option value="">بانک پرداخت کننده...</option>{availableBanks.map(b => <option key={b} value={b}>{b}</option>)}</select>
+                                        <input className="border rounded p-2 text-sm dir-ltr text-right col-span-2" placeholder="تاریخ پرداخت" value={newClearancePayment.date} onChange={e => setNewClearancePayment({...newClearancePayment, date: e.target.value})} />
                                     </div>
                                     <button onClick={handleAddClearancePayment} disabled={!newClearancePayment.amount} className="w-full bg-green-600 text-white py-2 rounded-lg hover:bg-green-700 text-sm">افزودن هزینه</button>
                                 </div>
                                 <div className="space-y-2 max-h-[300px] overflow-y-auto">
                                     {(clearanceForm.payments || []).map(p => (
                                         <div key={p.id} className="flex justify-between items-center p-3 bg-gray-50 rounded border">
-                                            <div><div className="font-bold text-sm text-gray-800">{p.part}</div><div className="text-xs text-gray-500">{p.date} - {p.bank}</div></div>
+                                            <div><div className="font-bold text-sm text-gray-800">{p.part}</div><div className="text-xs text-gray-500">{p.date} - {p.payingBank ? `از ${p.payingBank} به ` : ''}{p.bank}</div></div>
                                             <div className="flex items-center gap-3"><span className="font-mono font-bold text-gray-700 dir-ltr">{formatCurrency(p.amount)}</span><button onClick={() => handleDeleteClearancePayment(p.id)} className="text-red-400 hover:text-red-600"><Trash2 size={14}/></button></div>
                                         </div>
                                     ))}
@@ -343,6 +341,21 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
                             <div><label className="text-sm font-bold block mb-1">وضعیت</label><div className="flex items-center gap-2"><input type="checkbox" className="w-5 h-5" checked={stageFormData.isCompleted || false} onChange={e => setStageFormData({...stageFormData, isCompleted: e.target.checked})} /><span className="text-sm">تکمیل شده</span></div></div>
                             <div><label className="text-sm font-bold block mb-1">توضیحات</label><textarea className="w-full border rounded-lg p-2 text-sm h-24" value={stageFormData.description || ''} onChange={e => setStageFormData({...stageFormData, description: e.target.value})} placeholder="توضیحات..." /></div>
                             
+                            {/* GENERAL COST INPUTS (RESTORED) */}
+                            <div className="grid grid-cols-2 gap-4 bg-gray-50 p-3 rounded-lg border">
+                                <div>
+                                    <label className="text-xs font-bold block mb-1">هزینه (ریال)</label>
+                                    <input className="w-full border rounded p-2 text-sm dir-ltr" value={formatNumberString(stageFormData.costRial?.toString())} onChange={e => setStageFormData({...stageFormData, costRial: deformatNumberString(e.target.value)})} placeholder="0" />
+                                </div>
+                                <div>
+                                     <label className="text-xs font-bold block mb-1">هزینه ارزی</label>
+                                     <div className="flex">
+                                         <input className="w-full border rounded-r p-2 text-sm dir-ltr" value={stageFormData.costCurrency || ''} onChange={e => setStageFormData({...stageFormData, costCurrency: Number(e.target.value)})} placeholder="0" />
+                                         <select className="border border-l-0 rounded-l p-1 text-xs bg-gray-100" value={stageFormData.currencyType} onChange={e => setStageFormData({...stageFormData, currencyType: e.target.value})}>{CURRENCIES.map(c => <option key={c.code} value={c.code}>{c.code}</option>)}</select>
+                                     </div>
+                                </div>
+                            </div>
+
                             {editingStage === TradeStage.ALLOCATION_QUEUE && (
                                 <div className="grid grid-cols-2 gap-2 bg-amber-50 p-3 rounded-lg border border-amber-100">
                                     <div><label className="text-xs font-bold block mb-1">تاریخ ورود به صف</label><input className="w-full border rounded p-2 text-sm dir-ltr text-right" placeholder="YYYY/MM/DD" value={stageFormData.queueDate || ''} onChange={e => setStageFormData({...stageFormData, queueDate: e.target.value})} /></div>
