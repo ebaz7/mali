@@ -70,8 +70,45 @@ const saveDb = (data) => {
     fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2));
 };
 
+// --- HELPER FUNCTIONS ---
+const toShamsi = (isoDate) => {
+    if (!isoDate) return '-';
+    try {
+        return new Date(isoDate).toLocaleDateString('fa-IR', { year: 'numeric', month: 'long', day: 'numeric' });
+    } catch (e) { return isoDate; }
+};
+
+const formatCurrency = (amount) => new Intl.NumberFormat('fa-IR').format(amount);
+
+const generateUUID = () => Date.now().toString(36) + Math.random().toString(36).substr(2);
+
+const findNextAvailableTrackingNumber = (db) => {
+    const baseNum = (db.settings.currentTrackingNumber || 1602);
+    const startNum = baseNum + 1;
+    const existingNumbers = db.orders.map(o => o.trackingNumber).sort((a, b) => a - b);
+    let nextNum = startNum;
+    for (const num of existingNumbers) { if (num < nextNum) continue; if (num === nextNum) { nextNum++; } else if (num > nextNum) { return nextNum; } }
+    return nextNum;
+};
+
 // --- TELEGRAM BOT UTILS ---
 let lastUpdateId = 0;
+// Store user state for creation wizard: { chatId: { step: 'PAYEE' | 'AMOUNT' | 'DESC' | 'COMPANY', data: {} } }
+const userFlows = {}; 
+
+const MAIN_MENU = {
+    keyboard: [
+        [{ text: "📂 کارتابل من" }, { text: "📊 گزارشات" }],
+        [{ text: "➕ ثبت دستور پرداخت" }, { text: "👤 پروفایل من" }]
+    ],
+    resize_keyboard: true,
+    persistent: true
+};
+
+const CANCEL_MENU = {
+    keyboard: [[{ text: "❌ انصراف" }]],
+    resize_keyboard: true
+};
 
 const constructMultipart = (chatId, text, filePath, fileField = 'document', caption = '') => {
     const boundary = '----WebKitFormBoundary7MA4YWxkTrZu0gW';
@@ -145,8 +182,6 @@ const sendTelegramFile = async (chatId, filePath, caption = '', type = 'document
     }
 };
 
-const formatCurrency = (amount) => new Intl.NumberFormat('fa-IR').format(amount);
-
 const generateOrderReceipt = (order) => {
     const statusIcons = {
         'در انتظار بررسی مالی': '🟡',
@@ -162,11 +197,11 @@ const generateOrderReceipt = (order) => {
     html += `➖➖➖➖➖➖➖➖\n`;
     html += `👤 <b>گیرنده:</b> ${order.payee}\n`;
     html += `💰 <b>مبلغ کل:</b> ${formatCurrency(order.totalAmount)} ریال\n`;
+    html += `🏢 <b>محل پرداخت:</b> ${order.payingCompany || 'نامشخص'}\n`; // Added Payment Location
     html += `📝 <b>شرح:</b> ${order.description}\n`;
-    html += `🏢 <b>شرکت:</b> ${order.payingCompany || '-'}\n`;
     html += `➖➖➖➖➖➖➖➖\n`;
     html += `👤 <b>درخواست کننده:</b> ${order.requester}\n`;
-    html += `📅 <b>تاریخ:</b> ${order.date}\n`;
+    html += `📅 <b>تاریخ:</b> ${toShamsi(order.date)}\n`; // Shamsi Date
     html += `📊 <b>وضعیت:</b> ${icon} ${order.status}\n`;
     
     if (order.status === 'رد شده' && order.rejectionReason) {
@@ -236,38 +271,175 @@ const notifyUsers = async (db, role, message, order = null, specificUserId = nul
 const processUpdate = async (update) => {
     const db = getDb();
     
-    // 1. Text Messages
+    // 1. Text Messages & Creation Wizard
     if (update.message && update.message.text) {
         const chatId = update.message.chat.id;
         const text = update.message.text;
         const user = db.users.find(u => u.telegramChatId == chatId);
 
+        // --- GLOBAL CANCEL ---
+        if (text === '❌ انصراف') {
+            delete userFlows[chatId];
+            await sendTelegram(chatId, "عملیات لغو شد.", MAIN_MENU);
+            return;
+        }
+
+        // --- CREATION WIZARD FLOW ---
+        if (userFlows[chatId]) {
+            const flow = userFlows[chatId];
+            
+            if (flow.step === 'COMPANY') {
+                flow.data.company = text;
+                flow.step = 'PAYEE';
+                await sendTelegram(chatId, "👤 نام گیرنده وجه را وارد کنید:", CANCEL_MENU);
+                return;
+            }
+            if (flow.step === 'PAYEE') {
+                flow.data.payee = text;
+                flow.step = 'AMOUNT';
+                await sendTelegram(chatId, "💰 مبلغ را به ریال وارد کنید (فقط عدد):", CANCEL_MENU);
+                return;
+            }
+            if (flow.step === 'AMOUNT') {
+                const amount = parseInt(text.replace(/,/g, '')); // Remove commas if user typed them
+                if (isNaN(amount) || amount <= 0) {
+                    await sendTelegram(chatId, "⛔ مبلغ نامعتبر است. لطفا عدد صحیح وارد کنید:");
+                    return;
+                }
+                flow.data.amount = amount;
+                flow.step = 'DESC';
+                await sendTelegram(chatId, "📝 شرح پرداخت را وارد کنید:", CANCEL_MENU);
+                return;
+            }
+            if (flow.step === 'DESC') {
+                flow.data.description = text;
+                
+                // Finalize Order
+                const trackingNum = findNextAvailableTrackingNumber(db);
+                const nowIso = new Date().toISOString().split('T')[0];
+                
+                const newOrder = {
+                    id: generateUUID(),
+                    trackingNumber: trackingNum,
+                    date: nowIso,
+                    payee: flow.data.payee,
+                    totalAmount: flow.data.amount,
+                    description: flow.data.description,
+                    payingCompany: flow.data.company,
+                    status: 'در انتظار بررسی مالی',
+                    requester: user ? user.fullName : `Telegram User ${chatId}`,
+                    createdAt: Date.now(),
+                    updatedAt: Date.now(),
+                    paymentDetails: [{
+                        id: generateUUID(),
+                        method: 'حواله بانکی',
+                        amount: flow.data.amount,
+                        bankName: 'نامشخص (ثبت با ربات)',
+                        description: 'ثبت شده از طریق ربات تلگرام'
+                    }],
+                    attachments: []
+                };
+
+                db.orders.unshift(newOrder);
+                saveDb(db);
+
+                // Clear flow
+                delete userFlows[chatId];
+
+                // Notify User
+                await sendTelegram(chatId, `✅ <b>دستور پرداخت با موفقیت ثبت شد.</b>\nشماره پیگیری: ${trackingNum}`, MAIN_MENU);
+                
+                // Notify Financial Manager
+                notifyUsers(db, 'financial', generateOrderReceipt(newOrder), newOrder);
+                return;
+            }
+        }
+
+        // --- MAIN COMMANDS ---
         if (text === '/start') {
-            await sendTelegram(chatId, `👋 سلام!\n\n🤖 به ربات سیستم مدیریت پرداخت خوش آمدید.\n\n🆔 شناسه چت شما: <code>${chatId}</code>`);
-        } else if (text === '/id') {
-            await sendTelegram(chatId, `🆔 شناسه چت شما: <code>${chatId}</code>`);
+            await sendTelegram(chatId, `👋 سلام ${user ? user.fullName : 'کاربر گرامی'}!\n\n🤖 به ربات سیستم مدیریت پرداخت خوش آمدید.\nجهت استفاده از امکانات، از منوی زیر استفاده کنید.`, MAIN_MENU);
+        
+        } else if (text === '👤 پروفایل من' || text === '/id') {
+            const roleName = user ? (user.role === 'admin' ? 'مدیر سیستم' : user.role === 'ceo' ? 'مدیرعامل' : user.role === 'financial' ? 'مدیر مالی' : user.role === 'manager' ? 'مدیر داخلی' : 'کاربر عادی') : 'ناشناس';
+            await sendTelegram(chatId, `🆔 <b>اطلاعات کاربری</b>\n\n👤 نام: ${user ? user.fullName : 'ثبت نشده'}\n🔑 نقش: ${roleName}\n📱 شناسه چت: <code>${chatId}</code>`, MAIN_MENU);
+        
+        } else if (text === '📊 گزارشات') {
+            if (!user) { await sendTelegram(chatId, "⛔ شما در سیستم شناسایی نشدید."); return; }
+            
+            const pendingCount = db.orders.filter(o => o.status !== 'تایید نهایی' && o.status !== 'رد شده').length;
+            const today = new Date().toISOString().split('T')[0];
+            const todayCount = db.orders.filter(o => o.date === today).length;
+            const myPending = db.orders.filter(o => o.requester === user.fullName && o.status !== 'تایید نهایی' && o.status !== 'رد شده').length;
+            
+            let report = `📊 <b>گزارش وضعیت سیستم</b>\n\n`;
+            report += `🕒 کل سفارشات در جریان: ${pendingCount}\n`;
+            report += `📅 سفارشات ثبت شده امروز: ${todayCount}\n`;
+            report += `📂 سفارشات باز شما: ${myPending}\n`;
+            report += `\n<i>جهت گزارش دقیق‌تر به پنل تحت وب مراجعه کنید.</i>`;
+            
+            await sendTelegram(chatId, report, MAIN_MENU);
+
+        } else if (text === '📂 کارتابل من' || text === '/pending') {
+            if (!user) { await sendTelegram(chatId, "⛔ شما در سیستم شناسایی نشدید."); return; }
+            
+            let pendingOrders = [];
+            // Role based filtering
+            if (user.role === 'financial') pendingOrders = db.orders.filter(o => o.status === 'در انتظار بررسی مالی');
+            else if (user.role === 'manager') pendingOrders = db.orders.filter(o => o.status === 'تایید مالی / در انتظار مدیریت');
+            else if (user.role === 'ceo') pendingOrders = db.orders.filter(o => o.status === 'تایید مدیریت / در انتظار مدیرعامل');
+            else if (user.role === 'admin') {
+                // Admin sees everything pending
+                 pendingOrders = db.orders.filter(o => o.status !== 'تایید نهایی' && o.status !== 'رد شده');
+            }
+            
+            if (pendingOrders.length === 0) {
+                await sendTelegram(chatId, '✅ کارتابل شما خالی است.', MAIN_MENU);
+            } else {
+                await sendTelegram(chatId, `📂 <b>${pendingOrders.length} درخواست در کارتابل شما موجود است:</b>`);
+                for (const o of pendingOrders) {
+                    const msg = generateOrderReceipt(o);
+                    // Only show buttons if the user has the right role for the current status
+                    const markup = (user.role === 'admin' || 
+                                   (user.role === 'financial' && o.status === 'در انتظار بررسی مالی') ||
+                                   (user.role === 'manager' && o.status === 'تایید مالی / در انتظار مدیریت') ||
+                                   (user.role === 'ceo' && o.status === 'تایید مدیریت / در انتظار مدیرعامل')) 
+                                   ? getNotificationButtons(o, user.role === 'admin' ? (o.status === 'در انتظار بررسی مالی' ? 'financial' : o.status === 'تایید مالی / در انتظار مدیریت' ? 'manager' : 'ceo') : user.role) 
+                                   : null;
+                                   
+                    await sendTelegram(chatId, msg, markup);
+                }
+            }
+
+        } else if (text === '➕ ثبت دستور پرداخت') {
+            if (!user) { await sendTelegram(chatId, "⛔ ابتدا باید در سیستم توسط ادمین تعریف شوید."); return; }
+            
+            // Start Wizard
+            userFlows[chatId] = { step: 'COMPANY', data: {} };
+            
+            // Companies Keyboard
+            const companies = db.settings.companyNames || [];
+            let keyboard = [];
+            if (companies.length > 0) {
+                // Chunk into rows of 2
+                for (let i = 0; i < companies.length; i += 2) {
+                    const row = [{ text: companies[i] }];
+                    if (companies[i+1]) row.push({ text: companies[i+1] });
+                    keyboard.push(row);
+                }
+            }
+            keyboard.push([{ text: "❌ انصراف" }]);
+
+            await sendTelegram(chatId, "🏢 لطفا شرکت پرداخت کننده را انتخاب کنید یا نام آن را بنویسید:", {
+                keyboard: keyboard,
+                resize_keyboard: true
+            });
+
         } else if (text === '/backup') {
             if (user && user.role === 'admin') {
                 await sendTelegram(chatId, '📦 در حال تهیه نسخه پشتیبان...');
                 sendTelegramFile(chatId, DB_FILE, `Backup ${new Date().toLocaleString('fa-IR')}`, 'document');
             } else {
                 await sendTelegram(chatId, '⛔ شما دسترسی ادمین ندارید.');
-            }
-        } else if (text === '/pending') {
-            if (!user) return;
-            let pendingOrders = [];
-            if (user.role === 'financial') pendingOrders = db.orders.filter(o => o.status === 'در انتظار بررسی مالی');
-            if (user.role === 'manager') pendingOrders = db.orders.filter(o => o.status === 'تایید مالی / در انتظار مدیریت');
-            if (user.role === 'ceo') pendingOrders = db.orders.filter(o => o.status === 'تایید مدیریت / در انتظار مدیرعامل');
-            
-            if (pendingOrders.length === 0) {
-                await sendTelegram(chatId, '✅ کارتابل شما خالی است.');
-            } else {
-                for (const o of pendingOrders) {
-                    const msg = generateOrderReceipt(o);
-                    const markup = getNotificationButtons(o, user.role);
-                    await sendTelegram(chatId, msg, markup);
-                }
             }
         }
     }
@@ -291,15 +463,19 @@ const processUpdate = async (update) => {
         let nextStatus = '';
         let canAct = false;
 
-        // Permission Check
+        // Permission Check Logic (Allow Admin to override or specific role)
+        const isFinancialStep = order.status === 'در انتظار بررسی مالی';
+        const isManagerStep = order.status === 'تایید مالی / در انتظار مدیریت';
+        const isCeoStep = order.status === 'تایید مدیریت / در انتظار مدیرعامل';
+
         if (action === 'approve') {
-            if (user.role === 'financial' && order.status === 'در انتظار بررسی مالی') { nextStatus = 'تایید مالی / در انتظار مدیریت'; canAct = true; }
-            if (user.role === 'manager' && order.status === 'تایید مالی / در انتظار مدیریت') { nextStatus = 'تایید مدیریت / در انتظار مدیرعامل'; canAct = true; }
-            if (user.role === 'ceo' && order.status === 'تایید مدیریت / در انتظار مدیرعامل') { nextStatus = 'تایید نهایی'; canAct = true; }
+            if ((user.role === 'financial' || user.role === 'admin') && isFinancialStep) { nextStatus = 'تایید مالی / در انتظار مدیریت'; canAct = true; }
+            if ((user.role === 'manager' || user.role === 'admin') && isManagerStep) { nextStatus = 'تایید مدیریت / در انتظار مدیرعامل'; canAct = true; }
+            if ((user.role === 'ceo' || user.role === 'admin') && isCeoStep) { nextStatus = 'تایید نهایی'; canAct = true; }
         } else if (action === 'reject') {
-             if ((user.role === 'financial' && order.status === 'در انتظار بررسی مالی') ||
-                 (user.role === 'manager' && order.status === 'تایید مالی / در انتظار مدیریت') ||
-                 (user.role === 'ceo' && order.status === 'تایید مدیریت / در انتظار مدیرعامل')) {
+             if (((user.role === 'financial' || user.role === 'admin') && isFinancialStep) ||
+                 ((user.role === 'manager' || user.role === 'admin') && isManagerStep) ||
+                 ((user.role === 'ceo' || user.role === 'admin') && isCeoStep)) {
                  nextStatus = 'رد شده';
                  canAct = true;
              }
@@ -308,19 +484,43 @@ const processUpdate = async (update) => {
         if (canAct) {
             // Update DB
             db.orders[orderIndex].status = nextStatus;
-            if (user.role === 'financial') db.orders[orderIndex].approverFinancial = user.fullName;
-            if (user.role === 'manager') db.orders[orderIndex].approverManager = user.fullName;
-            if (user.role === 'ceo') db.orders[orderIndex].approverCeo = user.fullName;
+            db.orders[orderIndex].updatedAt = Date.now(); 
+            if (user.role === 'financial' || (user.role === 'admin' && isFinancialStep)) db.orders[orderIndex].approverFinancial = user.fullName;
+            if (user.role === 'manager' || (user.role === 'admin' && isManagerStep)) db.orders[orderIndex].approverManager = user.fullName;
+            if (user.role === 'ceo' || (user.role === 'admin' && isCeoStep)) db.orders[orderIndex].approverCeo = user.fullName;
+            
             if (nextStatus === 'رد شده') {
                 db.orders[orderIndex].rejectedBy = user.fullName;
-                db.orders[orderIndex].rejectionReason = 'رد شده توسط ربات';
+                db.orders[orderIndex].rejectionReason = 'رد شده توسط ربات تلگرام';
             }
             saveDb(db);
 
-            // Confirm to User
-            await sendTelegram(chatId, `✅ <b>عملیات موفق</b>\nوضعیت جدید: ${nextStatus}`);
+            // Answer Callback to stop loading animation
+            try {
+                const token = db.settings.telegramBotToken;
+                await fetch(`https://api.telegram.org/bot${token}/answerCallbackQuery`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ callback_query_id: update.callback_query.id, text: `وضعیت به ${nextStatus} تغییر کرد` })
+                });
+            } catch(e) {}
 
-            // Notify Next Step (Trigger Logic Manually)
+            // Update original message to remove buttons and show result
+            try {
+                 const token = db.settings.telegramBotToken;
+                 await fetch(`https://api.telegram.org/bot${token}/editMessageText`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        chat_id: chatId, 
+                        message_id: update.callback_query.message.message_id,
+                        text: generateOrderReceipt(db.orders[orderIndex]) + `\n\n✅ <b>توسط ${user.fullName} ${action === 'approve' ? 'تایید' : 'رد'} شد.</b>`,
+                        parse_mode: 'HTML'
+                    })
+                });
+            } catch(e) {}
+
+            // Notify Next Step
             const updatedOrder = db.orders[orderIndex];
             if (nextStatus === 'تایید مالی / در انتظار مدیریت') notifyUsers(db, 'manager', generateOrderReceipt(updatedOrder), updatedOrder);
             if (nextStatus === 'تایید مدیریت / در انتظار مدیرعامل') notifyUsers(db, 'ceo', generateOrderReceipt(updatedOrder), updatedOrder);
@@ -457,21 +657,13 @@ app.post('/api/upload', (req, res) => {
     } catch (e) { res.status(500).send('Upload failed'); }
 });
 
-const findNextAvailableTrackingNumber = (db) => {
-    const baseNum = (db.settings.currentTrackingNumber || 1602);
-    const startNum = baseNum + 1;
-    const existingNumbers = db.orders.map(o => o.trackingNumber).sort((a, b) => a - b);
-    let nextNum = startNum;
-    for (const num of existingNumbers) { if (num < nextNum) continue; if (num === nextNum) { nextNum++; } else if (num > nextNum) { return nextNum; } }
-    return nextNum;
-};
-
 app.get('/api/next-tracking-number', (req, res) => { res.json({ nextTrackingNumber: findNextAvailableTrackingNumber(getDb()) }); });
 app.get('/api/orders', (req, res) => { res.json(getDb().orders); });
 
 app.post('/api/orders', (req, res) => {
     const db = getDb();
     const newOrder = req.body;
+    newOrder.updatedAt = Date.now(); // Set updated time
     let assignedTrackingNumber = newOrder.trackingNumber;
     const isTaken = db.orders.some(o => o.trackingNumber === assignedTrackingNumber);
     if (isTaken) { assignedTrackingNumber = findNextAvailableTrackingNumber(db); newOrder.trackingNumber = assignedTrackingNumber; }
@@ -486,6 +678,7 @@ app.post('/api/orders', (req, res) => {
 app.put('/api/orders/:id', (req, res) => {
     const db = getDb();
     const updatedOrder = req.body;
+    updatedOrder.updatedAt = Date.now(); // Update timestamp
     const index = db.orders.findIndex(o => o.id === req.params.id);
     if (index !== -1) {
         const oldStatus = db.orders[index].status;

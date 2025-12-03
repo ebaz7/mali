@@ -1,5 +1,4 @@
 
-
 export enum PaymentMethod {
   CASH = 'نقد',
   CHEQUE = 'چک',
@@ -73,6 +72,7 @@ export interface PaymentOrder {
   }[];
 
   createdAt: number;
+  updatedAt?: number; // For tracking notifications
 }
 
 export interface RolePermissions {

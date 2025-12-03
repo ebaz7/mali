@@ -4,6 +4,8 @@
 
 
 
+
+
 import React, { useState, useEffect, useRef } from 'react';
 import { getSettings, saveSettings, restoreSystemData, uploadFile } from '../services/storageService';
 import { SystemSettings, UserRole, RolePermissions } from '../types';
@@ -127,7 +129,7 @@ const Settings: React.FC = () => {
                                 value={settings.telegramAdminId}
                                 onChange={(e) => setSettings({...settings, telegramAdminId: e.target.value})}
                              />
-                             <p className="text-[10px] text-gray-500 mt-1">فایل‌های بک‌آپ خودکار (هر ۲۴ ساعت) به این آیدی ارسال می‌شود. خودتان به ربات پیام دهید و /id را بزنید.</p>
+                             <p className="text-[10px] text-gray-500 mt-1">فایل‌های بک‌آپ خودکار (هر ۸ ساعت) به این آیدی ارسال می‌شود. خودتان به ربات پیام دهید و /id را بزنید.</p>
                         </div>
                     </div>
                 </div>
