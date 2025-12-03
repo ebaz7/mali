@@ -138,3 +138,23 @@ export const getShamsiDateFromIso = (isoDate: string) => {
   
   return { year: y, month: m, day: d };
 };
+
+export const calculateDaysDiff = (startDateStr: string, endDateStr?: string): number | null => {
+    const start = parsePersianDate(startDateStr);
+    if (!start) return null;
+
+    let end = new Date(); // Default to now
+    if (endDateStr) {
+        const parsedEnd = parsePersianDate(endDateStr);
+        if (parsedEnd) end = parsedEnd;
+    }
+
+    // Set both to midnight to avoid hour differences
+    start.setHours(0, 0, 0, 0);
+    end.setHours(0, 0, 0, 0);
+
+    const diffTime = end.getTime() - start.getTime();
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    
+    return diffDays >= 0 ? diffDays : 0;
+};

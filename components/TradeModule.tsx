@@ -2,8 +2,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { User, TradeRecord, TradeStage, TradeItem, SystemSettings, InsuranceEndorsement, CurrencyPurchaseData, TradeTransaction, CurrencyTranche, TradeStageData, ShippingDocument, ShippingDocType, DocStatus, InvoiceItem, InspectionData, InspectionPayment, InspectionCertificate, ClearanceData, WarehouseReceipt, ClearancePayment } from '../types';
 import { getTradeRecords, saveTradeRecord, updateTradeRecord, deleteTradeRecord, getSettings, uploadFile } from '../services/storageService';
-import { generateUUID, formatCurrency, formatNumberString, deformatNumberString, parsePersianDate, formatDate } from '../constants';
-import { Container, Plus, Search, CheckCircle2, Save, Trash2, X, Package, ArrowRight, History, Banknote, Coins, Wallet, FileSpreadsheet, Shield, LayoutDashboard, Printer, FileDown, Paperclip, Building2, FolderOpen, Home, Calculator, FileText, Microscope, ListFilter, Warehouse, Calendar, PieChart, BarChart } from 'lucide-react';
+import { generateUUID, formatCurrency, formatNumberString, deformatNumberString, parsePersianDate, formatDate, calculateDaysDiff } from '../constants';
+import { Container, Plus, Search, CheckCircle2, Save, Trash2, X, Package, ArrowRight, History, Banknote, Coins, Wallet, FileSpreadsheet, Shield, LayoutDashboard, Printer, FileDown, Paperclip, Building2, FolderOpen, Home, Calculator, FileText, Microscope, ListFilter, Warehouse, Calendar, PieChart, BarChart, Clock } from 'lucide-react';
 
 interface TradeModuleProps {
     currentUser: User;
@@ -421,9 +421,10 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
                                 </div>
 
                                 {editingStage === TradeStage.ALLOCATION_QUEUE && (
-                                    <div className="grid grid-cols-2 gap-2 bg-amber-50 p-3 rounded-lg border border-amber-100">
-                                        <div><label className="text-xs font-bold block mb-1">تاریخ ورود به صف</label><input className="w-full border rounded p-2 text-sm dir-ltr text-right" placeholder="YYYY/MM/DD" value={stageFormData.queueDate || ''} onChange={e => setStageFormData({...stageFormData, queueDate: e.target.value})} /></div>
-                                        <div><label className="text-xs font-bold block mb-1">نرخ ارز (تخمینی)</label><input className="w-full border rounded p-2 text-sm dir-ltr" value={stageFormData.currencyRate || ''} onChange={e => setStageFormData({...stageFormData, currencyRate: Number(e.target.value)})} /></div>
+                                    <div className="grid grid-cols-2 gap-2 bg-amber-50 p-3 rounded-lg border border-amber-100 ring-2 ring-amber-200">
+                                        <div className="col-span-2"><span className="text-amber-700 text-xs font-bold mb-1 flex items-center gap-1"><Clock size={12}/> اطلاعات صف تخصیص</span></div>
+                                        <div><label className="text-xs font-bold block mb-1 text-amber-800">تاریخ شروع (ورود به صف)</label><input className="w-full border border-amber-300 rounded p-2 text-sm dir-ltr text-right bg-white focus:ring-2 focus:ring-amber-500" placeholder="YYYY/MM/DD" value={stageFormData.queueDate || ''} onChange={e => setStageFormData({...stageFormData, queueDate: e.target.value})} /></div>
+                                        <div><label className="text-xs font-bold block mb-1 text-amber-800">نرخ ارز (تخمینی)</label><input className="w-full border border-amber-300 rounded p-2 text-sm dir-ltr bg-white" value={stageFormData.currencyRate || ''} onChange={e => setStageFormData({...stageFormData, currencyRate: Number(e.target.value)})} /></div>
                                     </div>
                                 )}
 
@@ -500,6 +501,22 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
                                 <div className="grid grid-cols-1 gap-6">
                                     {STAGES.map((stageName, idx) => {
                                         const stageInfo = getStageData(selectedRecord, stageName);
+                                        
+                                        // Custom logic for Allocation Queue Day Counter
+                                        let dayCounter = null;
+                                        if (stageName === TradeStage.ALLOCATION_QUEUE && stageInfo.queueDate) {
+                                            const isApproved = getStageData(selectedRecord, TradeStage.ALLOCATION_APPROVED)?.isCompleted;
+                                            const approvalDate = getStageData(selectedRecord, TradeStage.ALLOCATION_APPROVED)?.allocationDate;
+                                            const days = calculateDaysDiff(stageInfo.queueDate, isApproved ? approvalDate : undefined);
+                                            
+                                            dayCounter = (
+                                                <div className={`mt-2 flex items-center gap-2 text-xs font-bold px-2 py-1 rounded w-fit ${isApproved ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
+                                                    <Clock size={14}/>
+                                                    <span>{days} روز در صف {isApproved ? '(تایید شده)' : ''}</span>
+                                                </div>
+                                            );
+                                        }
+
                                         return (
                                             <div key={idx} className={`relative pl-8 border-l-2 ${stageInfo.isCompleted ? 'border-blue-500' : 'border-gray-200'} pb-8 last:pb-0 group`}>
                                                 <div className={`absolute -left-[9px] top-0 w-4 h-4 rounded-full border-2 cursor-pointer transition-colors ${stageInfo.isCompleted ? 'bg-blue-500 border-blue-500' : 'bg-white border-gray-300 group-hover:border-blue-400'}`} onClick={() => handleOpenStage(stageName)}></div>
@@ -511,7 +528,10 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
                                                             {stageInfo.isCompleted && <CheckCircle2 className="text-green-500" size={20} />}
                                                         </div>
                                                     </div>
-                                                    <div className="text-sm text-gray-500">
+                                                    
+                                                    {dayCounter}
+
+                                                    <div className="text-sm text-gray-500 mt-2">
                                                         {stageInfo.costRial > 0 && <span>هزینه: {formatCurrency(stageInfo.costRial)} </span>}
                                                         {stageInfo.description && <span className="italic block mt-1">"{stageInfo.description}"</span>}
                                                         <span className="text-xs text-blue-500 mt-2 block">برای مشاهده جزئیات و افزودن فایل کلیک کنید</span>
