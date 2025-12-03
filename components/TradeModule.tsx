@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { User, TradeRecord, TradeStage, TradeItem, SystemSettings, InsuranceEndorsement, CurrencyPurchaseData, TradeTransaction, CurrencyTranche, TradeStageData, ShippingDocument, ShippingDocType, DocStatus, InvoiceItem, InspectionData, InspectionPayment, InspectionCertificate, ClearanceData, WarehouseReceipt, ClearancePayment, GreenLeafData, GreenLeafCustomsDuty, GreenLeafGuarantee, GreenLeafTax, GreenLeafRoadToll } from '../types';
 import { getTradeRecords, saveTradeRecord, updateTradeRecord, deleteTradeRecord, getSettings, uploadFile } from '../services/storageService';
 import { generateUUID, formatCurrency, formatNumberString, deformatNumberString, parsePersianDate, formatDate, calculateDaysDiff } from '../constants';
-import { Container, Plus, Search, CheckCircle2, Save, Trash2, X, Package, ArrowRight, History, Banknote, Coins, Wallet, FileSpreadsheet, Shield, LayoutDashboard, Printer, FileDown, Paperclip, Building2, FolderOpen, Home, Calculator, FileText, Microscope, ListFilter, Warehouse, Calendar, PieChart, BarChart, Clock, Leaf, Scale, ShieldCheck, Percent, Truck, CheckSquare, Square } from 'lucide-react';
+import { Container, Plus, Search, CheckCircle2, Save, Trash2, X, Package, ArrowRight, History, Banknote, Coins, Wallet, FileSpreadsheet, Shield, LayoutDashboard, Printer, FileDown, Paperclip, Building2, FolderOpen, Home, Calculator, FileText, Microscope, ListFilter, Warehouse, Calendar, PieChart, BarChart, Clock, Leaf, Scale, ShieldCheck, Percent, Truck, CheckSquare, Square, ToggleLeft, ToggleRight } from 'lucide-react';
 
 interface TradeModuleProps {
     currentUser: User;
@@ -41,7 +41,7 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
     // Modal & Form States
     const [showNewModal, setShowNewModal] = useState(false);
     const [newFileNumber, setNewFileNumber] = useState('');
-    const [newGoodsName, setNewGoodsName] = useState('');
+    const [newGoodsName, setNewGoodsName] = useState(''); // Stores System File Number
     const [newSellerName, setNewSellerName] = useState('');
     const [newCommodityGroup, setNewCommodityGroup] = useState('');
     const [newMainCurrency, setNewMainCurrency] = useState('EUR');
@@ -187,7 +187,39 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
         return record.stages[stage] || { stage, isCompleted: false, description: '', costRial: 0, costCurrency: 0, currencyType: 'EUR', attachments: [], updatedAt: 0, updatedBy: '' };
     };
 
-    const handleCreateRecord = async () => { if (!newFileNumber || !newGoodsName) return; const newRecord: TradeRecord = { id: generateUUID(), company: newRecordCompany, fileNumber: newFileNumber, orderNumber: newFileNumber, goodsName: newGoodsName, sellerName: newSellerName, commodityGroup: newCommodityGroup, mainCurrency: newMainCurrency, items: [], freightCost: 0, startDate: new Date().toISOString(), status: 'Active', stages: {}, createdAt: Date.now(), createdBy: currentUser.fullName, licenseData: { transactions: [] }, shippingDocuments: [] }; STAGES.forEach(stage => { newRecord.stages[stage] = { stage, isCompleted: false, description: '', costRial: 0, costCurrency: 0, currencyType: newMainCurrency, attachments: [], updatedAt: Date.now(), updatedBy: '' }; }); await saveTradeRecord(newRecord); await loadRecords(); setShowNewModal(false); setNewFileNumber(''); setNewGoodsName(''); setSelectedRecord(newRecord); setActiveTab('proforma'); setViewMode('details'); };
+    const handleCreateRecord = async () => { 
+        if (!newFileNumber || !newGoodsName) return; 
+        const newRecord: TradeRecord = { 
+            id: generateUUID(), 
+            company: newRecordCompany, 
+            fileNumber: newFileNumber, 
+            orderNumber: newFileNumber, 
+            goodsName: newGoodsName, // Used as Title on Dashboard
+            registrationNumber: newGoodsName, // Used as NTSW Number
+            sellerName: newSellerName, 
+            commodityGroup: newCommodityGroup, 
+            mainCurrency: newMainCurrency, 
+            items: [], 
+            freightCost: 0, 
+            startDate: new Date().toISOString(), 
+            status: 'Active', 
+            stages: {}, 
+            createdAt: Date.now(), 
+            createdBy: currentUser.fullName, 
+            licenseData: { transactions: [] }, 
+            shippingDocuments: [] 
+        }; 
+        STAGES.forEach(stage => { newRecord.stages[stage] = { stage, isCompleted: false, description: '', costRial: 0, costCurrency: 0, currencyType: newMainCurrency, attachments: [], updatedAt: Date.now(), updatedBy: '' }; }); 
+        await saveTradeRecord(newRecord); 
+        await loadRecords(); 
+        setShowNewModal(false); 
+        setNewFileNumber(''); 
+        setNewGoodsName(''); 
+        setSelectedRecord(newRecord); 
+        setActiveTab('proforma'); 
+        setViewMode('details'); 
+    };
+    
     const handleDeleteRecord = async (id: string) => { if (confirm("آیا از حذف این پرونده بازرگانی اطمینان دارید؟")) { await deleteTradeRecord(id); if (selectedRecord?.id === id) setSelectedRecord(null); loadRecords(); } };
     
     // Proforma Handlers
@@ -331,6 +363,31 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
     // Currency Handlers
     const handleAddCurrencyTranche = async () => { if (!selectedRecord || !newCurrencyTranche.amount) return; const tranche: CurrencyTranche = { id: generateUUID(), date: newCurrencyTranche.date || '', amount: Number(newCurrencyTranche.amount), currencyType: newCurrencyTranche.currencyType || selectedRecord.mainCurrency || 'EUR', brokerName: newCurrencyTranche.brokerName || '', exchangeName: newCurrencyTranche.exchangeName || '', rate: Number(newCurrencyTranche.rate) || 0, isDelivered: newCurrencyTranche.isDelivered, deliveryDate: newCurrencyTranche.deliveryDate }; const currentTranches = currencyForm.tranches || []; const updatedTranches = [...currentTranches, tranche]; const totalPurchased = updatedTranches.reduce((acc, t) => acc + t.amount, 0); const totalDelivered = updatedTranches.filter(t => t.isDelivered).reduce((acc, t) => acc + t.amount, 0); const updatedForm = { ...currencyForm, tranches: updatedTranches, purchasedAmount: totalPurchased, deliveredAmount: totalDelivered }; setCurrencyForm(updatedForm); const updatedRecord = { ...selectedRecord, currencyPurchaseData: updatedForm }; await updateTradeRecord(updatedRecord); setSelectedRecord(updatedRecord); setNewCurrencyTranche({ amount: 0, currencyType: selectedRecord.mainCurrency || 'EUR', date: '', exchangeName: '', brokerName: '', isDelivered: false }); };
     const handleRemoveTranche = async (id: string) => { if (!selectedRecord) return; if (!confirm('آیا از حذف این پارت مطمئن هستید؟')) return; const updatedTranches = (currencyForm.tranches || []).filter(t => t.id !== id); const totalPurchased = updatedTranches.reduce((acc, t) => acc + t.amount, 0); const totalDelivered = updatedTranches.filter(t => t.isDelivered).reduce((acc, t) => acc + t.amount, 0); const updatedForm = { ...currencyForm, tranches: updatedTranches, purchasedAmount: totalPurchased, deliveredAmount: totalDelivered }; setCurrencyForm(updatedForm); const updatedRecord = { ...selectedRecord, currencyPurchaseData: updatedForm }; await updateTradeRecord(updatedRecord); setSelectedRecord(updatedRecord); }
+    
+    const handleToggleTrancheDelivery = async (id: string) => {
+        if (!selectedRecord) return;
+        const updatedTranches = (currencyForm.tranches || []).map(t => {
+            if (t.id === id) return { ...t, isDelivered: !t.isDelivered };
+            return t;
+        });
+        
+        // Recalculate totals
+        const totalPurchased = updatedTranches.reduce((acc, t) => acc + t.amount, 0);
+        const totalDelivered = updatedTranches.filter(t => t.isDelivered).reduce((acc, t) => acc + t.amount, 0);
+
+        const updatedForm = {
+            ...currencyForm,
+            tranches: updatedTranches,
+            purchasedAmount: totalPurchased,
+            deliveredAmount: totalDelivered
+        };
+
+        setCurrencyForm(updatedForm);
+        const updatedRecord = { ...selectedRecord, currencyPurchaseData: updatedForm };
+        await updateTradeRecord(updatedRecord);
+        setSelectedRecord(updatedRecord);
+    };
+
     const handleSaveCurrencyGuarantee = async () => {
         if (!selectedRecord) return;
         const gCheck = {
@@ -566,15 +623,37 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
                                 {/* Tranches Section */}
                                 <div className="border-b pb-4 mb-4">
                                     <h3 className="font-bold text-gray-700 mb-3 flex items-center gap-2"><Coins size={20} className="text-amber-500"/> پارت‌های خریداری شده</h3>
-                                    <div className="grid grid-cols-1 md:grid-cols-6 gap-2 bg-amber-50 p-3 rounded mb-2 items-end">
+                                    <div className="grid grid-cols-1 md:grid-cols-7 gap-2 bg-amber-50 p-3 rounded mb-2 items-end">
                                         <div><label className="text-[10px] block mb-1">مبلغ ارزی</label><input className="w-full border rounded p-1 text-sm" value={formatNumberString(newCurrencyTranche.amount)} onChange={e => setNewCurrencyTranche({...newCurrencyTranche, amount: deformatNumberString(e.target.value)})}/></div>
                                         <div><label className="text-[10px] block mb-1">نوع ارز</label><select className="w-full border rounded p-1 text-sm bg-white" value={newCurrencyTranche.currencyType} onChange={e => setNewCurrencyTranche({...newCurrencyTranche, currencyType: e.target.value})}>{CURRENCIES.map(c => <option key={c.code} value={c.code}>{c.label}</option>)}</select></div>
                                         <div><label className="text-[10px] block mb-1">نرخ (ریال)</label><input className="w-full border rounded p-1 text-sm" value={formatNumberString(newCurrencyTranche.rate)} onChange={e => setNewCurrencyTranche({...newCurrencyTranche, rate: deformatNumberString(e.target.value)})}/></div>
                                         <div><label className="text-[10px] block mb-1">صرافی</label><input className="w-full border rounded p-1 text-sm" value={newCurrencyTranche.exchangeName} onChange={e => setNewCurrencyTranche({...newCurrencyTranche, exchangeName: e.target.value})}/></div>
+                                        <div><label className="text-[10px] block mb-1">کارگزاری</label><input className="w-full border rounded p-1 text-sm" placeholder="کارگزاری" value={newCurrencyTranche.brokerName} onChange={e => setNewCurrencyTranche({...newCurrencyTranche, brokerName: e.target.value})}/></div>
                                         <div><label className="text-[10px] block mb-1">تاریخ خرید</label><input className="w-full border rounded p-1 text-sm" value={newCurrencyTranche.date} onChange={e => setNewCurrencyTranche({...newCurrencyTranche, date: e.target.value})}/></div>
                                         <button onClick={handleAddCurrencyTranche} className="bg-amber-600 text-white p-1.5 rounded h-[30px] w-full flex items-center justify-center gap-1 font-bold"><Plus size={16}/> افزودن</button>
                                     </div>
-                                    <div className="space-y-1">{currencyForm.tranches?.map((t, idx) => (<div key={t.id} className="flex justify-between items-center bg-white border p-2 rounded text-sm"><span className="font-bold text-blue-600">{formatCurrency(t.amount)} {t.currencyType}</span><span>نرخ: {formatCurrency(t.rate || 0)}</span><span>{t.exchangeName}</span><span>{t.date}</span><button onClick={() => handleRemoveTranche(t.id)} className="text-red-500"><Trash2 size={14}/></button></div>))}</div>
+                                    <div className="space-y-1">
+                                        {currencyForm.tranches?.map((t, idx) => (
+                                            <div key={t.id} className="flex justify-between items-center bg-white border p-2 rounded text-sm">
+                                                <span className="font-bold text-blue-600">{formatCurrency(t.amount)} {t.currencyType}</span>
+                                                <span>نرخ: {formatCurrency(t.rate || 0)}</span>
+                                                <span>{t.exchangeName}</span>
+                                                {t.brokerName && <span className="text-gray-500 text-xs bg-gray-100 px-2 rounded">کارگزاری: {t.brokerName}</span>}
+                                                <span>{t.date}</span>
+                                                <div className="flex items-center gap-2">
+                                                    <button 
+                                                        onClick={() => handleToggleTrancheDelivery(t.id)} 
+                                                        className={`flex items-center gap-1 text-xs border px-2 py-1 rounded cursor-pointer transition-colors ${t.isDelivered ? 'bg-green-50 text-green-700 border-green-200 hover:bg-green-100' : 'bg-gray-50 text-gray-500 border-gray-200 hover:bg-gray-100'}`}
+                                                        title="تغییر وضعیت تحویل"
+                                                    >
+                                                        {t.isDelivered ? <ToggleRight size={18}/> : <ToggleLeft size={18}/>}
+                                                        {t.isDelivered ? 'تحویل شد' : 'تحویل نشده'}
+                                                    </button>
+                                                    <button onClick={() => handleRemoveTranche(t.id)} className="text-red-500"><Trash2 size={14}/></button>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
                                     <div className="bg-gray-100 p-2 rounded mt-2 text-center text-sm font-bold">مجموع خریداری شده: <span className="text-blue-600">{formatCurrency(currencyForm.purchasedAmount)} {selectedRecord.mainCurrency}</span></div>
                                 </div>
 
@@ -867,14 +946,14 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
                                     <div key={stage} className="text-sm border-b pb-2">
                                         <div className="text-gray-600 mb-1">{stage}</div>
                                         {data.costRial > 0 && <div className="flex justify-between"><span className="text-gray-400 text-xs">ریال:</span><span className="font-mono font-bold">{formatCurrency(data.costRial)}</span></div>}
-                                        {data.costCurrency > 0 && <div className="flex justify-between"><span className="text-gray-400 text-xs">ارز:</span><span className="font-mono font-bold text-blue-600">{formatCurrency(data.costCurrency)}</span></div>}
+                                        {data.costCurrency > 0 && <div className="flex justify-between"><span className="text-gray-400 text-xs">ارز:</span><span className="font-mono font-bold text-blue-600">{formatCurrency(data.costCurrency).replace('ریال', data.currencyType)}</span></div>}
                                     </div>
                                 );
                             })}
                         </div>
-                        <div className="mt-auto border-t pt-4 bg-gray-50 -mx-4 -mb-4 p-4">
-                            <div className="flex justify-between items-center mb-2"><span className="text-sm font-bold text-gray-600">جمع ریالی</span><span className="font-bold text-lg">{formatCurrency(totalRial)}</span></div>
-                            <div className="flex justify-between items-center"><span className="text-sm font-bold text-gray-600">جمع ارزی</span><span className="font-bold text-lg text-blue-600">{formatCurrency(totalCurrency)}</span></div>
+                        <div className="mt-auto border-t pt-4">
+                            <div className="flex justify-between items-center mb-2"><span className="font-bold text-gray-700">جمع ریالی:</span><span className="font-mono font-bold">{formatCurrency(totalRial)}</span></div>
+                            <div className="flex justify-between items-center"><span className="font-bold text-gray-700">جمع ارزی:</span><span className="font-mono font-bold text-blue-600">{formatCurrency(totalCurrency).replace('ریال', selectedRecord.mainCurrency || '')}</span></div>
                         </div>
                     </div>
                 </div>
@@ -882,88 +961,87 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
         );
     }
 
+    // Default: Dashboard View
+    const groupedData = getGroupedData();
+
     return (
-        <div className="p-4 md:p-8 space-y-6 min-w-0">
-             {/* New Record Modal */}
-             {showNewModal && (
+        <div className="h-[calc(100vh-100px)] flex flex-col animate-fade-in relative">
+            {/* Create Modal */}
+            {showNewModal && (
                 <div className="fixed inset-0 bg-black/50 z-[100] flex items-center justify-center p-4">
-                    <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6 animate-fade-in">
-                        <div className="flex justify-between items-center mb-6"><h3 className="font-bold text-lg">ایجاد پرونده جدید</h3><button onClick={() => setShowNewModal(false)}><X size={20} className="text-gray-400 hover:text-red-500"/></button></div>
-                        <div className="space-y-4">
-                            <div><label className="text-sm font-bold text-gray-700 block mb-1">شماره پرونده / سفارش</label><input autoFocus className="w-full border rounded-lg px-3 py-2" value={newFileNumber} onChange={(e) => setNewFileNumber(e.target.value)} /></div>
-                            <div><label className="text-sm font-bold text-gray-700 block mb-1">نام کالا</label><input className="w-full border rounded-lg px-3 py-2" value={newGoodsName} onChange={(e) => setNewGoodsName(e.target.value)} /></div>
-                            <div><label className="text-sm font-bold text-gray-700 block mb-1">فروشنده</label><input className="w-full border rounded-lg px-3 py-2" value={newSellerName} onChange={(e) => setNewSellerName(e.target.value)} /></div>
-                            <div><label className="text-sm font-bold text-gray-700 block mb-1">شرکت</label><select className="w-full border rounded-lg px-3 py-2 bg-white" value={newRecordCompany} onChange={(e) => setNewRecordCompany(e.target.value)}><option value="">-- انتخاب کنید --</option>{availableCompanies.map(c => <option key={c} value={c}>{c}</option>)}</select></div>
-                            <div><label className="text-sm font-bold text-gray-700 block mb-1">گروه کالایی</label><select className="w-full border rounded-lg px-3 py-2 bg-white" value={newCommodityGroup} onChange={(e) => setNewCommodityGroup(e.target.value)}><option value="">انتخاب کنید...</option>{commodityGroups.map(g => <option key={g} value={g}>{g}</option>)}</select></div>
-                            <div><label className="text-sm font-bold text-gray-700 block mb-1">ارز پایه</label><select className="w-full border rounded-lg px-3 py-2 bg-white" value={newMainCurrency} onChange={(e) => setNewMainCurrency(e.target.value)}>{CURRENCIES.map(c => <option key={c.code} value={c.code}>{c.label}</option>)}</select></div>
-                            <button onClick={handleCreateRecord} disabled={!newFileNumber || !newGoodsName} className="w-full bg-blue-600 text-white py-3 rounded-xl font-bold hover:bg-blue-700 disabled:opacity-50 mt-2">ایجاد پرونده</button>
+                    <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6">
+                        <h3 className="text-xl font-bold mb-4 flex items-center gap-2"><FolderOpen size={24} className="text-blue-600"/> پرونده جدید</h3>
+                        <div className="space-y-3">
+                            <div><label className="block text-sm font-bold mb-1">شماره پرونده (داخلی)</label><input className="w-full border rounded p-2" value={newFileNumber} onChange={e => setNewFileNumber(e.target.value)} autoFocus /></div>
+                            <div><label className="block text-sm font-bold mb-1">شماره پرونده سامانه</label><input className="w-full border rounded p-2" value={newGoodsName} onChange={e => setNewGoodsName(e.target.value)} placeholder="به عنوان عنوان پرونده و شماره ثبت استفاده می‌شود" /></div>
+                            <div><label className="block text-sm font-bold mb-1">فروشنده</label><input className="w-full border rounded p-2" value={newSellerName} onChange={e => setNewSellerName(e.target.value)} /></div>
+                            <div><label className="block text-sm font-bold mb-1">شرکت</label><select className="w-full border rounded p-2 bg-white" value={newRecordCompany} onChange={e => setNewRecordCompany(e.target.value)}>{availableCompanies.map(c => <option key={c} value={c}>{c}</option>)}</select></div>
+                            <div><label className="block text-sm font-bold mb-1">گروه کالایی</label><select className="w-full border rounded p-2 bg-white" value={newCommodityGroup} onChange={e => setNewCommodityGroup(e.target.value)}><option value="">انتخاب کنید...</option>{commodityGroups.map(g => <option key={g} value={g}>{g}</option>)}</select></div>
+                            <div><label className="block text-sm font-bold mb-1">ارز پایه</label><select className="w-full border rounded p-2 bg-white" value={newMainCurrency} onChange={e => setNewMainCurrency(e.target.value)}>{CURRENCIES.map(c => <option key={c.code} value={c.code}>{c.label}</option>)}</select></div>
+                            <div className="flex gap-2 mt-4"><button onClick={() => setShowNewModal(false)} className="flex-1 py-2 border rounded text-gray-600 hover:bg-gray-50">انصراف</button><button onClick={handleCreateRecord} className="flex-1 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 font-bold">ایجاد پرونده</button></div>
                         </div>
                     </div>
                 </div>
             )}
-            
-            {/* Dashboard View */}
-            {viewMode === 'dashboard' && (
-                <>
-                    <div className="flex flex-col md:flex-row justify-between items-center gap-4 bg-white p-4 rounded-2xl border shadow-sm">
-                        <div className="flex items-center gap-2 overflow-x-auto w-full md:w-auto pb-2 md:pb-0">
-                            <button onClick={goRoot} className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-bold transition-colors ${navLevel === 'ROOT' ? 'bg-gray-800 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}><Home size={16}/> خانه</button>
-                            {selectedCompany && <><ArrowRight size={14} className="text-gray-400"/><button onClick={() => goCompany(selectedCompany)} className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-bold transition-colors ${navLevel === 'COMPANY' ? 'bg-gray-800 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}><Building2 size={16}/> {selectedCompany}</button></>}
-                            {selectedGroup && <><ArrowRight size={14} className="text-gray-400"/><div className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-bold bg-gray-800 text-white"><Package size={16}/> {selectedGroup}</div></>}
-                        </div>
-                        <div className="flex gap-2 w-full md:w-auto">
-                            <div className="relative flex-1 md:w-64"><Search className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400" size={18}/><input type="text" placeholder="جستجو در پرونده‌ها..." className="w-full pl-4 pr-10 py-2 border rounded-xl text-sm" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)}/></div>
-                            <button onClick={() => setViewMode('reports')} className="bg-teal-600 text-white px-4 py-2 rounded-xl flex items-center gap-2 font-bold hover:bg-teal-700"><FileSpreadsheet size={18}/> <span className="hidden md:inline">گزارشات</span></button>
-                            <button onClick={() => setShowNewModal(true)} className="bg-blue-600 text-white px-4 py-2 rounded-xl flex items-center gap-2 font-bold hover:bg-blue-700"><Plus size={18}/> <span className="hidden md:inline">پرونده جدید</span></button>
-                        </div>
-                    </div>
 
-                    {/* FOLDERS VIEW */}
-                    {!searchTerm && (navLevel === 'ROOT' || navLevel === 'COMPANY') && (
-                        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4 animate-fade-in">
-                            {getGroupedData().map((item) => (
-                                <div key={item.name} onClick={() => item.type === 'company' ? goCompany(item.name) : goGroup(item.name)} className="bg-white p-4 rounded-xl border hover:shadow-md cursor-pointer transition-all hover:border-blue-300 group">
-                                    <div className={`w-12 h-12 rounded-xl flex items-center justify-center mb-3 ${item.type === 'company' ? 'bg-blue-50 text-blue-600' : 'bg-amber-50 text-amber-600'}`}>{item.type === 'company' ? <Building2 size={24}/> : <FolderOpen size={24}/>}</div>
-                                    <h3 className="font-bold text-gray-800 truncate" title={item.name}>{item.name}</h3>
-                                    <p className="text-xs text-gray-500 mt-1">{item.count} پرونده</p>
+            <div className="flex justify-between items-center mb-6">
+                <div className="flex items-center gap-2">
+                    {navLevel !== 'ROOT' && <button onClick={navLevel === 'COMPANY' ? goRoot : () => goCompany(selectedCompany!)} className="p-2 hover:bg-gray-200 rounded-full"><ArrowRight size={20}/></button>}
+                    <h2 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
+                        {navLevel === 'ROOT' ? <><LayoutDashboard className="text-blue-600"/> داشبورد بازرگانی</> : navLevel === 'COMPANY' ? <><Building2 className="text-blue-600"/> {selectedCompany}</> : <><Package className="text-blue-600"/> {selectedGroup}</>}
+                    </h2>
+                </div>
+                <div className="flex gap-2">
+                    <div className="relative"><Search className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400" size={18}/><input type="text" placeholder="جستجو در پرونده‌ها..." className="pl-4 pr-10 py-2 border rounded-lg text-sm w-64" value={searchTerm} onChange={e => setSearchTerm(e.target.value)}/></div>
+                    <button onClick={() => setViewMode('reports')} className="bg-purple-100 text-purple-700 px-4 py-2 rounded-lg flex items-center gap-2 font-bold hover:bg-purple-200"><FileSpreadsheet size={18}/> گزارشات</button>
+                    <button onClick={() => setShowNewModal(true)} className="bg-blue-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 font-bold hover:bg-blue-700 shadow-lg shadow-blue-600/20"><Plus size={18}/> پرونده جدید</button>
+                </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 overflow-y-auto pb-20">
+                {searchTerm ? (
+                    records.filter(r => r.goodsName?.includes(searchTerm) || r.fileNumber.includes(searchTerm)).map(record => (
+                        <div key={record.id} onClick={() => { setSelectedRecord(record); setViewMode('details'); }} className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 cursor-pointer hover:shadow-md hover:border-blue-300 transition-all group relative overflow-hidden">
+                            <div className="absolute top-0 right-0 w-1.5 h-full bg-blue-500 group-hover:w-2 transition-all"></div>
+                            <div className="flex justify-between items-start mb-2"><span className="bg-blue-50 text-blue-700 text-xs px-2 py-1 rounded font-bold">{record.fileNumber}</span><span className="text-xs text-gray-400">{new Date(record.createdAt).toLocaleDateString('fa-IR')}</span></div>
+                            <h3 className="font-bold text-gray-800 mb-1 truncate" title={record.goodsName}>{record.goodsName}</h3>
+                            <p className="text-xs text-gray-500 mb-4 truncate">{record.company} | {record.sellerName}</p>
+                            <div className="flex justify-between items-center pt-3 border-t border-gray-50"><span className="text-xs font-bold text-gray-600 bg-gray-100 px-2 py-1 rounded">{record.commodityGroup}</span><button onClick={(e) => { e.stopPropagation(); handleDeleteRecord(record.id); }} className="text-gray-300 hover:text-red-500 transition-colors"><Trash2 size={16} /></button></div>
+                        </div>
+                    ))
+                ) : (
+                    navLevel === 'GROUP' ? (
+                        records.filter(r => r.company === selectedCompany && r.commodityGroup === selectedGroup).map(record => (
+                            <div key={record.id} onClick={() => { setSelectedRecord(record); setViewMode('details'); }} className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 cursor-pointer hover:shadow-md hover:border-blue-300 transition-all group relative overflow-hidden">
+                                <div className="absolute top-0 right-0 w-1.5 h-full bg-blue-500 group-hover:w-2 transition-all"></div>
+                                <div className="flex justify-between items-start mb-2"><span className="bg-blue-50 text-blue-700 text-xs px-2 py-1 rounded font-bold">{record.fileNumber}</span><span className="text-xs text-gray-400">{new Date(record.createdAt).toLocaleDateString('fa-IR')}</span></div>
+                                <h3 className="font-bold text-gray-800 mb-1 truncate" title={record.goodsName}>{record.goodsName}</h3>
+                                <p className="text-xs text-gray-500 mb-4 truncate">{record.sellerName}</p>
+                                <div className="flex justify-between items-center pt-3 border-t border-gray-50">
+                                    <div className="flex -space-x-2 space-x-reverse overflow-hidden">
+                                        {STAGES.slice().reverse().map((stage, idx) => (
+                                            <div key={stage} className={`w-2 h-2 rounded-full ${record.stages[stage]?.isCompleted ? 'bg-green-500' : 'bg-gray-200'}`} title={stage}></div>
+                                        ))}
+                                    </div>
+                                    <button onClick={(e) => { e.stopPropagation(); handleDeleteRecord(record.id); }} className="text-gray-300 hover:text-red-500 transition-colors"><Trash2 size={16} /></button>
                                 </div>
-                            ))}
-                        </div>
-                    )}
-
-                    {/* FILES LIST */}
-                    {(searchTerm || navLevel === 'GROUP') && (
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 animate-fade-in">
-                            {records
-                                .filter(r => {
-                                    if (searchTerm) return r.goodsName.includes(searchTerm) || r.fileNumber.includes(searchTerm) || r.sellerName.includes(searchTerm);
-                                    if (selectedGroup && r.commodityGroup !== selectedGroup) return false;
-                                    if (selectedCompany && r.company !== selectedCompany) return false;
-                                    return true;
-                                })
-                                .map(record => {
-                                    const currentStage = STAGES.slice().reverse().find(s => record.stages[s]?.isCompleted);
-                                    return (
-                                        <div key={record.id} onClick={() => { setSelectedRecord(record); setViewMode('details'); }} className="bg-white p-5 rounded-2xl border hover:shadow-lg cursor-pointer transition-all hover:border-blue-400 group relative">
-                                            <div className="flex justify-between items-start mb-3">
-                                                <div className="bg-gray-100 text-gray-600 px-3 py-1 rounded-lg text-sm font-mono font-bold group-hover:bg-blue-600 group-hover:text-white transition-colors">{record.fileNumber}</div>
-                                                <div className={`text-xs px-2 py-1 rounded font-bold ${currentStage ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>{currentStage || 'شروع نشده'}</div>
-                                            </div>
-                                            <h3 className="font-bold text-lg text-gray-800 mb-1">{record.goodsName}</h3>
-                                            <p className="text-sm text-gray-500 mb-4">{record.sellerName}</p>
-                                            <div className="flex items-center justify-between text-xs text-gray-400 border-t pt-3">
-                                                <span className="flex items-center gap-1"><History size={12}/> {new Date(record.createdAt).toLocaleDateString('fa-IR')}</span>
-                                                <button onClick={(e) => { e.stopPropagation(); handleDeleteRecord(record.id); }} className="hover:text-red-500 p-1"><Trash2 size={16}/></button>
-                                            </div>
-                                        </div>
-                                    );
-                                })
-                            }
-                        </div>
-                    )}
-                </>
-            )}
+                            </div>
+                        ))
+                    ) : (
+                        groupedData.map((item, idx) => (
+                            <div key={idx} onClick={() => item.type === 'company' ? goCompany(item.name) : goGroup(item.name)} className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 cursor-pointer hover:shadow-md hover:-translate-y-1 transition-all flex flex-col items-center justify-center gap-3 text-center group">
+                                <div className={`w-16 h-16 rounded-2xl flex items-center justify-center text-white shadow-lg ${item.type === 'company' ? 'bg-gradient-to-br from-blue-500 to-blue-600 shadow-blue-200' : 'bg-gradient-to-br from-amber-400 to-orange-500 shadow-orange-200'}`}>
+                                    {item.type === 'company' ? <Building2 size={32}/> : <Package size={32}/>}
+                                </div>
+                                <h3 className="font-bold text-gray-800 text-lg group-hover:text-blue-600 transition-colors">{item.name}</h3>
+                                <span className="bg-gray-100 text-gray-600 text-xs px-3 py-1 rounded-full font-bold">{item.count} پرونده</span>
+                            </div>
+                        ))
+                    )
+                )}
+            </div>
         </div>
     );
 };
+
 export default TradeModule;
