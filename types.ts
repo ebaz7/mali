@@ -245,6 +245,27 @@ export interface InspectionData {
     payments: InspectionPayment[]; // List of payments
 }
 
+// New Types for Clearance & Warehouse Receipt
+export interface WarehouseReceipt {
+    id: string;
+    number: string;
+    part: string;
+    issueDate: string;
+}
+
+export interface ClearancePayment {
+    id: string;
+    part: string;
+    amount: number;
+    date: string;
+    bank: string;
+}
+
+export interface ClearanceData {
+    receipts: WarehouseReceipt[];
+    payments: ClearancePayment[];
+}
+
 export interface CurrencyPayment {
     id: string;
     date: string;
@@ -391,6 +412,9 @@ export interface TradeRecord {
     
     // Inspection Details (New)
     inspectionData?: InspectionData;
+    
+    // Clearance Data (New)
+    clearanceData?: ClearanceData;
     
     // Currency Purchase Details
     currencyPurchaseData?: CurrencyPurchaseData;
