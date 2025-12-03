@@ -29,7 +29,9 @@ const PrintVoucher: React.FC<PrintVoucherProps> = ({ order, onClose, settings, o
 
     // Create a hidden iframe
     const iframe = document.createElement('iframe');
-    iframe.style.position = 'absolute';
+    iframe.style.position = 'fixed';
+    iframe.style.right = '0';
+    iframe.style.bottom = '0';
     iframe.style.width = '0px';
     iframe.style.height = '0px';
     iframe.style.border = 'none';
@@ -49,11 +51,46 @@ const PrintVoucher: React.FC<PrintVoucherProps> = ({ order, onClose, settings, o
           <title>چاپ دستور پرداخت - ${order.trackingNumber}</title>
           ${styleSheets}
           <style>
-            body { background: white; margin: 0; padding: 0; font-family: 'Vazirmatn', sans-serif; }
-            #print-wrapper { width: 100%; height: 100%; padding: 5mm; box-sizing: border-box; }
+            /* GLOBAL RESET & PRINT OVERRIDES */
+            body { 
+                background: white !important; 
+                margin: 0 !important; 
+                padding: 0 !important; 
+                font-family: 'Vazirmatn', sans-serif !important; 
+                width: 100%;
+                height: 100%;
+            }
+            
+            /* CRITICAL: Override any global 'display: none' for print */
+            @media print {
+                body { 
+                    display: block !important; 
+                    visibility: visible !important;
+                }
+                body > * { 
+                    display: block !important; 
+                    visibility: visible !important; 
+                    position: static !important;
+                }
+                @page { 
+                    size: A5 landscape; 
+                    margin: 0; 
+                }
+            }
+
+            #print-wrapper { 
+                width: 100%; 
+                padding: 5mm; 
+                box-sizing: border-box;
+                display: block !important;
+            }
+
             /* Ensure background colors print */
-            * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; color-adjust: exact !important; }
-            @page { size: A5 landscape; margin: 0; }
+            * { 
+                -webkit-print-color-adjust: exact !important; 
+                print-color-adjust: exact !important; 
+                color-adjust: exact !important; 
+            }
           </style>
         </head>
         <body>
@@ -63,10 +100,13 @@ const PrintVoucher: React.FC<PrintVoucherProps> = ({ order, onClose, settings, o
           <script>
             // Wait for everything to load (images, fonts, styles)
             window.onload = function() {
+                // Short delay to allow font rendering to finalize
                 setTimeout(function() {
+                    window.focus();
                     window.print();
-                    // Optional: remove iframe after print dialog closes (in parent context)
-                }, 1000); // 1 second delay to ensure rendering
+                    // Close/Remove iframe logic handled by parent timeout usually, 
+                    // but we can leave it blank here.
+                }, 500);
             };
           </script>
         </body>
@@ -90,27 +130,27 @@ const PrintVoucher: React.FC<PrintVoucherProps> = ({ order, onClose, settings, o
     try {
       // @ts-ignore
       const canvas = await window.html2canvas(element, { 
-        scale: 4, // Increased scale for better quality
+        scale: 4,
         useCORS: true,
         backgroundColor: '#ffffff',
         onclone: (doc) => {
             const el = doc.getElementById('print-area');
             if (el) {
                 el.style.direction = 'rtl';
-                // Force standard spacing to prevent scrambling
-                el.style.letterSpacing = 'normal';
-                const all = el.querySelectorAll('*');
-                all.forEach((node: any) => {
-                    node.style.letterSpacing = '0px';
+                // Force reset specific styles that break html2canvas text rendering
+                const allElements = el.querySelectorAll('*');
+                allElements.forEach((node: any) => {
+                    node.style.letterSpacing = 'normal';
                     node.style.fontVariantLigatures = 'none';
+                    node.style.fontFeatureSettings = 'normal';
                 });
             }
         }
       });
-      const data = canvas.toDataURL('image/jpeg', 1.0); // Max quality
+      const data = canvas.toDataURL('image/png', 1.0); // PNG is sharper for text
       const link = document.createElement('a');
       link.href = data;
-      link.download = `voucher-${order.trackingNumber}.jpg`;
+      link.download = `voucher-${order.trackingNumber}.png`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -133,24 +173,28 @@ const PrintVoucher: React.FC<PrintVoucherProps> = ({ order, onClose, settings, o
         scale: 4, // High scale for crisp text
         backgroundColor: '#ffffff',
         useCORS: true,
+        // Crucial for Persian Text
+        letterRendering: true, 
         onclone: (doc) => {
             const el = doc.getElementById('print-area');
             if (el) {
                 el.style.direction = 'rtl';
-                // CRITICAL FIX: Reset letter-spacing for ALL elements to prevent Persian text scrambling
-                el.style.letterSpacing = 'normal'; 
-                el.style.fontVariantLigatures = 'none';
+                // Fix Scrambling: Reset tracking and ligatures globally in the clone
+                el.style.letterSpacing = '0px';
                 
                 const allNodes = el.getElementsByTagName('*');
                 for (let i = 0; i < allNodes.length; i++) {
                     const node = allNodes[i] as HTMLElement;
                     node.style.letterSpacing = '0px';
                     node.style.fontVariantLigatures = 'none';
+                    // Force a simple font stack if needed, but Vazirmatn usually works if spacing is fixed
                 }
             }
         }
       });
-      const imgData = canvas.toDataURL('image/jpeg', 1.0);
+      
+      // Use PNG for better quality text in PDF
+      const imgData = canvas.toDataURL('image/png');
       
       // @ts-ignore
       const { jsPDF } = window.jspdf;
@@ -159,13 +203,13 @@ const PrintVoucher: React.FC<PrintVoucherProps> = ({ order, onClose, settings, o
         orientation: 'landscape',
         unit: 'mm',
         format: 'a5',
-        compress: false // Disable compression for better quality
+        compress: true
       });
       
       const pdfWidth = 210;
       const pdfHeight = 148;
       
-      pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight);
+      pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
       pdf.save(`voucher-${order.trackingNumber}.pdf`);
     } catch (e) {
       console.error(e);
@@ -264,8 +308,8 @@ const PrintVoucher: React.FC<PrintVoucherProps> = ({ order, onClose, settings, o
                         </div>
                     )}
                     <div>
-                        {/* tracking-normal ensures no letter spacing interference for PDF generation */}
-                        <h1 className={`${isCompact ? 'text-xl' : 'text-2xl'} font-black text-gray-900 tracking-normal`}>
+                        {/* Inline Style for Letter Spacing to prevent PDF Scrambling */}
+                        <h1 className={`${isCompact ? 'text-xl' : 'text-2xl'} font-bold text-gray-900`} style={{ letterSpacing: '0px', fontVariantLigatures: 'none' }}>
                             {order.payingCompany || 'شرکت بازرگانی'}
                         </h1>
                         <p className="text-xs text-gray-500 font-bold mt-1">سیستم مدیریت مالی و پرداخت</p>
