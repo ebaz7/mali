@@ -1,6 +1,4 @@
 
-
-
 import React, { useState } from 'react';
 import { PaymentOrder, OrderStatus, PaymentMethod, SystemSettings } from '../types';
 import { formatCurrency, formatDate } from '../constants';
@@ -54,7 +52,8 @@ const PrintVoucher: React.FC<PrintVoucherProps> = ({ order, onClose, settings, o
             body { background: white; margin: 0; padding: 0; font-family: 'Vazirmatn', sans-serif; }
             #print-wrapper { width: 100%; height: 100%; padding: 5mm; box-sizing: border-box; }
             /* Ensure background colors print */
-            * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+            * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; color-adjust: exact !important; }
+            @page { size: A5 landscape; margin: 0; }
           </style>
         </head>
         <body>
@@ -86,17 +85,17 @@ const PrintVoucher: React.FC<PrintVoucherProps> = ({ order, onClose, settings, o
             } else {
                 images[i].onload = () => {
                     loadedCount++;
-                    if (loadedCount === totalImages) doPrint();
+                    if (loadedCount === totalImages) setTimeout(doPrint, 500); // Small extra delay
                 };
                 images[i].onerror = () => {
                     loadedCount++;
-                    if (loadedCount === totalImages) doPrint();
+                    if (loadedCount === totalImages) setTimeout(doPrint, 500);
                 };
             }
         }
-        if (loadedCount === totalImages) doPrint();
+        if (loadedCount === totalImages) setTimeout(doPrint, 500);
     } else {
-        setTimeout(doPrint, 500);
+        setTimeout(doPrint, 1000); // Wait for styles
     }
   };
 
@@ -108,11 +107,10 @@ const PrintVoucher: React.FC<PrintVoucherProps> = ({ order, onClose, settings, o
     try {
       // @ts-ignore
       const canvas = await window.html2canvas(element, { 
-        scale: 3, // Increased scale for better quality
+        scale: 4, // Increased scale for better quality
         useCORS: true,
         backgroundColor: '#ffffff',
         onclone: (doc) => {
-            // Fix text scrambling by forcing simpler rendering for capture
             const el = doc.getElementById('print-area');
             if (el) {
                 el.style.direction = 'rtl';
@@ -144,16 +142,17 @@ const PrintVoucher: React.FC<PrintVoucherProps> = ({ order, onClose, settings, o
     try {
       // @ts-ignore
       const canvas = await window.html2canvas(element, { 
-        scale: 3, 
+        scale: 4, // High scale for crisp text
         backgroundColor: '#ffffff',
         useCORS: true,
         onclone: (doc) => {
-            // Fix text scrambling
             const el = doc.getElementById('print-area');
             if (el) {
                 el.style.direction = 'rtl';
+                // Force specific styles to prevent text scrambling
                 el.style.letterSpacing = 'normal';
                 el.style.fontVariantLigatures = 'no-common-ligatures';
+                el.style.fontFeatureSettings = '"liga" 0';
             }
         }
       });
@@ -165,7 +164,8 @@ const PrintVoucher: React.FC<PrintVoucherProps> = ({ order, onClose, settings, o
       const pdf = new jsPDF({
         orientation: 'landscape',
         unit: 'mm',
-        format: 'a5'
+        format: 'a5',
+        compress: false // Disable compression for better quality
       });
       
       const pdfWidth = 210;
@@ -262,11 +262,11 @@ const PrintVoucher: React.FC<PrintVoucherProps> = ({ order, onClose, settings, o
         {/* Header */}
         <div className="relative z-10">
             <div className={`border-b-2 border-gray-800 ${isCompact ? 'pb-1 mb-2' : 'pb-2 mb-4'} flex justify-between items-center`}>
-                <div className="flex items-center gap-4">
-                    {/* Logo/Image */}
+                <div className="flex items-center gap-3 w-2/3">
+                    {/* Logo/Image - Ensure it's next to the text */}
                     {companyLogo && (
-                        <div className={`${isCompact ? 'w-12 h-12' : 'w-16 h-16'} flex items-center justify-center`}>
-                             <img src={companyLogo} alt="Logo" className="max-w-full max-h-full object-contain" />
+                        <div className={`${isCompact ? 'w-12 h-12' : 'w-16 h-16'} shrink-0 flex items-center justify-center`}>
+                             <img src={companyLogo} alt="Logo" className="w-full h-full object-contain" crossOrigin="anonymous" />
                         </div>
                     )}
                     <div>
@@ -277,8 +277,8 @@ const PrintVoucher: React.FC<PrintVoucherProps> = ({ order, onClose, settings, o
                     </div>
                 </div>
                 
-                <div className="text-left flex flex-col items-end gap-1">
-                    <h2 className={`${isCompact ? 'text-lg px-3 py-1' : 'text-xl px-4 py-1.5'} font-black bg-gray-100 border border-gray-200 text-gray-800 rounded-lg mb-1`}>
+                <div className="text-left flex flex-col items-end gap-1 w-1/3">
+                    <h2 className={`${isCompact ? 'text-lg px-3 py-1' : 'text-xl px-4 py-1.5'} font-black bg-gray-100 border border-gray-200 text-gray-800 rounded-lg mb-1 whitespace-nowrap`}>
                         رسید پرداخت وجه
                     </h2>
                     <div className="flex items-center gap-2 text-sm">

@@ -1,17 +1,8 @@
 
-
-
-
-
-
-
-
-
-
 import React, { useState, useEffect, useRef } from 'react';
 import { getSettings, saveSettings, restoreSystemData, uploadFile } from '../services/storageService';
 import { SystemSettings, UserRole, RolePermissions, Company } from '../types';
-import { Settings as SettingsIcon, Save, Loader2, Download, UploadCloud, Database, AlertTriangle, Bell, Info, Plus, Trash2, Building, ShieldCheck, Landmark, Package, AppWindow, BellRing, BellOff, Send, Crown, Image as ImageIcon } from 'lucide-react';
+import { Settings as SettingsIcon, Save, Loader2, Download, Database, Bell, Plus, Trash2, Building, ShieldCheck, Landmark, Package, AppWindow, BellRing, BellOff, Send, Crown, Image as ImageIcon, Pencil, X, Check } from 'lucide-react';
 import { apiCall } from '../services/apiService';
 import { requestNotificationPermission, setNotificationPreference, isNotificationEnabledInApp } from '../services/notificationService';
 import { generateUUID } from '../constants';
@@ -25,6 +16,7 @@ const Settings: React.FC = () => {
   // Company Management State
   const [newCompanyName, setNewCompanyName] = useState('');
   const [newCompanyLogo, setNewCompanyLogo] = useState('');
+  const [editingCompanyId, setEditingCompanyId] = useState<string | null>(null);
   const [isUploadingLogo, setIsUploadingLogo] = useState(false);
   const companyLogoInputRef = useRef<HTMLInputElement>(null);
 
@@ -102,14 +94,24 @@ const Settings: React.FC = () => {
       reader.readAsDataURL(file);
   };
 
-  const handleAddCompany = () => { 
+  const handleSaveCompany = () => { 
       if (!newCompanyName.trim()) return;
-      const newCo: Company = {
-          id: generateUUID(),
-          name: newCompanyName.trim(),
-          logo: newCompanyLogo
-      };
-      const updatedCompanies = [...(settings.companies || []), newCo];
+      
+      let updatedCompanies;
+      if (editingCompanyId) {
+          // Edit Mode
+          updatedCompanies = (settings.companies || []).map(c => 
+              c.id === editingCompanyId ? { ...c, name: newCompanyName.trim(), logo: newCompanyLogo } : c
+          );
+      } else {
+          // Add Mode
+          const newCo: Company = {
+              id: generateUUID(),
+              name: newCompanyName.trim(),
+              logo: newCompanyLogo
+          };
+          updatedCompanies = [...(settings.companies || []), newCo];
+      }
       
       setSettings({ 
           ...settings, 
@@ -117,17 +119,31 @@ const Settings: React.FC = () => {
           companyNames: updatedCompanies.map(c => c.name)
       }); 
       
-      setNewCompanyName(''); 
+      handleCancelEditCompany();
+  };
+
+  const handleEditCompany = (company: Company) => {
+      setNewCompanyName(company.name);
+      setNewCompanyLogo(company.logo || '');
+      setEditingCompanyId(company.id);
+      window.scrollTo({ top: 0, behavior: 'smooth' }); // Scroll to top to see edit form
+  };
+
+  const handleCancelEditCompany = () => {
+      setNewCompanyName('');
       setNewCompanyLogo('');
+      setEditingCompanyId(null);
   };
 
   const handleRemoveCompany = (id: string) => { 
+      if (!confirm("آیا از حذف این شرکت اطمینان دارید؟")) return;
       const updatedCompanies = (settings.companies || []).filter(c => c.id !== id);
       setSettings({ 
           ...settings, 
           companies: updatedCompanies,
           companyNames: updatedCompanies.map(c => c.name)
       }); 
+      if (editingCompanyId === id) handleCancelEditCompany();
   };
 
   const handleAddBank = () => { if (newBank.trim() && !settings.bankNames.includes(newBank.trim())) { setSettings({ ...settings, bankNames: [...settings.bankNames, newBank.trim()] }); setNewBank(''); } };
@@ -248,16 +264,16 @@ const Settings: React.FC = () => {
                     </div>
                 </div>
 
-                {/* COMPANY MANAGEMENT WITH LOGO */}
+                {/* COMPANY MANAGEMENT WITH EDIT */}
                 <div className="space-y-4 border-t pt-6">
                     <div className="flex items-center gap-2 mb-2"><Building className="text-blue-600" size={20} /><h3 className="font-bold text-gray-800">مدیریت شرکت‌ها (سربرگ)</h3></div>
                     <div className="bg-gray-50 p-4 rounded-xl border border-gray-200 space-y-4">
                         <div className="space-y-2"><label className="text-xs font-bold text-gray-600">شرکت پیش‌فرض</label><select className="w-full border rounded-lg p-2 text-sm bg-white" value={settings.defaultCompany} onChange={(e) => setSettings({...settings, defaultCompany: e.target.value})}><option value="">-- انتخاب کنید --</option>{settings.companies?.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}</select></div>
                         
-                        <div className="bg-white p-3 rounded-lg border border-gray-200">
-                            <label className="text-xs font-bold text-gray-600 mb-2 block">افزودن شرکت جدید</label>
-                            <div className="flex gap-2 items-center">
-                                <div className="flex-1">
+                        <div className={`p-3 rounded-lg border transition-colors ${editingCompanyId ? 'bg-amber-50 border-amber-200' : 'bg-white border-gray-200'}`}>
+                            <label className="text-xs font-bold text-gray-600 mb-2 block">{editingCompanyId ? 'ویرایش اطلاعات شرکت' : 'افزودن شرکت جدید'}</label>
+                            <div className="flex gap-2 items-center flex-wrap sm:flex-nowrap">
+                                <div className="flex-1 w-full sm:w-auto">
                                     <input className="w-full border rounded-lg p-2 text-sm mb-2" placeholder="نام شرکت..." value={newCompanyName} onChange={e => setNewCompanyName(e.target.value)} />
                                     <div className="flex items-center gap-2">
                                         <button type="button" onClick={() => companyLogoInputRef.current?.click()} disabled={isUploadingLogo} className="bg-gray-100 text-gray-600 border px-3 py-1.5 rounded text-xs hover:bg-gray-200 flex items-center gap-1">
@@ -265,10 +281,22 @@ const Settings: React.FC = () => {
                                             {newCompanyLogo ? 'تغییر لوگو' : 'آپلود لوگو'}
                                         </button>
                                         <input type="file" ref={companyLogoInputRef} className="hidden" accept="image/*" onChange={handleLogoUpload} />
-                                        {newCompanyLogo && <span className="text-xs text-green-600 flex items-center gap-1"><img src={newCompanyLogo} className="w-5 h-5 object-contain border rounded"/> لوگو دریافت شد</span>}
+                                        {newCompanyLogo && (
+                                            <div className="flex items-center gap-1 bg-white border px-2 py-1 rounded">
+                                                <img src={newCompanyLogo} className="w-5 h-5 object-contain"/> 
+                                                <button type="button" onClick={() => setNewCompanyLogo('')} className="text-red-500 hover:bg-red-50 rounded"><X size={12}/></button>
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
-                                <button type="button" onClick={handleAddCompany} className="bg-green-600 text-white w-10 h-10 rounded-lg flex items-center justify-center hover:bg-green-700 shadow-md"><Plus size={20} /></button>
+                                <div className="flex gap-1 w-full sm:w-auto">
+                                    {editingCompanyId && (
+                                        <button type="button" onClick={handleCancelEditCompany} className="bg-gray-200 text-gray-700 w-10 h-10 rounded-lg flex items-center justify-center hover:bg-gray-300" title="انصراف"><X size={20}/></button>
+                                    )}
+                                    <button type="button" onClick={handleSaveCompany} className={`flex-1 sm:flex-none text-white w-10 h-10 rounded-lg flex items-center justify-center shadow-md ${editingCompanyId ? 'bg-amber-500 hover:bg-amber-600' : 'bg-green-600 hover:bg-green-700'}`}>
+                                        {editingCompanyId ? <Check size={20}/> : <Plus size={20} />}
+                                    </button>
+                                </div>
                             </div>
                         </div>
 
@@ -276,14 +304,17 @@ const Settings: React.FC = () => {
                             <label className="text-xs font-bold text-gray-600">لیست شرکت‌های موجود</label>
                             <div className="space-y-2 max-h-60 overflow-y-auto">
                                 {settings.companies?.map(c => (
-                                    <div key={c.id} className="flex justify-between items-center bg-white border border-gray-200 p-2 rounded-lg text-sm shadow-sm">
+                                    <div key={c.id} className={`flex justify-between items-center bg-white border p-2 rounded-lg text-sm shadow-sm ${editingCompanyId === c.id ? 'border-amber-400 bg-amber-50' : 'border-gray-200'}`}>
                                         <div className="flex items-center gap-3">
                                             <div className="w-10 h-10 border rounded bg-gray-50 flex items-center justify-center overflow-hidden shrink-0">
                                                 {c.logo ? <img src={c.logo} alt="Logo" className="w-full h-full object-contain" /> : <Building size={20} className="text-gray-300"/>}
                                             </div>
                                             <span className="font-bold text-gray-700">{c.name}</span>
                                         </div>
-                                        <button type="button" onClick={() => handleRemoveCompany(c.id)} className="text-red-500 hover:text-red-700 p-1.5 hover:bg-red-50 rounded transition-colors"><Trash2 size={16} /></button>
+                                        <div className="flex items-center gap-1">
+                                            <button type="button" onClick={() => handleEditCompany(c)} className="text-amber-500 hover:text-amber-700 p-1.5 hover:bg-amber-50 rounded transition-colors" title="ویرایش"><Pencil size={16}/></button>
+                                            <button type="button" onClick={() => handleRemoveCompany(c.id)} className="text-red-500 hover:text-red-700 p-1.5 hover:bg-red-50 rounded transition-colors" title="حذف"><Trash2 size={16} /></button>
+                                        </div>
                                     </div>
                                 ))}
                                 {(!settings.companies || settings.companies.length === 0) && <span className="text-xs text-gray-400 block text-center py-2">لیست خالی است</span>}
