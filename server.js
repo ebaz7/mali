@@ -93,7 +93,7 @@ const findNextAvailableTrackingNumber = (db) => {
 
 // --- TELEGRAM BOT UTILS ---
 let lastUpdateId = 0;
-// Store user state for creation wizard: { chatId: { step: 'PAYEE' | 'AMOUNT' | 'DESC' | 'COMPANY', data: {} } }
+// Store user state for creation wizard: { chatId: { step: 'PAYEE' | 'AMOUNT' | 'BANK' | 'DESC' | 'COMPANY', data: {} } }
 const userFlows = {}; 
 
 const MAIN_MENU = {
@@ -231,10 +231,12 @@ const generateOrderReceipt = (order) => {
     if (order.paymentDetails && order.paymentDetails.length > 0) {
         html += `\n🔽 <b>جزئیات پرداخت:</b>\n`;
         order.paymentDetails.forEach((d, i) => {
-            const detailInfo = d.method === 'چک' ? `(چک: ${d.chequeNumber || '-'})` : 
-                               d.method === 'حواله بانکی' ? `(بانک: ${d.bankName || '-'})` : '';
-            html += `${i+1}. <b>${d.method}</b>: ${formatCurrency(d.amount)} ${detailInfo}\n`;
-            if (d.description) html += `   └ <i>${d.description}</i>\n`;
+            let detailInfo = d.method;
+            if (d.method === 'چک') detailInfo += ` (شماره: ${d.chequeNumber || '-'})`;
+            if (d.method === 'حواله بانکی') detailInfo += ` (${d.bankName || 'بانک نامشخص'})`;
+            
+            html += `${i+1}. <b>${detailInfo}</b>: ${formatCurrency(d.amount)}\n`;
+            if (d.description && d.description !== order.description) html += `   └ <i>${d.description}</i>\n`;
         });
     }
 
@@ -346,6 +348,12 @@ const processUpdate = async (update) => {
                     return;
                 }
                 flow.data.amount = amount;
+                flow.step = 'BANK';
+                await sendTelegram(chatId, "🏦 نام بانک (یا نام روش پرداخت) را وارد کنید:", CANCEL_MENU);
+                return;
+            }
+            if (flow.step === 'BANK') {
+                flow.data.bankName = text;
                 flow.step = 'DESC';
                 await sendTelegram(chatId, "📝 شرح پرداخت را وارد کنید:", CANCEL_MENU);
                 return;
@@ -373,8 +381,8 @@ const processUpdate = async (update) => {
                         id: generateUUID(),
                         method: 'حواله بانکی',
                         amount: flow.data.amount,
-                        bankName: 'نامشخص (ثبت با ربات)',
-                        description: 'ثبت شده از طریق ربات تلگرام'
+                        bankName: flow.data.bankName,
+                        description: flow.data.description
                     }],
                     attachments: []
                 };

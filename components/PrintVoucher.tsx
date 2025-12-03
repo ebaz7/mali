@@ -16,8 +16,59 @@ interface PrintVoucherProps {
 const PrintVoucher: React.FC<PrintVoucherProps> = ({ order, onClose, settings, onApprove, onReject, onEdit }) => {
   const [processing, setProcessing] = useState(false);
 
+  // Smart Compact Mode: If more than 2 payment lines, shrink fonts/padding to fit A5
+  const isCompact = order.paymentDetails.length > 2;
+
   const handlePrint = () => {
-    window.print();
+    const content = document.getElementById('print-area');
+    if (!content) return;
+
+    // Create a hidden iframe
+    const iframe = document.createElement('iframe');
+    iframe.style.position = 'absolute';
+    iframe.style.width = '0px';
+    iframe.style.height = '0px';
+    iframe.style.border = 'none';
+    document.body.appendChild(iframe);
+
+    const doc = iframe.contentWindow?.document;
+    if (!doc) return;
+
+    // Get all style sheets (Tailwind, Font, etc.)
+    const styleSheets = Array.from(document.querySelectorAll('link[rel="stylesheet"], style')).map(el => el.outerHTML).join('');
+    
+    // Write content
+    doc.open();
+    doc.write(`
+      <html dir="rtl" lang="fa">
+        <head>
+          <title>چاپ دستور پرداخت - ${order.trackingNumber}</title>
+          ${styleSheets}
+          <style>
+            body { background: white; margin: 0; padding: 0; font-family: 'Vazirmatn', sans-serif; }
+            #print-wrapper { width: 100%; height: 100%; padding: 5mm; box-sizing: border-box; }
+            /* Ensure background colors print */
+            * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+          </style>
+        </head>
+        <body>
+          <div id="print-wrapper">
+            ${content.innerHTML}
+          </div>
+        </body>
+      </html>
+    `);
+    doc.close();
+
+    // Print after resources load
+    iframe.contentWindow?.focus();
+    setTimeout(() => {
+        iframe.contentWindow?.print();
+        // Cleanup after print dialog closes (approximate)
+        setTimeout(() => {
+             document.body.removeChild(iframe);
+        }, 2000);
+    }, 500);
   };
 
   const handleDownloadImage = async () => {
@@ -30,7 +81,12 @@ const PrintVoucher: React.FC<PrintVoucherProps> = ({ order, onClose, settings, o
       const canvas = await window.html2canvas(element, { 
         scale: 2,
         useCORS: true,
-        backgroundColor: '#ffffff'
+        backgroundColor: '#ffffff',
+        // Force RTL context
+        onclone: (doc) => {
+            const el = doc.getElementById('print-area');
+            if (el) el.style.direction = 'rtl';
+        }
       });
       const data = canvas.toDataURL('image/jpeg', 0.9);
       const link = document.createElement('a');
@@ -56,21 +112,22 @@ const PrintVoucher: React.FC<PrintVoucherProps> = ({ order, onClose, settings, o
       // @ts-ignore
       const canvas = await window.html2canvas(element, { 
         scale: 2, 
-        backgroundColor: '#ffffff' 
+        backgroundColor: '#ffffff',
+        useCORS: true
       });
       const imgData = canvas.toDataURL('image/jpeg', 0.9);
       
       // @ts-ignore
       const { jsPDF } = window.jspdf;
-      // A5 Landscape
+      // A5 Landscape: 210mm x 148mm
       const pdf = new jsPDF({
         orientation: 'landscape',
         unit: 'mm',
         format: 'a5'
       });
       
-      const pdfWidth = pdf.internal.pageSize.getWidth();
-      const pdfHeight = pdf.internal.pageSize.getHeight();
+      const pdfWidth = 210;
+      const pdfHeight = 148;
       
       pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight);
       pdf.save(`voucher-${order.trackingNumber}.pdf`);
@@ -84,16 +141,16 @@ const PrintVoucher: React.FC<PrintVoucherProps> = ({ order, onClose, settings, o
 
   // Helper component for the Stamp
   const Stamp = ({ name, title }: { name: string; title: string }) => (
-    <div className="border-[2px] border-blue-800 text-blue-800 rounded-lg py-1 px-3 rotate-[-5deg] opacity-90 mix-blend-multiply bg-white/80 print:bg-transparent shadow-sm inline-block">
-      <div className="text-[9px] font-bold border-b border-blue-800 mb-0.5 text-center pb-0.5">{title}</div>
-      <div className="text-[10px] text-center font-bold whitespace-nowrap">{name}</div>
+    <div className={`border-[2px] border-blue-800 text-blue-800 rounded-lg ${isCompact ? 'py-0.5 px-2' : 'py-1 px-3'} rotate-[-5deg] opacity-90 mix-blend-multiply bg-white/80 print:bg-transparent shadow-sm inline-block`}>
+      <div className={`${isCompact ? 'text-[8px]' : 'text-[9px]'} font-bold border-b border-blue-800 mb-0.5 text-center pb-0.5`}>{title}</div>
+      <div className={`${isCompact ? 'text-[9px]' : 'text-[10px]'} text-center font-bold whitespace-nowrap`}>{name}</div>
     </div>
   );
 
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto print:p-0 print:static print:bg-white print:block animate-fade-in">
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto animate-fade-in">
       {/* Controls */}
-      <div className="absolute top-0 left-0 right-0 p-4 flex justify-between items-start no-print z-50 pointer-events-none">
+      <div className="absolute top-0 left-0 right-0 p-4 flex justify-between items-start z-50 pointer-events-none">
          <div className="bg-white p-3 rounded-xl shadow-lg pointer-events-auto flex flex-col gap-3 w-full max-w-lg mx-auto mt-10 md:mt-0">
              <div className="flex items-center justify-between border-b pb-2 mb-1">
                  <h3 className="font-bold text-gray-800 text-base">جزئیات و عملیات</h3>
@@ -150,36 +207,28 @@ const PrintVoucher: React.FC<PrintVoucherProps> = ({ order, onClose, settings, o
          </div>
       </div>
 
-      {/* Voucher Container - A5 Landscape Ratio */}
-      <div id="print-area" className="bg-white w-[210mm] aspect-[1.414/1] mx-auto p-8 shadow-2xl print:shadow-none print:w-full print:h-full print:aspect-auto print:m-0 print:p-4 rounded-sm relative text-gray-900 flex flex-col justify-between overflow-hidden">
+      {/* Voucher Container - A5 Landscape Ratio (Fixed Dimensions for Consistency) */}
+      <div id="print-area" className="bg-white w-[210mm] h-[148mm] mx-auto p-6 shadow-2xl rounded-sm relative text-gray-900 flex flex-col justify-between overflow-hidden" style={{ direction: 'rtl' }}>
         
-        {/* Rejected Watermark/Stamp */}
+        {/* Rejected Watermark */}
         {order.status === OrderStatus.REJECTED && (
             <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 border-8 border-red-600/30 text-red-600/30 font-black text-9xl rotate-[-25deg] p-4 rounded-3xl select-none z-0 pointer-events-none">
                 REJECTED
             </div>
         )}
 
-        {order.status === OrderStatus.REJECTED && order.rejectedBy && (
-             <div className="absolute top-10 left-10 border-4 border-red-700 text-red-700 rounded-xl p-2 rotate-[-15deg] opacity-90 mix-blend-multiply z-10 bg-white/80">
-                <div className="text-sm font-bold border-b-2 border-red-700 mb-1 text-center">درخواست رد شد</div>
-                <div className="text-xs text-center font-bold whitespace-nowrap mb-1">{order.rejectedBy}</div>
-                <div className="text-[10px] text-center font-bold">دلیل: {order.rejectionReason}</div>
-             </div>
-        )}
-
+        {/* Header */}
         <div className="relative z-10">
-            {/* New Letterhead Header with Logo */}
-            <div className="border-b-2 border-gray-800 pb-2 mb-4 flex justify-between items-center">
+            <div className={`border-b-2 border-gray-800 ${isCompact ? 'pb-1 mb-2' : 'pb-2 mb-4'} flex justify-between items-center`}>
                 <div className="flex items-center gap-4">
                     {/* Logo/Image */}
                     {settings?.pwaIcon && (
-                        <div className="w-16 h-16 flex items-center justify-center">
+                        <div className={`${isCompact ? 'w-12 h-12' : 'w-16 h-16'} flex items-center justify-center`}>
                              <img src={settings.pwaIcon} alt="Logo" className="max-w-full max-h-full object-contain" />
                         </div>
                     )}
                     <div>
-                        <h1 className="text-2xl font-black text-gray-900 tracking-tight">
+                        <h1 className={`${isCompact ? 'text-xl' : 'text-2xl'} font-black text-gray-900 tracking-tight`}>
                             {order.payingCompany || 'شرکت بازرگانی'}
                         </h1>
                         <p className="text-xs text-gray-500 font-bold mt-1">سیستم مدیریت مالی و پرداخت</p>
@@ -187,7 +236,7 @@ const PrintVoucher: React.FC<PrintVoucherProps> = ({ order, onClose, settings, o
                 </div>
                 
                 <div className="text-left flex flex-col items-end gap-1">
-                    <h2 className="text-xl font-black bg-gray-100 border border-gray-200 text-gray-800 px-4 py-1.5 rounded-lg mb-1">
+                    <h2 className={`${isCompact ? 'text-lg px-3 py-1' : 'text-xl px-4 py-1.5'} font-black bg-gray-100 border border-gray-200 text-gray-800 rounded-lg mb-1`}>
                         رسید پرداخت وجه
                     </h2>
                     <div className="flex items-center gap-2 text-sm">
@@ -202,48 +251,48 @@ const PrintVoucher: React.FC<PrintVoucherProps> = ({ order, onClose, settings, o
             </div>
 
             {/* Body */}
-            <div className="space-y-4">
-                <div className="grid grid-cols-2 gap-6">
-                    <div className="bg-gray-50/50 border border-gray-300 p-3 rounded print:bg-transparent">
+            <div className={`${isCompact ? 'space-y-2' : 'space-y-4'}`}>
+                <div className="grid grid-cols-2 gap-4">
+                    <div className={`bg-gray-50/50 border border-gray-300 ${isCompact ? 'p-2' : 'p-3'} rounded`}>
                         <span className="block text-gray-500 text-xs mb-1">در وجه (ذینفع):</span>
-                        <span className="font-bold text-lg text-gray-900">{order.payee}</span>
+                        <span className={`font-bold text-gray-900 ${isCompact ? 'text-base' : 'text-lg'}`}>{order.payee}</span>
                     </div>
-                    <div className="bg-gray-50/50 border border-gray-300 p-3 rounded print:bg-transparent">
+                    <div className={`bg-gray-50/50 border border-gray-300 ${isCompact ? 'p-2' : 'p-3'} rounded`}>
                         <span className="block text-gray-500 text-xs mb-1">مبلغ کل پرداختی:</span>
-                        <span className="font-bold text-lg text-gray-900">{formatCurrency(order.totalAmount)}</span>
+                        <span className={`font-bold text-gray-900 ${isCompact ? 'text-base' : 'text-lg'}`}>{formatCurrency(order.totalAmount)}</span>
                     </div>
                 </div>
 
-                <div className="bg-gray-50/50 border border-gray-300 p-3 rounded min-h-[60px] print:bg-transparent">
+                <div className={`bg-gray-50/50 border border-gray-300 ${isCompact ? 'p-2 min-h-[40px]' : 'p-3 min-h-[60px]'} rounded`}>
                     <span className="block text-gray-500 text-xs mb-1">بابت (شرح پرداخت):</span>
-                    <p className="text-gray-800 text-base leading-relaxed text-justify font-medium">
+                    <p className={`text-gray-800 text-justify font-medium leading-tight ${isCompact ? 'text-xs' : 'text-base'}`}>
                         {order.description}
                     </p>
                 </div>
 
                 {/* Payment Details Table */}
                 <div className="border border-gray-300 rounded overflow-hidden">
-                    <table className="w-full text-sm text-right">
-                        <thead className="bg-gray-100 border-b border-gray-300 print:bg-gray-200">
+                    <table className={`w-full text-right ${isCompact ? 'text-[10px]' : 'text-sm'}`}>
+                        <thead className="bg-gray-100 border-b border-gray-300">
                             <tr>
-                                <th className="p-2 font-bold text-gray-600 w-10">ردیف</th>
-                                <th className="p-2 font-bold text-gray-600">نوع پرداخت</th>
-                                <th className="p-2 font-bold text-gray-600">مبلغ</th>
-                                <th className="p-2 font-bold text-gray-600">اطلاعات تکمیلی</th>
-                                <th className="p-2 font-bold text-gray-600">توضیحات</th>
+                                <th className={`${isCompact ? 'p-1' : 'p-2'} font-bold text-gray-600 w-8`}>#</th>
+                                <th className={`${isCompact ? 'p-1' : 'p-2'} font-bold text-gray-600`}>نوع پرداخت</th>
+                                <th className={`${isCompact ? 'p-1' : 'p-2'} font-bold text-gray-600`}>مبلغ</th>
+                                <th className={`${isCompact ? 'p-1' : 'p-2'} font-bold text-gray-600`}>بانک / چک</th>
+                                <th className={`${isCompact ? 'p-1' : 'p-2'} font-bold text-gray-600`}>توضیحات</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-200">
                             {order.paymentDetails.map((detail, idx) => (
                                 <tr key={detail.id}>
-                                    <td className="p-2 text-center">{idx + 1}</td>
-                                    <td className="p-2 font-bold">{detail.method}</td>
-                                    <td className="p-2 font-mono">{formatCurrency(detail.amount)}</td>
-                                    <td className="p-2">
-                                        {detail.method === PaymentMethod.CHEQUE ? `شماره چک: ${detail.chequeNumber}` :
+                                    <td className={`${isCompact ? 'p-1' : 'p-2'} text-center`}>{idx + 1}</td>
+                                    <td className={`${isCompact ? 'p-1' : 'p-2'} font-bold`}>{detail.method}</td>
+                                    <td className={`${isCompact ? 'p-1' : 'p-2'} font-mono`}>{formatCurrency(detail.amount)}</td>
+                                    <td className={`${isCompact ? 'p-1' : 'p-2'}`}>
+                                        {detail.method === PaymentMethod.CHEQUE ? `چک: ${detail.chequeNumber}` :
                                          detail.method === PaymentMethod.TRANSFER ? `بانک: ${detail.bankName}` : '-'}
                                     </td>
-                                    <td className="p-2 text-xs text-gray-600">
+                                    <td className={`${isCompact ? 'p-1' : 'p-2'} text-gray-600 truncate max-w-[150px]`}>
                                         {detail.description || '-'}
                                     </td>
                                 </tr>
@@ -255,58 +304,58 @@ const PrintVoucher: React.FC<PrintVoucherProps> = ({ order, onClose, settings, o
         </div>
 
         {/* Footer / Signatures - 4 Columns */}
-        <div className="mt-auto pt-4 border-t-2 border-gray-800 print:mt-auto relative z-10">
+        <div className={`mt-auto ${isCompact ? 'pt-2' : 'pt-4'} border-t-2 border-gray-800 relative z-10`}>
             <div className="grid grid-cols-4 gap-4 text-center">
                 
                 {/* Requester */}
-                <div className="flex flex-col items-center justify-end min-h-[90px]">
+                <div className={`flex flex-col items-center justify-end ${isCompact ? 'min-h-[60px]' : 'min-h-[90px]'}`}>
                     <div className="mb-2 flex items-center justify-center h-full">
-                        <span className="font-bold text-gray-900 text-base">{order.requester}</span>
+                        <span className="font-bold text-gray-900 text-sm">{order.requester}</span>
                     </div>
                     <div className="w-full border-t border-gray-400 pt-1">
-                        <span className="text-xs font-bold text-gray-600">درخواست کننده</span>
+                        <span className="text-[10px] font-bold text-gray-600">درخواست کننده</span>
                     </div>
                 </div>
                 
                 {/* Financial */}
-                <div className="flex flex-col items-center justify-end min-h-[90px]">
+                <div className={`flex flex-col items-center justify-end ${isCompact ? 'min-h-[60px]' : 'min-h-[90px]'}`}>
                     <div className="mb-2 flex items-center justify-center h-full">
                          {order.approverFinancial ? (
                             <Stamp name={order.approverFinancial} title="تایید مالی" />
                          ) : (
-                            <span className="text-gray-300 text-[10px] print:hidden">امضا نشده</span>
+                            <span className="text-gray-300 text-[9px]">امضا نشده</span>
                          )}
                     </div>
                     <div className="w-full border-t border-gray-400 pt-1">
-                        <span className="text-xs font-bold text-gray-600">مدیر مالی</span>
+                        <span className="text-[10px] font-bold text-gray-600">مدیر مالی</span>
                     </div>
                 </div>
                 
                 {/* Manager */}
-                <div className="flex flex-col items-center justify-end min-h-[90px]">
+                <div className={`flex flex-col items-center justify-end ${isCompact ? 'min-h-[60px]' : 'min-h-[90px]'}`}>
                     <div className="mb-2 flex items-center justify-center h-full">
                          {order.approverManager ? (
                             <Stamp name={order.approverManager} title="تایید مدیریت" />
                          ) : (
-                            <span className="text-gray-300 text-[10px] print:hidden">امضا نشده</span>
+                            <span className="text-gray-300 text-[9px]">امضا نشده</span>
                          )}
                     </div>
                     <div className="w-full border-t border-gray-400 pt-1">
-                        <span className="text-xs font-bold text-gray-600">مدیریت</span>
+                        <span className="text-[10px] font-bold text-gray-600">مدیریت</span>
                     </div>
                 </div>
                 
                 {/* CEO */}
-                <div className="flex flex-col items-center justify-end min-h-[90px]">
+                <div className={`flex flex-col items-center justify-end ${isCompact ? 'min-h-[60px]' : 'min-h-[90px]'}`}>
                     <div className="mb-2 flex items-center justify-center h-full">
                          {order.approverCeo ? (
                             <Stamp name={order.approverCeo} title="مدیر عامل" />
                          ) : (
-                            <span className="text-gray-300 text-[10px] print:hidden">امضا نشده</span>
+                            <span className="text-gray-300 text-[9px]">امضا نشده</span>
                          )}
                     </div>
                     <div className="w-full border-t border-gray-400 pt-1">
-                        <span className="text-xs font-bold text-gray-600">مدیر عامل</span>
+                        <span className="text-[10px] font-bold text-gray-600">مدیر عامل</span>
                     </div>
                 </div>
 
