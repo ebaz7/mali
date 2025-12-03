@@ -447,7 +447,7 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
                                         const stageInfo = getStageData(selectedRecord, stageName);
                                         return (
                                             <div key={idx} className={`relative pl-8 border-l-2 ${stageInfo.isCompleted ? 'border-blue-500' : 'border-gray-200'} pb-8 last:pb-0 group`}>
-                                                <div onClick={(e) => { e.stopPropagation(); handleOpenStage(stageName); }} className={`absolute -left-[9px] top-0 w-4 h-4 rounded-full border-2 cursor-pointer transition-colors ${stageInfo.isCompleted ? 'bg-blue-500 border-blue-500' : 'bg-white border-gray-300 group-hover:border-blue-400'}`}></div>
+                                                <div className={`absolute -left-[9px] top-0 w-4 h-4 rounded-full border-2 cursor-pointer transition-colors ${stageInfo.isCompleted ? 'bg-blue-500 border-blue-500' : 'bg-white border-gray-300 group-hover:border-blue-400'}`} onClick={() => handleOpenStage(stageName)}></div>
                                                 <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm hover:shadow-md transition-shadow cursor-pointer" onClick={() => handleOpenStage(stageName)}>
                                                     <div className="flex justify-between items-start mb-2">
                                                         <h3 className={`font-bold text-lg ${stageInfo.isCompleted ? 'text-blue-700' : 'text-gray-600'}`}>{stageName}</h3>
@@ -459,6 +459,7 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
                                                     <div className="text-sm text-gray-500">
                                                         {stageInfo.costRial > 0 && <span>هزینه: {formatCurrency(stageInfo.costRial)} </span>}
                                                         {stageInfo.description && <span className="italic block mt-1">"{stageInfo.description}"</span>}
+                                                        <span className="text-xs text-blue-500 mt-2 block">برای مشاهده جزئیات و افزودن فایل کلیک کنید</span>
                                                     </div>
                                                 </div>
                                             </div>
@@ -839,13 +840,9 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
                     <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg p-6">
                         <div className="flex justify-between items-center mb-6"><h3 className="text-xl font-bold text-gray-800">ایجاد پرونده جدید</h3><button onClick={() => setShowNewModal(false)}><X size={24} className="text-gray-400" /></button></div>
                         <div className="space-y-4">
-                            <div><label className="text-xs font-bold text-gray-500 block mb-1">شماره پرونده</label><input className="w-full border rounded-lg p-2 text-sm" value={newFileNumber} onChange={e => setNewFileNumber(e.target.value)} autoFocus /></div>
-                            <div><label className="text-xs font-bold text-gray-500 block mb-1">نام کالا</label><input className="w-full border rounded-lg p-2 text-sm" value={newGoodsName} onChange={e => setNewGoodsName(e.target.value)} /></div>
-                            <div><label className="text-xs font-bold text-gray-500 block mb-1">فروشنده</label><input className="w-full border rounded-lg p-2 text-sm" value={newSellerName} onChange={e => setNewSellerName(e.target.value)} /></div>
-                            <div><label className="text-xs font-bold text-gray-500 block mb-1">گروه کالایی</label><select className="w-full border rounded-lg p-2 text-sm bg-white" value={newCommodityGroup} onChange={e => setNewCommodityGroup(e.target.value)}><option value="">انتخاب...</option>{commodityGroups.map(g => <option key={g} value={g}>{g}</option>)}</select></div>
-                            <div><label className="text-xs font-bold text-gray-500 block mb-1">ارز پایه</label><select className="w-full border rounded-lg p-2 text-sm bg-white" value={newMainCurrency} onChange={e => setNewMainCurrency(e.target.value)}>{CURRENCIES.map(c => <option key={c.code} value={c.code}>{c.label}</option>)}</select></div>
-                             <div><label className="text-xs font-bold text-gray-500 block mb-1">شرکت</label><select className="w-full border rounded-lg p-2 text-sm bg-white" value={newRecordCompany} onChange={e => setNewRecordCompany(e.target.value)}><option value="">انتخاب...</option>{availableCompanies.map(c => <option key={c} value={c}>{c}</option>)}</select></div>
-                            <button onClick={handleCreateRecord} disabled={!newFileNumber || !newGoodsName} className="w-full bg-blue-600 text-white py-3 rounded-xl font-bold hover:bg-blue-700 transition-colors disabled:opacity-50">ایجاد پرونده</button>
+                            <div><label className="text-sm font-bold text-gray-700 block mb-1">شماره پرونده</label><input autoFocus className="w-full border rounded-xl px-4 py-3 bg-gray-50" value={newFileNumber} onChange={e => setNewFileNumber(e.target.value)} /></div>
+                            <div><label className="text-sm font-bold text-gray-700 block mb-1">نام کالا</label><input className="w-full border rounded-xl px-4 py-3 bg-gray-50" value={newGoodsName} onChange={e => setNewGoodsName(e.target.value)} /></div>
+                            <button onClick={handleCreateRecord} disabled={!newFileNumber || !newGoodsName} className="w-full bg-blue-600 text-white py-3 rounded-xl font-bold mt-4">ایجاد پرونده</button>
                         </div>
                     </div>
                 </div>
@@ -853,4 +850,5 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
         </div>
     );
 };
+
 export default TradeModule;
