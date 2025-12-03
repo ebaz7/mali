@@ -88,9 +88,16 @@ export interface RolePermissions {
     canManageSettings?: boolean; // New: Access to settings page
 }
 
+export interface Company {
+    id: string;
+    name: string;
+    logo?: string; // URL or Base64
+}
+
 export interface SystemSettings {
   currentTrackingNumber: number;
-  companyNames: string[]; // List of available companies
+  companyNames: string[]; // Legacy: List of available companies
+  companies?: Company[]; // New: Objects with logos
   defaultCompany: string; // Default selection
   bankNames: string[]; // List of available banks
   commodityGroups: string[]; // Trade: Commodity Groups

@@ -1,4 +1,6 @@
 
+
+
 import React, { useState } from 'react';
 import { PaymentOrder, OrderStatus, PaymentMethod, SystemSettings } from '../types';
 import { formatCurrency, formatDate } from '../constants';
@@ -18,6 +20,10 @@ const PrintVoucher: React.FC<PrintVoucherProps> = ({ order, onClose, settings, o
 
   // Smart Compact Mode: If more than 2 payment lines, shrink fonts/padding to fit A5
   const isCompact = order.paymentDetails.length > 2;
+
+  // Find company logo
+  const companyInfo = settings?.companies?.find(c => c.name === order.payingCompany);
+  const companyLogo = companyInfo?.logo || settings?.pwaIcon;
 
   const handlePrint = () => {
     const content = document.getElementById('print-area');
@@ -60,15 +66,38 @@ const PrintVoucher: React.FC<PrintVoucherProps> = ({ order, onClose, settings, o
     `);
     doc.close();
 
-    // Print after resources load
-    iframe.contentWindow?.focus();
-    setTimeout(() => {
+    // Check images loaded before printing to avoid blank spaces
+    const images = iframe.contentWindow?.document.getElementsByTagName('img');
+    let loadedCount = 0;
+    const totalImages = images ? images.length : 0;
+
+    const doPrint = () => {
+        iframe.contentWindow?.focus();
         iframe.contentWindow?.print();
-        // Cleanup after print dialog closes (approximate)
         setTimeout(() => {
              document.body.removeChild(iframe);
-        }, 2000);
-    }, 500);
+        }, 3000);
+    };
+
+    if (totalImages > 0 && images) {
+        for (let i = 0; i < totalImages; i++) {
+            if (images[i].complete) {
+                loadedCount++;
+            } else {
+                images[i].onload = () => {
+                    loadedCount++;
+                    if (loadedCount === totalImages) doPrint();
+                };
+                images[i].onerror = () => {
+                    loadedCount++;
+                    if (loadedCount === totalImages) doPrint();
+                };
+            }
+        }
+        if (loadedCount === totalImages) doPrint();
+    } else {
+        setTimeout(doPrint, 500);
+    }
   };
 
   const handleDownloadImage = async () => {
@@ -79,16 +108,20 @@ const PrintVoucher: React.FC<PrintVoucherProps> = ({ order, onClose, settings, o
     try {
       // @ts-ignore
       const canvas = await window.html2canvas(element, { 
-        scale: 2,
+        scale: 3, // Increased scale for better quality
         useCORS: true,
         backgroundColor: '#ffffff',
-        // Force RTL context
         onclone: (doc) => {
+            // Fix text scrambling by forcing simpler rendering for capture
             const el = doc.getElementById('print-area');
-            if (el) el.style.direction = 'rtl';
+            if (el) {
+                el.style.direction = 'rtl';
+                el.style.letterSpacing = 'normal';
+                el.style.fontVariantLigatures = 'no-common-ligatures';
+            }
         }
       });
-      const data = canvas.toDataURL('image/jpeg', 0.9);
+      const data = canvas.toDataURL('image/jpeg', 1.0); // Max quality
       const link = document.createElement('a');
       link.href = data;
       link.download = `voucher-${order.trackingNumber}.jpg`;
@@ -111,11 +144,20 @@ const PrintVoucher: React.FC<PrintVoucherProps> = ({ order, onClose, settings, o
     try {
       // @ts-ignore
       const canvas = await window.html2canvas(element, { 
-        scale: 2, 
+        scale: 3, 
         backgroundColor: '#ffffff',
-        useCORS: true
+        useCORS: true,
+        onclone: (doc) => {
+            // Fix text scrambling
+            const el = doc.getElementById('print-area');
+            if (el) {
+                el.style.direction = 'rtl';
+                el.style.letterSpacing = 'normal';
+                el.style.fontVariantLigatures = 'no-common-ligatures';
+            }
+        }
       });
-      const imgData = canvas.toDataURL('image/jpeg', 0.9);
+      const imgData = canvas.toDataURL('image/jpeg', 1.0);
       
       // @ts-ignore
       const { jsPDF } = window.jspdf;
@@ -222,9 +264,9 @@ const PrintVoucher: React.FC<PrintVoucherProps> = ({ order, onClose, settings, o
             <div className={`border-b-2 border-gray-800 ${isCompact ? 'pb-1 mb-2' : 'pb-2 mb-4'} flex justify-between items-center`}>
                 <div className="flex items-center gap-4">
                     {/* Logo/Image */}
-                    {settings?.pwaIcon && (
+                    {companyLogo && (
                         <div className={`${isCompact ? 'w-12 h-12' : 'w-16 h-16'} flex items-center justify-center`}>
-                             <img src={settings.pwaIcon} alt="Logo" className="max-w-full max-h-full object-contain" />
+                             <img src={companyLogo} alt="Logo" className="max-w-full max-h-full object-contain" />
                         </div>
                     )}
                     <div>

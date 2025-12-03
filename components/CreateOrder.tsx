@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { PaymentMethod, OrderStatus, PaymentOrder, User, PaymentDetail, SystemSettings } from '../types';
 import { saveOrder, getNextTrackingNumber, uploadFile, getSettings, saveSettings } from '../services/storageService';
@@ -29,7 +30,9 @@ const CreateOrder: React.FC<CreateOrderProps> = ({ onSuccess, currentUser }) => 
 
   useEffect(() => {
       getSettings().then((settings: SystemSettings) => {
-          setAvailableCompanies(settings.companyNames || []);
+          // Use companies object array or fallback to legacy names array
+          const names = settings.companies?.map(c => c.name) || settings.companyNames || [];
+          setAvailableCompanies(names);
           setPayingCompany(settings.defaultCompany || '');
           setAvailableBanks(settings.bankNames || []);
       });

@@ -30,7 +30,9 @@ const EditOrderModal: React.FC<EditOrderModalProps> = ({ order, onClose, onSave 
 
   useEffect(() => { 
       getSettings().then((settings: SystemSettings) => { 
-          setAvailableCompanies(settings.companyNames || []); 
+          // Use companies object array or fallback to legacy names array
+          const names = settings.companies?.map(c => c.name) || settings.companyNames || [];
+          setAvailableCompanies(names); 
           setAvailableBanks(settings.bankNames || []); 
       }); 
   }, []);

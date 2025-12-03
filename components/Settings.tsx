@@ -6,19 +6,28 @@
 
 
 
+
+
 import React, { useState, useEffect, useRef } from 'react';
 import { getSettings, saveSettings, restoreSystemData, uploadFile } from '../services/storageService';
-import { SystemSettings, UserRole, RolePermissions } from '../types';
-import { Settings as SettingsIcon, Save, Loader2, Download, UploadCloud, Database, AlertTriangle, Bell, Info, Plus, Trash2, Building, ShieldCheck, Landmark, Package, AppWindow, BellRing, BellOff, Send, Crown } from 'lucide-react';
+import { SystemSettings, UserRole, RolePermissions, Company } from '../types';
+import { Settings as SettingsIcon, Save, Loader2, Download, UploadCloud, Database, AlertTriangle, Bell, Info, Plus, Trash2, Building, ShieldCheck, Landmark, Package, AppWindow, BellRing, BellOff, Send, Crown, Image as ImageIcon } from 'lucide-react';
 import { apiCall } from '../services/apiService';
 import { requestNotificationPermission, setNotificationPreference, isNotificationEnabledInApp } from '../services/notificationService';
+import { generateUUID } from '../constants';
 
 const Settings: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'general' | 'permissions'>('general');
-  const [settings, setSettings] = useState<SystemSettings>({ currentTrackingNumber: 1000, companyNames: [], defaultCompany: '', bankNames: [], commodityGroups: [], rolePermissions: {} as any, pwaIcon: '', telegramBotToken: '', telegramAdminId: '' });
+  const [settings, setSettings] = useState<SystemSettings>({ currentTrackingNumber: 1000, companyNames: [], companies: [], defaultCompany: '', bankNames: [], commodityGroups: [], rolePermissions: {} as any, pwaIcon: '', telegramBotToken: '', telegramAdminId: '' });
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
-  const [newCompany, setNewCompany] = useState('');
+  
+  // Company Management State
+  const [newCompanyName, setNewCompanyName] = useState('');
+  const [newCompanyLogo, setNewCompanyLogo] = useState('');
+  const [isUploadingLogo, setIsUploadingLogo] = useState(false);
+  const companyLogoInputRef = useRef<HTMLInputElement>(null);
+
   const [newBank, setNewBank] = useState('');
   const [newCommodity, setNewCommodity] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -29,10 +38,98 @@ const Settings: React.FC = () => {
 
   useEffect(() => { loadSettings(); setNotificationsEnabled(isNotificationEnabledInApp()); }, []);
 
-  const loadSettings = async () => { try { const data = await getSettings(); const safeData = { ...data, companyNames: data.companyNames || [], defaultCompany: data.defaultCompany || '', bankNames: data.bankNames || [], commodityGroups: data.commodityGroups || [], rolePermissions: data.rolePermissions || {}, pwaIcon: data.pwaIcon || '', telegramBotToken: data.telegramBotToken || '', telegramAdminId: data.telegramAdminId || '' }; setSettings(safeData); } catch (e) { console.error("Failed to load settings"); } };
-  const handleSave = async (e: React.FormEvent) => { e.preventDefault(); setLoading(true); try { await saveSettings(settings); setMessage('تنظیمات با موفقیت ذخیره شد.'); setTimeout(() => setMessage(''), 3000); } catch (e) { setMessage('خطا در ذخیره تنظیمات.'); } finally { setLoading(false); } };
-  const handleAddCompany = () => { if (newCompany.trim() && !settings.companyNames.includes(newCompany.trim())) { setSettings({ ...settings, companyNames: [...settings.companyNames, newCompany.trim()] }); setNewCompany(''); } };
-  const handleRemoveCompany = (name: string) => { setSettings({ ...settings, companyNames: settings.companyNames.filter(c => c !== name) }); };
+  const loadSettings = async () => { 
+      try { 
+          const data = await getSettings(); 
+          let safeData = { 
+              ...data, 
+              companyNames: data.companyNames || [], 
+              companies: data.companies || [],
+              defaultCompany: data.defaultCompany || '', 
+              bankNames: data.bankNames || [], 
+              commodityGroups: data.commodityGroups || [], 
+              rolePermissions: data.rolePermissions || {}, 
+              pwaIcon: data.pwaIcon || '', 
+              telegramBotToken: data.telegramBotToken || '', 
+              telegramAdminId: data.telegramAdminId || '' 
+          }; 
+          
+          // Migrate old string companies to object structure if empty
+          if (safeData.companyNames.length > 0 && (!safeData.companies || safeData.companies.length === 0)) {
+              safeData.companies = safeData.companyNames.map(name => ({ id: generateUUID(), name }));
+          }
+
+          setSettings(safeData); 
+      } catch (e) { 
+          console.error("Failed to load settings"); 
+      } 
+  };
+
+  const handleSave = async (e: React.FormEvent) => { 
+      e.preventDefault(); 
+      setLoading(true); 
+      try { 
+          // Sync companyNames (legacy) with companies (new)
+          const syncedSettings = {
+              ...settings,
+              companyNames: settings.companies?.map(c => c.name) || []
+          };
+          
+          await saveSettings(syncedSettings); 
+          setSettings(syncedSettings);
+          setMessage('تنظیمات با موفقیت ذخیره شد.'); 
+          setTimeout(() => setMessage(''), 3000); 
+      } catch (e) { 
+          setMessage('خطا در ذخیره تنظیمات.'); 
+      } finally { 
+          setLoading(false); 
+      } 
+  };
+
+  // Company Management Handlers
+  const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0]; if (!file) return;
+      if (file.size > 2 * 1024 * 1024) { alert("حجم فایل لوگو نباید بیشتر از 2 مگابایت باشد"); return; }
+      setIsUploadingLogo(true);
+      const reader = new FileReader();
+      reader.onload = async (ev) => {
+          const base64 = ev.target?.result as string;
+          try {
+              const result = await uploadFile(file.name, base64);
+              setNewCompanyLogo(result.url);
+          } catch (error) { alert('خطا در آپلود لوگو'); } finally { setIsUploadingLogo(false); }
+      };
+      reader.readAsDataURL(file);
+  };
+
+  const handleAddCompany = () => { 
+      if (!newCompanyName.trim()) return;
+      const newCo: Company = {
+          id: generateUUID(),
+          name: newCompanyName.trim(),
+          logo: newCompanyLogo
+      };
+      const updatedCompanies = [...(settings.companies || []), newCo];
+      
+      setSettings({ 
+          ...settings, 
+          companies: updatedCompanies,
+          companyNames: updatedCompanies.map(c => c.name)
+      }); 
+      
+      setNewCompanyName(''); 
+      setNewCompanyLogo('');
+  };
+
+  const handleRemoveCompany = (id: string) => { 
+      const updatedCompanies = (settings.companies || []).filter(c => c.id !== id);
+      setSettings({ 
+          ...settings, 
+          companies: updatedCompanies,
+          companyNames: updatedCompanies.map(c => c.name)
+      }); 
+  };
+
   const handleAddBank = () => { if (newBank.trim() && !settings.bankNames.includes(newBank.trim())) { setSettings({ ...settings, bankNames: [...settings.bankNames, newBank.trim()] }); setNewBank(''); } };
   const handleRemoveBank = (name: string) => { setSettings({ ...settings, bankNames: settings.bankNames.filter(b => b !== name) }); };
   const handleAddCommodity = () => { if (newCommodity.trim() && !settings.commodityGroups.includes(newCommodity.trim())) { setSettings({ ...settings, commodityGroups: [...settings.commodityGroups, newCommodity.trim()] }); setNewCommodity(''); } };
@@ -151,7 +248,50 @@ const Settings: React.FC = () => {
                     </div>
                 </div>
 
-                <div className="space-y-4 border-t pt-6"><div className="flex items-center gap-2 mb-2"><Building className="text-blue-600" size={20} /><h3 className="font-bold text-gray-800">مدیریت شرکت‌ها (سربرگ)</h3></div><div className="bg-gray-50 p-4 rounded-xl border border-gray-200 space-y-4"><div className="space-y-2"><label className="text-xs font-bold text-gray-600">شرکت پیش‌فرض</label><select className="w-full border rounded-lg p-2 text-sm bg-white" value={settings.defaultCompany} onChange={(e) => setSettings({...settings, defaultCompany: e.target.value})}><option value="">-- انتخاب کنید --</option>{settings.companyNames.map(c => <option key={c} value={c}>{c}</option>)}</select></div><div className="space-y-2"><label className="text-xs font-bold text-gray-600">افزودن نام شرکت جدید</label><div className="flex gap-2"><input className="flex-1 border rounded-lg p-2 text-sm" placeholder="نام شرکت..." value={newCompany} onChange={e => setNewCompany(e.target.value)} /><button type="button" onClick={handleAddCompany} className="bg-green-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-green-700"><Plus size={16} /></button></div></div><div className="space-y-2"><label className="text-xs font-bold text-gray-600">لیست شرکت‌های موجود</label><div className="space-y-1 max-h-40 overflow-y-auto">{settings.companyNames.map(c => (<div key={c} className="flex justify-between items-center bg-white border border-gray-200 p-2 rounded text-sm"><span>{c}</span><button type="button" onClick={() => handleRemoveCompany(c)} className="text-red-500 hover:text-red-700"><Trash2 size={14} /></button></div>))}{settings.companyNames.length === 0 && <span className="text-xs text-gray-400">لیست خالی است</span>}</div></div></div></div>
+                {/* COMPANY MANAGEMENT WITH LOGO */}
+                <div className="space-y-4 border-t pt-6">
+                    <div className="flex items-center gap-2 mb-2"><Building className="text-blue-600" size={20} /><h3 className="font-bold text-gray-800">مدیریت شرکت‌ها (سربرگ)</h3></div>
+                    <div className="bg-gray-50 p-4 rounded-xl border border-gray-200 space-y-4">
+                        <div className="space-y-2"><label className="text-xs font-bold text-gray-600">شرکت پیش‌فرض</label><select className="w-full border rounded-lg p-2 text-sm bg-white" value={settings.defaultCompany} onChange={(e) => setSettings({...settings, defaultCompany: e.target.value})}><option value="">-- انتخاب کنید --</option>{settings.companies?.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}</select></div>
+                        
+                        <div className="bg-white p-3 rounded-lg border border-gray-200">
+                            <label className="text-xs font-bold text-gray-600 mb-2 block">افزودن شرکت جدید</label>
+                            <div className="flex gap-2 items-center">
+                                <div className="flex-1">
+                                    <input className="w-full border rounded-lg p-2 text-sm mb-2" placeholder="نام شرکت..." value={newCompanyName} onChange={e => setNewCompanyName(e.target.value)} />
+                                    <div className="flex items-center gap-2">
+                                        <button type="button" onClick={() => companyLogoInputRef.current?.click()} disabled={isUploadingLogo} className="bg-gray-100 text-gray-600 border px-3 py-1.5 rounded text-xs hover:bg-gray-200 flex items-center gap-1">
+                                            {isUploadingLogo ? <Loader2 size={12} className="animate-spin"/> : <ImageIcon size={12}/>}
+                                            {newCompanyLogo ? 'تغییر لوگو' : 'آپلود لوگو'}
+                                        </button>
+                                        <input type="file" ref={companyLogoInputRef} className="hidden" accept="image/*" onChange={handleLogoUpload} />
+                                        {newCompanyLogo && <span className="text-xs text-green-600 flex items-center gap-1"><img src={newCompanyLogo} className="w-5 h-5 object-contain border rounded"/> لوگو دریافت شد</span>}
+                                    </div>
+                                </div>
+                                <button type="button" onClick={handleAddCompany} className="bg-green-600 text-white w-10 h-10 rounded-lg flex items-center justify-center hover:bg-green-700 shadow-md"><Plus size={20} /></button>
+                            </div>
+                        </div>
+
+                        <div className="space-y-2">
+                            <label className="text-xs font-bold text-gray-600">لیست شرکت‌های موجود</label>
+                            <div className="space-y-2 max-h-60 overflow-y-auto">
+                                {settings.companies?.map(c => (
+                                    <div key={c.id} className="flex justify-between items-center bg-white border border-gray-200 p-2 rounded-lg text-sm shadow-sm">
+                                        <div className="flex items-center gap-3">
+                                            <div className="w-10 h-10 border rounded bg-gray-50 flex items-center justify-center overflow-hidden shrink-0">
+                                                {c.logo ? <img src={c.logo} alt="Logo" className="w-full h-full object-contain" /> : <Building size={20} className="text-gray-300"/>}
+                                            </div>
+                                            <span className="font-bold text-gray-700">{c.name}</span>
+                                        </div>
+                                        <button type="button" onClick={() => handleRemoveCompany(c.id)} className="text-red-500 hover:text-red-700 p-1.5 hover:bg-red-50 rounded transition-colors"><Trash2 size={16} /></button>
+                                    </div>
+                                ))}
+                                {(!settings.companies || settings.companies.length === 0) && <span className="text-xs text-gray-400 block text-center py-2">لیست خالی است</span>}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
                 <div className="space-y-4 border-t pt-6"><div className="flex items-center gap-2 mb-2"><Landmark className="text-teal-600" size={20} /><h3 className="font-bold text-gray-800">مدیریت نام بانک‌ها</h3></div><div className="bg-gray-50 p-4 rounded-xl border border-gray-200 space-y-4"><div className="space-y-2"><label className="text-xs font-bold text-gray-600">افزودن نام بانک جدید</label><div className="flex gap-2"><input className="flex-1 border rounded-lg p-2 text-sm" placeholder="نام بانک..." value={newBank} onChange={e => setNewBank(e.target.value)} /><button type="button" onClick={handleAddBank} className="bg-teal-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-teal-700"><Plus size={16} /></button></div></div><div className="space-y-2"><label className="text-xs font-bold text-gray-600">لیست بانک‌های موجود</label><div className="space-y-1 max-h-40 overflow-y-auto">{settings.bankNames.map(b => (<div key={b} className="flex justify-between items-center bg-white border border-gray-200 p-2 rounded text-sm"><span>{b}</span><button type="button" onClick={() => handleRemoveBank(b)} className="text-red-500 hover:text-red-700"><Trash2 size={14} /></button></div>))}{settings.bankNames.length === 0 && <span className="text-xs text-gray-400">لیست خالی است</span>}</div></div></div></div>
                 <div className="space-y-4 border-t pt-6"><div className="flex items-center gap-2 mb-2"><Package className="text-amber-600" size={20} /><h3 className="font-bold text-gray-800">مدیریت گروه‌های کالایی (بازرگانی)</h3></div><div className="bg-gray-50 p-4 rounded-xl border border-gray-200 space-y-4"><div className="space-y-2"><label className="text-xs font-bold text-gray-600">افزودن گروه کالایی جدید</label><div className="flex gap-2"><input className="flex-1 border rounded-lg p-2 text-sm" placeholder="مثال: مواد اولیه، قطعات یدکی..." value={newCommodity} onChange={e => setNewCommodity(e.target.value)} /><button type="button" onClick={handleAddCommodity} className="bg-amber-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-amber-700"><Plus size={16} /></button></div></div><div className="space-y-2"><label className="text-xs font-bold text-gray-600">لیست گروه‌های موجود</label><div className="space-y-1 max-h-40 overflow-y-auto">{settings.commodityGroups.map(c => (<div key={c} className="flex justify-between items-center bg-white border border-gray-200 p-2 rounded text-sm"><span>{c}</span><button type="button" onClick={() => handleRemoveCommodity(c)} className="text-red-500 hover:text-red-700"><Trash2 size={14} /></button></div>))}{(!settings.commodityGroups || settings.commodityGroups.length === 0) && <span className="text-xs text-gray-400">لیست خالی است</span>}</div></div></div></div>
                 

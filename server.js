@@ -1,4 +1,6 @@
 
+
+
 import express from 'express';
 import cors from 'cors';
 import fs from 'fs';
@@ -42,6 +44,7 @@ const getDb = () => {
             settings: {
                 currentTrackingNumber: 1602,
                 companyNames: [],
+                companies: [], // New structure
                 defaultCompany: '',
                 bankNames: [],
                 commodityGroups: [],
@@ -464,7 +467,7 @@ const processUpdate = async (update) => {
             userFlows[chatId] = { step: 'COMPANY', data: {} };
             
             // Companies Keyboard
-            const companies = db.settings.companyNames || [];
+            const companies = db.settings.companies?.map(c => c.name) || db.settings.companyNames || [];
             let keyboard = [];
             if (companies.length > 0) {
                 // Chunk into rows of 2
@@ -532,12 +535,16 @@ const processUpdate = async (update) => {
             // Update DB
             db.orders[orderIndex].status = nextStatus;
             db.orders[orderIndex].updatedAt = Date.now(); 
-            if (user.role === 'financial' || (user.role === 'admin' && isFinancialStep)) db.orders[orderIndex].approverFinancial = user.fullName;
-            if (user.role === 'manager' || (user.role === 'admin' && isManagerStep)) db.orders[orderIndex].approverManager = user.fullName;
-            if (user.role === 'ceo' || (user.role === 'admin' && isCeoStep)) db.orders[orderIndex].approverCeo = user.fullName;
+            
+            // FORCE FULL NAME USAGE (Fallback to username if full name missing)
+            const signerName = user.fullName || user.username;
+
+            if (user.role === 'financial' || (user.role === 'admin' && isFinancialStep)) db.orders[orderIndex].approverFinancial = signerName;
+            if (user.role === 'manager' || (user.role === 'admin' && isManagerStep)) db.orders[orderIndex].approverManager = signerName;
+            if (user.role === 'ceo' || (user.role === 'admin' && isCeoStep)) db.orders[orderIndex].approverCeo = signerName;
             
             if (nextStatus === 'رد شده') {
-                db.orders[orderIndex].rejectedBy = user.fullName;
+                db.orders[orderIndex].rejectedBy = signerName;
                 db.orders[orderIndex].rejectionReason = 'رد شده توسط ربات تلگرام';
             }
             saveDb(db);
