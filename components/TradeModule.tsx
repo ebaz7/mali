@@ -391,7 +391,62 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
         const totalItemsValue = selectedRecord.items.reduce((sum, item) => sum + item.totalPrice, 0);
 
         return (
-            <div className="space-y-6 animate-fade-in bg-white rounded-2xl shadow-sm border border-gray-200 min-h-screen flex flex-col">
+            <div className="space-y-6 animate-fade-in bg-white rounded-2xl shadow-sm border border-gray-200 min-h-screen flex flex-col relative">
+                
+                {/* MODAL FOR STAGE EDITING MOVED HERE */}
+                {editingStage && (
+                    <div className="fixed inset-0 bg-black/50 z-[100] flex items-center justify-center p-4">
+                        <div className="bg-white rounded-xl shadow-xl w-full max-w-lg overflow-hidden max-h-[90vh] overflow-y-auto">
+                            <div className="flex justify-between items-center p-4 border-b">
+                                <h3 className="font-bold text-lg">{editingStage}</h3>
+                                <button onClick={() => setEditingStage(null)}><X size={20} className="text-gray-400"/></button>
+                            </div>
+                            <div className="p-4 space-y-4">
+                                <div><label className="text-sm font-bold block mb-1">وضعیت</label><div className="flex items-center gap-2"><input type="checkbox" className="w-5 h-5" checked={stageFormData.isCompleted || false} onChange={e => setStageFormData({...stageFormData, isCompleted: e.target.checked})} /><span className="text-sm">تکمیل شده</span></div></div>
+                                
+                                <div><label className="text-sm font-bold block mb-1">یادداشت / توضیحات</label><textarea className="w-full border rounded-lg p-2 text-sm h-24" value={stageFormData.description || ''} onChange={e => setStageFormData({...stageFormData, description: e.target.value})} placeholder="توضیحات مربوط به این مرحله..." /></div>
+                                
+                                <div className="grid grid-cols-2 gap-4 bg-gray-50 p-3 rounded-lg border">
+                                    <div>
+                                        <label className="text-xs font-bold block mb-1">هزینه (ریال)</label>
+                                        <input className="w-full border rounded p-2 text-sm dir-ltr" value={formatNumberString(stageFormData.costRial?.toString())} onChange={e => setStageFormData({...stageFormData, costRial: deformatNumberString(e.target.value)})} placeholder="0" />
+                                    </div>
+                                    <div>
+                                         <label className="text-xs font-bold block mb-1">هزینه ارزی</label>
+                                         <div className="flex">
+                                             <input className="w-full border rounded-r p-2 text-sm dir-ltr" value={stageFormData.costCurrency || ''} onChange={e => setStageFormData({...stageFormData, costCurrency: Number(e.target.value)})} placeholder="0" />
+                                             <select className="border border-l-0 rounded-l p-1 text-xs bg-gray-100" value={stageFormData.currencyType} onChange={e => setStageFormData({...stageFormData, currencyType: e.target.value})}>{CURRENCIES.map(c => <option key={c.code} value={c.code}>{c.code}</option>)}</select>
+                                         </div>
+                                    </div>
+                                </div>
+
+                                {editingStage === TradeStage.ALLOCATION_QUEUE && (
+                                    <div className="grid grid-cols-2 gap-2 bg-amber-50 p-3 rounded-lg border border-amber-100">
+                                        <div><label className="text-xs font-bold block mb-1">تاریخ ورود به صف</label><input className="w-full border rounded p-2 text-sm dir-ltr text-right" placeholder="YYYY/MM/DD" value={stageFormData.queueDate || ''} onChange={e => setStageFormData({...stageFormData, queueDate: e.target.value})} /></div>
+                                        <div><label className="text-xs font-bold block mb-1">نرخ ارز (تخمینی)</label><input className="w-full border rounded p-2 text-sm dir-ltr" value={stageFormData.currencyRate || ''} onChange={e => setStageFormData({...stageFormData, currencyRate: Number(e.target.value)})} /></div>
+                                    </div>
+                                )}
+
+                                {editingStage === TradeStage.ALLOCATION_APPROVED && (
+                                    <div className="grid grid-cols-2 gap-2 bg-green-50 p-3 rounded-lg border border-green-100">
+                                        <div><label className="text-xs font-bold block mb-1">تاریخ تخصیص</label><input className="w-full border rounded p-2 text-sm dir-ltr text-right" placeholder="YYYY/MM/DD" value={stageFormData.allocationDate || ''} onChange={e => setStageFormData({...stageFormData, allocationDate: e.target.value})} /></div>
+                                        <div><label className="text-xs font-bold block mb-1">مهلت انقضا</label><input className="w-full border rounded p-2 text-sm dir-ltr text-right" placeholder="YYYY/MM/DD" value={stageFormData.allocationExpiry || ''} onChange={e => setStageFormData({...stageFormData, allocationExpiry: e.target.value})} /></div>
+                                        <div className="col-span-2"><label className="text-xs font-bold block mb-1">کد تخصیص (فیش)</label><input className="w-full border rounded p-2 text-sm" value={stageFormData.allocationCode || ''} onChange={e => setStageFormData({...stageFormData, allocationCode: e.target.value})} /></div>
+                                    </div>
+                                )}
+
+                                <div className="border-t pt-2">
+                                    <label className="text-sm font-bold block mb-2 flex items-center gap-2"><Paperclip size={16}/> فایل‌های ضمیمه</label>
+                                    <div className="space-y-2 mb-2">{(stageFormData.attachments || []).map((att, idx) => (<div key={idx} className="flex justify-between items-center bg-gray-50 p-2 rounded text-xs border"><a href={att.url} target="_blank" className="text-blue-600 truncate max-w-[200px] hover:underline">{att.fileName}</a><button onClick={() => removeStageAttachment(idx)} className="text-red-500"><X size={14}/></button></div>))}</div>
+                                    <button onClick={() => fileInputRef.current?.click()} disabled={uploadingStageFile} className="bg-gray-100 text-gray-700 px-3 py-1.5 rounded text-xs hover:bg-gray-200 border w-full">{uploadingStageFile ? 'در حال آپلود...' : 'افزودن فایل جدید'}</button>
+                                    <input type="file" ref={fileInputRef} className="hidden" onChange={handleStageFileChange} />
+                                </div>
+                            </div>
+                            <div className="p-4 border-t bg-gray-50 flex justify-end gap-2"><button onClick={() => setEditingStage(null)} className="px-4 py-2 text-sm text-gray-600">انصراف</button><button onClick={handleSaveStage} className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg">ذخیره تغییرات</button></div>
+                        </div>
+                    </div>
+                )}
+
                 <div className="bg-gradient-to-l from-blue-600 to-blue-800 text-white p-6 rounded-t-2xl shadow-lg relative">
                     <div className="flex justify-between items-start">
                         <div>
@@ -737,64 +792,6 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
 
     return (
         <div className="space-y-6 animate-fade-in min-w-0 pb-20">
-            {/* MODAL FOR STAGE EDITING */}
-            {editingStage && (
-                <div className="fixed inset-0 bg-black/50 z-[100] flex items-center justify-center p-4">
-                    <div className="bg-white rounded-xl shadow-xl w-full max-w-lg overflow-hidden max-h-[90vh] overflow-y-auto">
-                        <div className="flex justify-between items-center p-4 border-b">
-                            <h3 className="font-bold text-lg">{editingStage}</h3>
-                            <button onClick={() => setEditingStage(null)}><X size={20} className="text-gray-400"/></button>
-                        </div>
-                        <div className="p-4 space-y-4">
-                            <div><label className="text-sm font-bold block mb-1">وضعیت</label><div className="flex items-center gap-2"><input type="checkbox" className="w-5 h-5" checked={stageFormData.isCompleted || false} onChange={e => setStageFormData({...stageFormData, isCompleted: e.target.checked})} /><span className="text-sm">تکمیل شده</span></div></div>
-                            
-                            {/* NOTE: Description and File Attachments are visible for ALL stages */}
-                            <div><label className="text-sm font-bold block mb-1">یادداشت / توضیحات</label><textarea className="w-full border rounded-lg p-2 text-sm h-24" value={stageFormData.description || ''} onChange={e => setStageFormData({...stageFormData, description: e.target.value})} placeholder="توضیحات مربوط به این مرحله..." /></div>
-                            
-                            {/* GENERAL COST INPUTS */}
-                            <div className="grid grid-cols-2 gap-4 bg-gray-50 p-3 rounded-lg border">
-                                <div>
-                                    <label className="text-xs font-bold block mb-1">هزینه (ریال)</label>
-                                    <input className="w-full border rounded p-2 text-sm dir-ltr" value={formatNumberString(stageFormData.costRial?.toString())} onChange={e => setStageFormData({...stageFormData, costRial: deformatNumberString(e.target.value)})} placeholder="0" />
-                                </div>
-                                <div>
-                                     <label className="text-xs font-bold block mb-1">هزینه ارزی</label>
-                                     <div className="flex">
-                                         <input className="w-full border rounded-r p-2 text-sm dir-ltr" value={stageFormData.costCurrency || ''} onChange={e => setStageFormData({...stageFormData, costCurrency: Number(e.target.value)})} placeholder="0" />
-                                         <select className="border border-l-0 rounded-l p-1 text-xs bg-gray-100" value={stageFormData.currencyType} onChange={e => setStageFormData({...stageFormData, currencyType: e.target.value})}>{CURRENCIES.map(c => <option key={c.code} value={c.code}>{c.code}</option>)}</select>
-                                     </div>
-                                </div>
-                            </div>
-
-                            {/* Specific Fields for Allocation Queue */}
-                            {editingStage === TradeStage.ALLOCATION_QUEUE && (
-                                <div className="grid grid-cols-2 gap-2 bg-amber-50 p-3 rounded-lg border border-amber-100">
-                                    <div><label className="text-xs font-bold block mb-1">تاریخ ورود به صف</label><input className="w-full border rounded p-2 text-sm dir-ltr text-right" placeholder="YYYY/MM/DD" value={stageFormData.queueDate || ''} onChange={e => setStageFormData({...stageFormData, queueDate: e.target.value})} /></div>
-                                    <div><label className="text-xs font-bold block mb-1">نرخ ارز (تخمینی)</label><input className="w-full border rounded p-2 text-sm dir-ltr" value={stageFormData.currencyRate || ''} onChange={e => setStageFormData({...stageFormData, currencyRate: Number(e.target.value)})} /></div>
-                                </div>
-                            )}
-
-                            {/* Specific Fields for Approved Allocation */}
-                            {editingStage === TradeStage.ALLOCATION_APPROVED && (
-                                <div className="grid grid-cols-2 gap-2 bg-green-50 p-3 rounded-lg border border-green-100">
-                                    <div><label className="text-xs font-bold block mb-1">تاریخ تخصیص</label><input className="w-full border rounded p-2 text-sm dir-ltr text-right" placeholder="YYYY/MM/DD" value={stageFormData.allocationDate || ''} onChange={e => setStageFormData({...stageFormData, allocationDate: e.target.value})} /></div>
-                                    <div><label className="text-xs font-bold block mb-1">مهلت انقضا</label><input className="w-full border rounded p-2 text-sm dir-ltr text-right" placeholder="YYYY/MM/DD" value={stageFormData.allocationExpiry || ''} onChange={e => setStageFormData({...stageFormData, allocationExpiry: e.target.value})} /></div>
-                                    <div className="col-span-2"><label className="text-xs font-bold block mb-1">کد تخصیص (فیش)</label><input className="w-full border rounded p-2 text-sm" value={stageFormData.allocationCode || ''} onChange={e => setStageFormData({...stageFormData, allocationCode: e.target.value})} /></div>
-                                </div>
-                            )}
-
-                            <div className="border-t pt-2">
-                                <label className="text-sm font-bold block mb-2 flex items-center gap-2"><Paperclip size={16}/> فایل‌های ضمیمه</label>
-                                <div className="space-y-2 mb-2">{(stageFormData.attachments || []).map((att, idx) => (<div key={idx} className="flex justify-between items-center bg-gray-50 p-2 rounded text-xs border"><a href={att.url} target="_blank" className="text-blue-600 truncate max-w-[200px] hover:underline">{att.fileName}</a><button onClick={() => removeStageAttachment(idx)} className="text-red-500"><X size={14}/></button></div>))}</div>
-                                <button onClick={() => fileInputRef.current?.click()} disabled={uploadingStageFile} className="bg-gray-100 text-gray-700 px-3 py-1.5 rounded text-xs hover:bg-gray-200 border w-full">{uploadingStageFile ? 'در حال آپلود...' : 'افزودن فایل جدید'}</button>
-                                <input type="file" ref={fileInputRef} className="hidden" onChange={handleStageFileChange} />
-                            </div>
-                        </div>
-                        <div className="p-4 border-t bg-gray-50 flex justify-end gap-2"><button onClick={() => setEditingStage(null)} className="px-4 py-2 text-sm text-gray-600">انصراف</button><button onClick={handleSaveStage} className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg">ذخیره تغییرات</button></div>
-                    </div>
-                </div>
-            )}
-
             <div className="flex justify-between items-center bg-white p-4 rounded-xl border shadow-sm">
                 <h1 className="text-2xl font-bold text-gray-800">داشبورد بازرگانی</h1>
                 <div className="flex gap-2">
