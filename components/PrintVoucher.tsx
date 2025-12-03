@@ -60,43 +60,26 @@ const PrintVoucher: React.FC<PrintVoucherProps> = ({ order, onClose, settings, o
           <div id="print-wrapper">
             ${content.innerHTML}
           </div>
+          <script>
+            // Wait for everything to load (images, fonts, styles)
+            window.onload = function() {
+                setTimeout(function() {
+                    window.print();
+                    // Optional: remove iframe after print dialog closes (in parent context)
+                }, 1000); // 1 second delay to ensure rendering
+            };
+          </script>
         </body>
       </html>
     `);
     doc.close();
 
-    // Check images loaded before printing to avoid blank spaces
-    const images = iframe.contentWindow?.document.getElementsByTagName('img');
-    let loadedCount = 0;
-    const totalImages = images ? images.length : 0;
-
-    const doPrint = () => {
-        iframe.contentWindow?.focus();
-        iframe.contentWindow?.print();
-        setTimeout(() => {
-             document.body.removeChild(iframe);
-        }, 3000);
-    };
-
-    if (totalImages > 0 && images) {
-        for (let i = 0; i < totalImages; i++) {
-            if (images[i].complete) {
-                loadedCount++;
-            } else {
-                images[i].onload = () => {
-                    loadedCount++;
-                    if (loadedCount === totalImages) setTimeout(doPrint, 500); // Small extra delay
-                };
-                images[i].onerror = () => {
-                    loadedCount++;
-                    if (loadedCount === totalImages) setTimeout(doPrint, 500);
-                };
-            }
+    // Clean up iframe after a delay (enough for user to interact with print dialog)
+    setTimeout(() => {
+        if (document.body.contains(iframe)) {
+            document.body.removeChild(iframe);
         }
-        if (loadedCount === totalImages) setTimeout(doPrint, 500);
-    } else {
-        setTimeout(doPrint, 1000); // Wait for styles
-    }
+    }, 60000); // 1 minute timeout
   };
 
   const handleDownloadImage = async () => {
@@ -114,8 +97,13 @@ const PrintVoucher: React.FC<PrintVoucherProps> = ({ order, onClose, settings, o
             const el = doc.getElementById('print-area');
             if (el) {
                 el.style.direction = 'rtl';
+                // Force standard spacing to prevent scrambling
                 el.style.letterSpacing = 'normal';
-                el.style.fontVariantLigatures = 'no-common-ligatures';
+                const all = el.querySelectorAll('*');
+                all.forEach((node: any) => {
+                    node.style.letterSpacing = '0px';
+                    node.style.fontVariantLigatures = 'none';
+                });
             }
         }
       });
@@ -149,10 +137,16 @@ const PrintVoucher: React.FC<PrintVoucherProps> = ({ order, onClose, settings, o
             const el = doc.getElementById('print-area');
             if (el) {
                 el.style.direction = 'rtl';
-                // Force specific styles to prevent text scrambling
-                el.style.letterSpacing = 'normal';
-                el.style.fontVariantLigatures = 'no-common-ligatures';
-                el.style.fontFeatureSettings = '"liga" 0';
+                // CRITICAL FIX: Reset letter-spacing for ALL elements to prevent Persian text scrambling
+                el.style.letterSpacing = 'normal'; 
+                el.style.fontVariantLigatures = 'none';
+                
+                const allNodes = el.getElementsByTagName('*');
+                for (let i = 0; i < allNodes.length; i++) {
+                    const node = allNodes[i] as HTMLElement;
+                    node.style.letterSpacing = '0px';
+                    node.style.fontVariantLigatures = 'none';
+                }
             }
         }
       });
@@ -270,7 +264,8 @@ const PrintVoucher: React.FC<PrintVoucherProps> = ({ order, onClose, settings, o
                         </div>
                     )}
                     <div>
-                        <h1 className={`${isCompact ? 'text-xl' : 'text-2xl'} font-black text-gray-900 tracking-tight`}>
+                        {/* tracking-normal ensures no letter spacing interference for PDF generation */}
+                        <h1 className={`${isCompact ? 'text-xl' : 'text-2xl'} font-black text-gray-900 tracking-normal`}>
                             {order.payingCompany || 'شرکت بازرگانی'}
                         </h1>
                         <p className="text-xs text-gray-500 font-bold mt-1">سیستم مدیریت مالی و پرداخت</p>
