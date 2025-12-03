@@ -19,7 +19,7 @@ const CURRENCIES = [
 ];
 
 // Report Types
-type ReportType = 'general' | 'allocation_queue' | 'allocated' | 'currency' | 'insurance' | 'shipping' | 'inspection';
+type ReportType = 'general' | 'allocation_queue' | 'allocated' | 'currency' | 'insurance' | 'shipping' | 'inspection' | 'clearance';
 
 const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
     const [records, setRecords] = useState<TradeRecord[]>([]);
@@ -223,14 +223,11 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
             }));
     };
 
-    // Report Filtering
+    // Report Logic
     const getReportData = () => {
         let data = records;
         if (reportFilterCompany) data = data.filter(r => r.company === reportFilterCompany);
         
-        // Internal Company Filter logic (if needed in future)
-        // if (reportFilterInternalCompany) data = data.filter(r => r.sellerName === reportFilterInternalCompany); 
-
         switch (activeReport) {
             case 'allocation_queue':
                 return data.filter(r => !r.stages[TradeStage.ALLOCATION_APPROVED]?.isCompleted && r.stages[TradeStage.ALLOCATION_QUEUE]?.isCompleted);
@@ -238,62 +235,152 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
                 return data.filter(r => r.stages[TradeStage.ALLOCATION_APPROVED]?.isCompleted && !r.stages[TradeStage.CURRENCY_PURCHASE]?.isCompleted);
             case 'currency':
                 return data.filter(r => (r.currencyPurchaseData?.purchasedAmount || 0) > 0);
+            case 'inspection':
+                return data.filter(r => (r.inspectionData?.certificates?.length || 0) > 0);
+            case 'clearance':
+                return data.filter(r => (r.clearanceData?.receipts?.length || 0) > 0);
             default:
                 return data;
         }
     };
 
+    const handlePrintReport = () => {
+        window.print();
+    };
+
     if (viewMode === 'reports') {
         const reportData = getReportData();
         return (
-             <div className="space-y-6 animate-fade-in bg-white rounded-2xl shadow-sm border border-gray-200 min-h-screen flex flex-col">
-                <div className="p-6 border-b flex justify-between items-center bg-gray-50">
-                     <h2 className="text-xl font-bold flex items-center gap-2"><PieChart className="text-blue-600"/> گزارشات جامع بازرگانی</h2>
-                     <button onClick={() => setViewMode('dashboard')} className="px-4 py-2 border rounded-lg hover:bg-white transition-colors">بازگشت به داشبورد</button>
-                </div>
-                <div className="p-6 space-y-4">
-                    <div className="flex flex-wrap gap-4 items-center bg-white p-4 rounded-xl border border-gray-200">
-                        <select className="border rounded-lg p-2 text-sm" value={reportFilterCompany} onChange={e => setReportFilterCompany(e.target.value)}>
+             <div className="flex h-[calc(100vh-80px)] bg-gray-50 animate-fade-in overflow-hidden">
+                {/* Reports Sidebar */}
+                <aside className="w-64 bg-white border-l border-gray-200 flex-shrink-0 flex flex-col no-print">
+                    <div className="p-4 border-b flex items-center gap-2 text-gray-700 bg-gray-50">
+                        <PieChart size={20}/>
+                        <span className="font-bold">انواع گزارشات</span>
+                    </div>
+                    <div className="flex-1 overflow-y-auto p-2 space-y-1">
+                        {[
+                            { id: 'general', label: 'گزارش جامع پرونده‌ها' },
+                            { id: 'allocation_queue', label: 'پرونده‌های در صف تخصیص' },
+                            { id: 'allocated', label: 'پرونده‌های تخصیص یافته' },
+                            { id: 'currency', label: 'گزارش خرید ارز' },
+                            { id: 'insurance', label: 'گزارش بیمه باربری' },
+                            { id: 'shipping', label: 'گزارش حمل و نقل' },
+                            { id: 'inspection', label: 'گزارش بازرسی' },
+                            { id: 'clearance', label: 'گزارش ترخیصیه و قبض انبار' },
+                        ].map(item => (
+                            <button
+                                key={item.id}
+                                onClick={() => setActiveReport(item.id as ReportType)}
+                                className={`w-full text-right px-4 py-3 rounded-lg text-sm transition-colors ${activeReport === item.id ? 'bg-blue-50 text-blue-700 font-bold' : 'text-gray-600 hover:bg-gray-50'}`}
+                            >
+                                {item.label}
+                            </button>
+                        ))}
+                    </div>
+                    <div className="p-4 border-t space-y-2">
+                        <label className="text-xs font-bold text-gray-500 block">فیلتر شرکت</label>
+                        <select className="w-full border rounded-lg p-2 text-sm" value={reportFilterCompany} onChange={e => setReportFilterCompany(e.target.value)}>
                             <option value="">همه شرکت‌ها</option>
                             {availableCompanies.map(c => <option key={c} value={c}>{c}</option>)}
                         </select>
-                        <div className="flex gap-2">
-                             <button onClick={() => setActiveReport('general')} className={`px-4 py-2 rounded-lg text-sm ${activeReport === 'general' ? 'bg-blue-600 text-white' : 'bg-gray-100'}`}>کلی</button>
-                             <button onClick={() => setActiveReport('allocation_queue')} className={`px-4 py-2 rounded-lg text-sm ${activeReport === 'allocation_queue' ? 'bg-blue-600 text-white' : 'bg-gray-100'}`}>در صف تخصیص</button>
-                             <button onClick={() => setActiveReport('allocated')} className={`px-4 py-2 rounded-lg text-sm ${activeReport === 'allocated' ? 'bg-blue-600 text-white' : 'bg-gray-100'}`}>تخصیص یافته</button>
-                             <button onClick={() => setActiveReport('currency')} className={`px-4 py-2 rounded-lg text-sm ${activeReport === 'currency' ? 'bg-blue-600 text-white' : 'bg-gray-100'}`}>خرید ارز</button>
+                        <button onClick={() => setViewMode('dashboard')} className="w-full mt-2 border border-gray-300 text-gray-600 px-4 py-2 rounded-lg text-sm hover:bg-gray-100">بازگشت به داشبورد</button>
+                    </div>
+                </aside>
+
+                {/* Main Report Content */}
+                <main className="flex-1 flex flex-col min-w-0 bg-gray-50">
+                    <div className="bg-white p-4 border-b flex justify-between items-center no-print shadow-sm">
+                        <div>
+                             <h2 className="text-lg font-bold text-gray-800">
+                                 {activeReport === 'general' && 'گزارش جامع وضعیت پرونده‌ها'}
+                                 {activeReport === 'allocation_queue' && 'لیست پرونده‌های در انتظار تخصیص ارز'}
+                                 {activeReport === 'allocated' && 'لیست پرونده‌های دارای تخصیص معتبر'}
+                                 {activeReport === 'currency' && 'گزارش خرید و تحویل ارز'}
+                                 {activeReport === 'clearance' && 'گزارش قبض انبار و ترخیصیه'}
+                                 {activeReport === 'inspection' && 'گزارش گواهی‌های بازرسی'}
+                             </h2>
+                             <p className="text-xs text-gray-500 mt-1">تعداد رکورد: {reportData.length}</p>
                         </div>
+                        <button onClick={handlePrintReport} className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm flex items-center gap-2 hover:bg-blue-700 shadow"><Printer size={16}/> چاپ / خروجی PDF</button>
                     </div>
 
-                    <div className="overflow-x-auto rounded-xl border border-gray-200">
-                        <table className="w-full text-sm text-right">
-                            <thead className="bg-gray-100 text-gray-700">
-                                <tr>
-                                    <th className="p-4">پرونده</th>
-                                    <th className="p-4">شرکت</th>
-                                    <th className="p-4">کالا</th>
-                                    {activeReport === 'allocation_queue' && <th className="p-4">تاریخ صف</th>}
-                                    {activeReport === 'allocated' && <th className="p-4">کد تخصیص / انقضا</th>}
-                                    {activeReport === 'currency' && <th className="p-4">ارز خریداری شده</th>}
-                                    <th className="p-4">وضعیت کلی</th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-gray-100">
-                                {reportData.length === 0 ? <tr><td colSpan={6} className="p-8 text-center text-gray-400">داده‌ای یافت نشد</td></tr> : reportData.map(r => (
-                                    <tr key={r.id} className="hover:bg-gray-50">
-                                        <td className="p-4 font-bold text-blue-600">{r.fileNumber}</td>
-                                        <td className="p-4">{r.company}</td>
-                                        <td className="p-4">{r.goodsName}</td>
-                                        {activeReport === 'allocation_queue' && <td className="p-4 dir-ltr text-right">{r.stages[TradeStage.ALLOCATION_QUEUE]?.queueDate || '-'}</td>}
-                                        {activeReport === 'allocated' && <td className="p-4"><div className="font-mono">{r.stages[TradeStage.ALLOCATION_APPROVED]?.allocationCode}</div><div className="text-xs text-red-500">{r.stages[TradeStage.ALLOCATION_APPROVED]?.allocationExpiry}</div></td>}
-                                        {activeReport === 'currency' && <td className="p-4 font-mono dir-ltr">{formatCurrency(r.currencyPurchaseData?.purchasedAmount || 0)} {r.mainCurrency}</td>}
-                                        <td className="p-4"><span className="bg-gray-100 px-2 py-1 rounded text-xs">{r.status}</span></td>
+                    <div className="flex-1 overflow-auto p-4 md:p-8" id="print-area">
+                        <div className="bg-white border rounded-xl shadow-sm overflow-hidden">
+                             <table className="w-full text-sm text-right">
+                                <thead className="bg-gray-100 text-gray-700 border-b">
+                                    <tr>
+                                        <th className="p-3">شماره پرونده</th>
+                                        <th className="p-3">شرکت</th>
+                                        <th className="p-3">کالا</th>
+                                        {activeReport === 'allocation_queue' && <th className="p-3">تاریخ صف</th>}
+                                        {activeReport === 'allocated' && <th className="p-3">کد تخصیص / انقضا</th>}
+                                        {activeReport === 'currency' && <th className="p-3">ارز خریداری شده</th>}
+                                        {activeReport === 'currency' && <th className="p-3">ارز تحویل شده</th>}
+                                        {activeReport === 'clearance' && <th className="p-3">شماره قبض انبار / تاریخ</th>}
+                                        {activeReport === 'inspection' && <th className="p-3">شماره گواهی بازرسی</th>}
+                                        <th className="p-3">وضعیت فعلی</th>
                                     </tr>
-                                ))}
-                            </tbody>
-                        </table>
+                                </thead>
+                                <tbody className="divide-y divide-gray-100">
+                                    {reportData.length === 0 ? (
+                                        <tr><td colSpan={8} className="p-8 text-center text-gray-400">هیچ داده‌ای مطابق فیلترها یافت نشد.</td></tr>
+                                    ) : (
+                                        reportData.map(r => (
+                                            <tr key={r.id} className="hover:bg-gray-50 print:break-inside-avoid">
+                                                <td className="p-3 font-bold text-blue-600">{r.fileNumber}</td>
+                                                <td className="p-3">{r.company}</td>
+                                                <td className="p-3">{r.goodsName}</td>
+                                                
+                                                {activeReport === 'allocation_queue' && (
+                                                    <td className="p-3 font-mono dir-ltr text-right">{r.stages[TradeStage.ALLOCATION_QUEUE]?.queueDate || '-'}</td>
+                                                )}
+                                                
+                                                {activeReport === 'allocated' && (
+                                                    <td className="p-3">
+                                                        <div className="font-mono font-bold">{r.stages[TradeStage.ALLOCATION_APPROVED]?.allocationCode || '-'}</div>
+                                                        <div className="text-xs text-red-500">{r.stages[TradeStage.ALLOCATION_APPROVED]?.allocationExpiry}</div>
+                                                    </td>
+                                                )}
+
+                                                {activeReport === 'currency' && (
+                                                    <>
+                                                        <td className="p-3 font-mono dir-ltr text-right text-blue-600 font-bold">{formatCurrency(r.currencyPurchaseData?.purchasedAmount || 0)} {r.mainCurrency}</td>
+                                                        <td className="p-3 font-mono dir-ltr text-right text-green-600">{formatCurrency(r.currencyPurchaseData?.deliveredAmount || 0)} {r.mainCurrency}</td>
+                                                    </>
+                                                )}
+
+                                                {activeReport === 'clearance' && (
+                                                    <td className="p-3">
+                                                        {(r.clearanceData?.receipts || []).map((receipt, i) => (
+                                                            <div key={i} className="text-xs border-b last:border-0 pb-1 mb-1">
+                                                                <span className="font-bold">{receipt.number}</span>
+                                                                <span className="text-gray-500 mx-1">({receipt.issueDate})</span>
+                                                            </div>
+                                                        ))}
+                                                        {(r.clearanceData?.receipts || []).length === 0 && '-'}
+                                                    </td>
+                                                )}
+
+                                                {activeReport === 'inspection' && (
+                                                    <td className="p-3">
+                                                        {(r.inspectionData?.certificates || []).map((c, i) => (
+                                                            <div key={i} className="text-xs font-mono">{c.certificateNumber}</div>
+                                                        ))}
+                                                    </td>
+                                                )}
+
+                                                <td className="p-3">
+                                                    <span className="inline-block px-2 py-1 rounded text-xs bg-gray-100 text-gray-600">{r.status}</span>
+                                                </td>
+                                            </tr>
+                                        ))
+                                    )}
+                                </tbody>
+                             </table>
+                        </div>
                     </div>
-                </div>
+                </main>
              </div>
         );
     }
