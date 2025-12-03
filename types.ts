@@ -322,6 +322,20 @@ export interface GreenLeafData {
     roadTolls: GreenLeafRoadToll[];
 }
 
+// --- INTERNAL SHIPPING TYPES ---
+export interface ShippingPayment {
+    id: string;
+    part: string;
+    amount: number;
+    date: string;
+    bank: string;
+    description?: string;
+}
+
+export interface InternalShippingData {
+    payments: ShippingPayment[];
+}
+
 export interface CurrencyPayment {
     id: string;
     date: string;
@@ -474,6 +488,9 @@ export interface TradeRecord {
 
     // Green Leaf Data (New)
     greenLeafData?: GreenLeafData;
+    
+    // Internal Shipping Data (New)
+    internalShippingData?: InternalShippingData;
     
     // Currency Purchase Details
     currencyPurchaseData?: CurrencyPurchaseData;

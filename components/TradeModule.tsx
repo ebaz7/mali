@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { User, TradeRecord, TradeStage, TradeItem, SystemSettings, InsuranceEndorsement, CurrencyPurchaseData, TradeTransaction, CurrencyTranche, TradeStageData, ShippingDocument, ShippingDocType, DocStatus, InvoiceItem, InspectionData, InspectionPayment, InspectionCertificate, ClearanceData, WarehouseReceipt, ClearancePayment, GreenLeafData, GreenLeafCustomsDuty, GreenLeafGuarantee, GreenLeafTax, GreenLeafRoadToll } from '../types';
+import { User, TradeRecord, TradeStage, TradeItem, SystemSettings, InsuranceEndorsement, CurrencyPurchaseData, TradeTransaction, CurrencyTranche, TradeStageData, ShippingDocument, ShippingDocType, DocStatus, InvoiceItem, InspectionData, InspectionPayment, InspectionCertificate, ClearanceData, WarehouseReceipt, ClearancePayment, GreenLeafData, GreenLeafCustomsDuty, GreenLeafGuarantee, GreenLeafTax, GreenLeafRoadToll, InternalShippingData, ShippingPayment } from '../types';
 import { getTradeRecords, saveTradeRecord, updateTradeRecord, deleteTradeRecord, getSettings, uploadFile } from '../services/storageService';
 import { generateUUID, formatCurrency, formatNumberString, deformatNumberString, parsePersianDate, formatDate, calculateDaysDiff } from '../constants';
 import { Container, Plus, Search, CheckCircle2, Save, Trash2, X, Package, ArrowRight, History, Banknote, Coins, Wallet, FileSpreadsheet, Shield, LayoutDashboard, Printer, FileDown, Paperclip, Building2, FolderOpen, Home, Calculator, FileText, Microscope, ListFilter, Warehouse, Calendar, PieChart, BarChart, Clock, Leaf, Scale, ShieldCheck, Percent, Truck, CheckSquare, Square, ToggleLeft, ToggleRight, DollarSign } from 'lucide-react';
@@ -47,7 +47,7 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
     const [newMainCurrency, setNewMainCurrency] = useState('EUR');
     const [newRecordCompany, setNewRecordCompany] = useState('');
     
-    const [activeTab, setActiveTab] = useState<'timeline' | 'proforma' | 'insurance' | 'currency_purchase' | 'shipping_docs' | 'inspection' | 'clearance_docs' | 'green_leaf'>('timeline');
+    const [activeTab, setActiveTab] = useState<'timeline' | 'proforma' | 'insurance' | 'currency_purchase' | 'shipping_docs' | 'inspection' | 'clearance_docs' | 'green_leaf' | 'internal_shipping'>('timeline');
     
     // Stage Detail Modal State
     const [editingStage, setEditingStage] = useState<TradeStage | null>(null);
@@ -80,6 +80,10 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
     const [selectedDutyForGuarantee, setSelectedDutyForGuarantee] = useState<string>(''); // ID of the duty
     const [newTax, setNewTax] = useState<Partial<GreenLeafTax>>({ part: '', amount: 0, bank: '', date: '' });
     const [newRoadToll, setNewRoadToll] = useState<Partial<GreenLeafRoadToll>>({ part: '', amount: 0, bank: '', date: '' });
+
+    // Internal Shipping State
+    const [internalShippingForm, setInternalShippingForm] = useState<InternalShippingData>({ payments: [] });
+    const [newShippingPayment, setNewShippingPayment] = useState<Partial<ShippingPayment>>({ part: '', amount: 0, date: '', bank: '', description: '' });
 
     // License Transactions State
     const [newLicenseTx, setNewLicenseTx] = useState<Partial<TradeTransaction>>({ amount: 0, bank: '', date: '', description: 'هزینه ثبت سفارش' });
@@ -131,6 +135,8 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
 
             setGreenLeafForm(selectedRecord.greenLeafData || { duties: [], guarantees: [], taxes: [], roadTolls: [] });
             
+            setInternalShippingForm(selectedRecord.internalShippingData || { payments: [] });
+
             const curData = selectedRecord.currencyPurchaseData || { payments: [], purchasedAmount: 0, purchasedCurrencyType: selectedRecord.mainCurrency || 'EUR', tranches: [], isDelivered: false, deliveredAmount: 0 };
             if (!curData.tranches) curData.tranches = [];
             setCurrencyForm(curData as CurrencyPurchaseData);
@@ -158,6 +164,7 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
             setNewGuaranteeDetails({ guaranteeNumber: '', chequeNumber: '', chequeBank: '', chequeDate: '', cashAmount: 0, cashBank: '', cashDate: '', chequeAmount: 0 });
             setNewTax({ part: '', amount: 0, bank: '', date: '' });
             setNewRoadToll({ part: '', amount: 0, bank: '', date: '' });
+            setNewShippingPayment({ part: '', amount: 0, date: '', bank: '', description: '' });
             setShippingDocForm({ status: 'Draft', documentNumber: '', documentDate: '', attachments: [], currency: selectedRecord.mainCurrency || 'EUR', invoiceItems: [], freightCost: 0 });
             setNewInvoiceItem({ name: '', weight: 0, unitPrice: 0, totalPrice: 0 });
         }
@@ -359,6 +366,47 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
         await updateGreenLeafRecord({ ...greenLeafForm, roadTolls: updatedTolls });
     };
 
+    // Internal Shipping Handlers
+    const handleAddShippingPayment = async () => {
+        if (!selectedRecord || !newShippingPayment.amount) return;
+        const payment: ShippingPayment = {
+            id: generateUUID(),
+            part: newShippingPayment.part || '',
+            amount: Number(newShippingPayment.amount),
+            date: newShippingPayment.date || '',
+            bank: newShippingPayment.bank || '',
+            description: newShippingPayment.description || ''
+        };
+        const updatedPayments = [...(internalShippingForm.payments || []), payment];
+        const updatedData = { ...internalShippingForm, payments: updatedPayments };
+        setInternalShippingForm(updatedData);
+        setNewShippingPayment({ part: '', amount: 0, date: '', bank: '', description: '' });
+        
+        const updatedRecord = { ...selectedRecord, internalShippingData: updatedData };
+        if (!updatedRecord.stages[TradeStage.INTERNAL_SHIPPING]) updatedRecord.stages[TradeStage.INTERNAL_SHIPPING] = getStageData(updatedRecord, TradeStage.INTERNAL_SHIPPING);
+        
+        updatedRecord.stages[TradeStage.INTERNAL_SHIPPING].costRial = updatedPayments.reduce((acc, p) => acc + p.amount, 0);
+        updatedRecord.stages[TradeStage.INTERNAL_SHIPPING].isCompleted = updatedPayments.length > 0;
+        
+        await updateTradeRecord(updatedRecord);
+        setSelectedRecord(updatedRecord);
+    };
+
+    const handleDeleteShippingPayment = async (id: string) => {
+        if (!selectedRecord) return;
+        const updatedPayments = (internalShippingForm.payments || []).filter(p => p.id !== id);
+        const updatedData = { ...internalShippingForm, payments: updatedPayments };
+        setInternalShippingForm(updatedData);
+        
+        const updatedRecord = { ...selectedRecord, internalShippingData: updatedData };
+        if (!updatedRecord.stages[TradeStage.INTERNAL_SHIPPING]) updatedRecord.stages[TradeStage.INTERNAL_SHIPPING] = getStageData(updatedRecord, TradeStage.INTERNAL_SHIPPING);
+        
+        updatedRecord.stages[TradeStage.INTERNAL_SHIPPING].costRial = updatedPayments.reduce((acc, p) => acc + p.amount, 0);
+        
+        await updateTradeRecord(updatedRecord);
+        setSelectedRecord(updatedRecord);
+    };
+
 
     // Currency Handlers
     const handleAddCurrencyTranche = async () => { if (!selectedRecord || !newCurrencyTranche.amount) return; const tranche: CurrencyTranche = { id: generateUUID(), date: newCurrencyTranche.date || '', amount: Number(newCurrencyTranche.amount), currencyType: newCurrencyTranche.currencyType || selectedRecord.mainCurrency || 'EUR', brokerName: newCurrencyTranche.brokerName || '', exchangeName: newCurrencyTranche.exchangeName || '', rate: Number(newCurrencyTranche.rate) || 0, isDelivered: newCurrencyTranche.isDelivered, deliveryDate: newCurrencyTranche.deliveryDate }; const currentTranches = currencyForm.tranches || []; const updatedTranches = [...currentTranches, tranche]; const totalPurchased = updatedTranches.reduce((acc, t) => acc + t.amount, 0); const totalDelivered = updatedTranches.filter(t => t.isDelivered).reduce((acc, t) => acc + t.amount, 0); const updatedForm = { ...currencyForm, tranches: updatedTranches, purchasedAmount: totalPurchased, deliveredAmount: totalDelivered }; setCurrencyForm(updatedForm); const updatedRecord = { ...selectedRecord, currencyPurchaseData: updatedForm }; await updateTradeRecord(updatedRecord); setSelectedRecord(updatedRecord); setNewCurrencyTranche({ amount: 0, currencyType: selectedRecord.mainCurrency || 'EUR', date: '', exchangeName: '', brokerName: '', isDelivered: false }); };
@@ -508,15 +556,16 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
                 {/* Header */}
                 <div className="bg-white border-b p-4 flex justify-between items-center shadow-sm z-10">
                     <div className="flex items-center gap-4"><button onClick={() => setViewMode('dashboard')} className="p-2 hover:bg-gray-100 rounded-full"><ArrowRight /></button><div><h1 className="text-xl font-bold flex items-center gap-2">{selectedRecord.goodsName}<span className="text-sm font-normal text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">{selectedRecord.fileNumber}</span></h1><p className="text-xs text-gray-500">{selectedRecord.company} | {selectedRecord.sellerName}</p></div></div>
-                    <div className="flex gap-2">
-                        <button onClick={() => setActiveTab('timeline')} className={`px-4 py-2 rounded-lg text-sm font-bold transition-colors ${activeTab === 'timeline' ? 'bg-blue-100 text-blue-700' : 'hover:bg-gray-100'}`}>تایم‌لاین</button>
-                        <button onClick={() => setActiveTab('proforma')} className={`px-4 py-2 rounded-lg text-sm font-bold transition-colors ${activeTab === 'proforma' ? 'bg-blue-100 text-blue-700' : 'hover:bg-gray-100'}`}>پروفرما</button>
-                        <button onClick={() => setActiveTab('insurance')} className={`px-4 py-2 rounded-lg text-sm font-bold transition-colors ${activeTab === 'insurance' ? 'bg-blue-100 text-blue-700' : 'hover:bg-gray-100'}`}>بیمه</button>
-                        <button onClick={() => setActiveTab('currency_purchase')} className={`px-4 py-2 rounded-lg text-sm font-bold transition-colors ${activeTab === 'currency_purchase' ? 'bg-blue-100 text-blue-700' : 'hover:bg-gray-100'}`}>خرید ارز</button>
-                        <button onClick={() => setActiveTab('shipping_docs')} className={`px-4 py-2 rounded-lg text-sm font-bold transition-colors ${activeTab === 'shipping_docs' ? 'bg-blue-100 text-blue-700' : 'hover:bg-gray-100'}`}>اسناد حمل</button>
-                        <button onClick={() => setActiveTab('inspection')} className={`px-4 py-2 rounded-lg text-sm font-bold transition-colors ${activeTab === 'inspection' ? 'bg-blue-100 text-blue-700' : 'hover:bg-gray-100'}`}>بازرسی</button>
-                        <button onClick={() => setActiveTab('clearance_docs')} className={`px-4 py-2 rounded-lg text-sm font-bold transition-colors ${activeTab === 'clearance_docs' ? 'bg-blue-100 text-blue-700' : 'hover:bg-gray-100'}`}>ترخیصیه و انبار</button>
-                        <button onClick={() => setActiveTab('green_leaf')} className={`px-4 py-2 rounded-lg text-sm font-bold transition-colors ${activeTab === 'green_leaf' ? 'bg-green-100 text-green-700' : 'hover:bg-gray-100'}`}>برگ سبز</button>
+                    <div className="flex gap-2 overflow-x-auto pb-1">
+                        <button onClick={() => setActiveTab('timeline')} className={`px-4 py-2 rounded-lg text-sm font-bold whitespace-nowrap transition-colors ${activeTab === 'timeline' ? 'bg-blue-100 text-blue-700' : 'hover:bg-gray-100'}`}>تایم‌لاین</button>
+                        <button onClick={() => setActiveTab('proforma')} className={`px-4 py-2 rounded-lg text-sm font-bold whitespace-nowrap transition-colors ${activeTab === 'proforma' ? 'bg-blue-100 text-blue-700' : 'hover:bg-gray-100'}`}>پروفرما</button>
+                        <button onClick={() => setActiveTab('insurance')} className={`px-4 py-2 rounded-lg text-sm font-bold whitespace-nowrap transition-colors ${activeTab === 'insurance' ? 'bg-blue-100 text-blue-700' : 'hover:bg-gray-100'}`}>بیمه</button>
+                        <button onClick={() => setActiveTab('currency_purchase')} className={`px-4 py-2 rounded-lg text-sm font-bold whitespace-nowrap transition-colors ${activeTab === 'currency_purchase' ? 'bg-blue-100 text-blue-700' : 'hover:bg-gray-100'}`}>خرید ارز</button>
+                        <button onClick={() => setActiveTab('shipping_docs')} className={`px-4 py-2 rounded-lg text-sm font-bold whitespace-nowrap transition-colors ${activeTab === 'shipping_docs' ? 'bg-blue-100 text-blue-700' : 'hover:bg-gray-100'}`}>اسناد حمل</button>
+                        <button onClick={() => setActiveTab('inspection')} className={`px-4 py-2 rounded-lg text-sm font-bold whitespace-nowrap transition-colors ${activeTab === 'inspection' ? 'bg-blue-100 text-blue-700' : 'hover:bg-gray-100'}`}>بازرسی</button>
+                        <button onClick={() => setActiveTab('clearance_docs')} className={`px-4 py-2 rounded-lg text-sm font-bold whitespace-nowrap transition-colors ${activeTab === 'clearance_docs' ? 'bg-blue-100 text-blue-700' : 'hover:bg-gray-100'}`}>ترخیصیه و انبار</button>
+                        <button onClick={() => setActiveTab('green_leaf')} className={`px-4 py-2 rounded-lg text-sm font-bold whitespace-nowrap transition-colors ${activeTab === 'green_leaf' ? 'bg-green-100 text-green-700' : 'hover:bg-gray-100'}`}>برگ سبز</button>
+                        <button onClick={() => setActiveTab('internal_shipping')} className={`px-4 py-2 rounded-lg text-sm font-bold whitespace-nowrap transition-colors ${activeTab === 'internal_shipping' ? 'bg-indigo-100 text-indigo-700' : 'hover:bg-gray-100'}`}>حمل داخلی</button>
                     </div>
                 </div>
 
@@ -937,6 +986,42 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
                                 <div className="mt-4 p-4 bg-green-50 rounded-xl border border-green-200 text-center">
                                     <div className="text-sm text-green-800 mb-1">جمع کل هزینه‌های برگ سبز (قابل انتقال به تایم‌لاین)</div>
                                     <div className="text-2xl font-bold text-green-700">{formatCurrency(calculateGreenLeafTotal(greenLeafForm))}</div>
+                                </div>
+                            </div>
+                        )}
+
+                        {activeTab === 'internal_shipping' && (
+                            <div className="bg-white p-6 rounded-xl border shadow-sm space-y-6 animate-fade-in">
+                                <h3 className="font-bold text-gray-700 mb-3 flex items-center gap-2"><Truck size={20} className="text-indigo-600"/> هزینه‌های حمل داخلی</h3>
+                                
+                                <div className="bg-indigo-50 p-3 rounded mb-2 border border-indigo-100 flex flex-wrap gap-2 items-end">
+                                    <input className="border rounded p-1 text-sm flex-1 min-w-[100px]" placeholder="مبلغ (ریال)" value={formatNumberString(newShippingPayment.amount)} onChange={e => setNewShippingPayment({...newShippingPayment, amount: deformatNumberString(e.target.value)})} />
+                                    <input className="border rounded p-1 text-sm flex-1 min-w-[100px]" placeholder="پارت / مرحله" value={newShippingPayment.part} onChange={e => setNewShippingPayment({...newShippingPayment, part: e.target.value})} />
+                                    <input className="border rounded p-1 text-sm flex-1 min-w-[100px]" placeholder="بانک پرداخت کننده" value={newShippingPayment.bank} onChange={e => setNewShippingPayment({...newShippingPayment, bank: e.target.value})} />
+                                    <input className="border rounded p-1 text-sm w-24" placeholder="تاریخ" value={newShippingPayment.date} onChange={e => setNewShippingPayment({...newShippingPayment, date: e.target.value})} />
+                                    <input className="border rounded p-1 text-sm flex-[2] min-w-[150px]" placeholder="توضیحات (راننده، باربری...)" value={newShippingPayment.description} onChange={e => setNewShippingPayment({...newShippingPayment, description: e.target.value})} />
+                                    <button onClick={handleAddShippingPayment} className="bg-indigo-600 text-white p-1.5 rounded"><Plus size={18}/></button>
+                                </div>
+
+                                <div className="space-y-1">
+                                    {internalShippingForm.payments.length === 0 && <div className="text-center text-gray-400 py-4 text-sm">هنوز پرداختی ثبت نشده است.</div>}
+                                    {internalShippingForm.payments.map(p => (
+                                        <div key={p.id} className="flex justify-between items-center bg-white border p-2 rounded text-sm hover:bg-gray-50">
+                                            <span className="font-bold font-mono text-indigo-700 w-24">{formatCurrency(p.amount)}</span>
+                                            <span className="w-24 font-bold">{p.part}</span>
+                                            <span className="w-24 text-gray-600">{p.bank}</span>
+                                            <span className="w-24 text-gray-500 text-xs">{p.date}</span>
+                                            <span className="flex-1 text-gray-500 truncate text-xs">{p.description}</span>
+                                            <button onClick={() => handleDeleteShippingPayment(p.id)} className="text-red-500"><Trash2 size={14}/></button>
+                                        </div>
+                                    ))}
+                                </div>
+
+                                <div className="mt-4 p-4 bg-indigo-50 rounded-xl border border-indigo-200 text-center">
+                                    <div className="text-sm text-indigo-800 mb-1">جمع کل هزینه‌های حمل داخلی</div>
+                                    <div className="text-2xl font-bold text-indigo-700">
+                                        {formatCurrency(internalShippingForm.payments.reduce((acc, p) => acc + p.amount, 0))}
+                                    </div>
                                 </div>
                             </div>
                         )}
