@@ -289,6 +289,8 @@ export interface GreenLeafGuarantee {
     chequeNumber?: string;
     chequeBank?: string;
     chequeDate?: string;
+    chequeAmount?: number; // New: Cheque Amount (Add to Cost)
+    isDelivered?: boolean; // New: Delivery Status
     
     // Cash Deposit (نقدی ضمانت‌نامه)
     cashAmount: number;
@@ -360,6 +362,7 @@ export interface CurrencyPurchaseData {
         bank: string;
         isReturned?: boolean; 
         returnDate?: string; 
+        isDelivered?: boolean; // New: Delivery Status
     };
     payments: CurrencyPayment[]; // Rial flow
     
@@ -432,14 +435,13 @@ export interface TradeRecord {
     company?: string; // Company owning this record
     fileNumber: string; // شماره پرونده (داخلی)
     registrationNumber?: string; // شماره ثبت سفارش
+    registrationDate?: string; // تاریخ صدور ثبت سفارش
+    registrationExpiry?: string; // مهلت ثبت سفارش
+    
     commodityGroup?: string; // گروه کالایی
     sellerName: string; // فروشنده
     mainCurrency?: string; // ارز پایه (USD, EUR, etc.)
     
-    // New fields for Registration details
-    registrationDate?: string; // تاریخ صدور ثبت سفارش
-    registrationExpiry?: string; // مهلت ثبت سفارش
-
     // Items
     items: TradeItem[];
     freightCost: number; // هزینه حمل

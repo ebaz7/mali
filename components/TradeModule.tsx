@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { User, TradeRecord, TradeStage, TradeItem, SystemSettings, InsuranceEndorsement, CurrencyPurchaseData, TradeTransaction, CurrencyTranche, TradeStageData, ShippingDocument, ShippingDocType, DocStatus, InvoiceItem, InspectionData, InspectionPayment, InspectionCertificate, ClearanceData, WarehouseReceipt, ClearancePayment, GreenLeafData, GreenLeafCustomsDuty, GreenLeafGuarantee, GreenLeafTax, GreenLeafRoadToll } from '../types';
 import { getTradeRecords, saveTradeRecord, updateTradeRecord, deleteTradeRecord, getSettings, uploadFile } from '../services/storageService';
 import { generateUUID, formatCurrency, formatNumberString, deformatNumberString, parsePersianDate, formatDate, calculateDaysDiff } from '../constants';
-import { Container, Plus, Search, CheckCircle2, Save, Trash2, X, Package, ArrowRight, History, Banknote, Coins, Wallet, FileSpreadsheet, Shield, LayoutDashboard, Printer, FileDown, Paperclip, Building2, FolderOpen, Home, Calculator, FileText, Microscope, ListFilter, Warehouse, Calendar, PieChart, BarChart, Clock, Leaf, Scale, ShieldCheck, Percent, Truck } from 'lucide-react';
+import { Container, Plus, Search, CheckCircle2, Save, Trash2, X, Package, ArrowRight, History, Banknote, Coins, Wallet, FileSpreadsheet, Shield, LayoutDashboard, Printer, FileDown, Paperclip, Building2, FolderOpen, Home, Calculator, FileText, Microscope, ListFilter, Warehouse, Calendar, PieChart, BarChart, Clock, Leaf, Scale, ShieldCheck, Percent, Truck, CheckSquare, Square } from 'lucide-react';
 
 interface TradeModuleProps {
     currentUser: User;
@@ -76,7 +76,7 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
     // Green Leaf State
     const [greenLeafForm, setGreenLeafForm] = useState<GreenLeafData>({ duties: [], guarantees: [], taxes: [], roadTolls: [] });
     const [newCustomsDuty, setNewCustomsDuty] = useState<Partial<GreenLeafCustomsDuty>>({ cottageNumber: '', part: '', amount: 0, paymentMethod: 'Bank', bank: '', date: '' });
-    const [newGuaranteeDetails, setNewGuaranteeDetails] = useState<Partial<GreenLeafGuarantee>>({ guaranteeNumber: '', chequeNumber: '', chequeBank: '', chequeDate: '', cashAmount: 0, cashBank: '', cashDate: '' });
+    const [newGuaranteeDetails, setNewGuaranteeDetails] = useState<Partial<GreenLeafGuarantee>>({ guaranteeNumber: '', chequeNumber: '', chequeBank: '', chequeDate: '', cashAmount: 0, cashBank: '', cashDate: '', chequeAmount: 0 });
     const [selectedDutyForGuarantee, setSelectedDutyForGuarantee] = useState<string>(''); // ID of the duty
     const [newTax, setNewTax] = useState<Partial<GreenLeafTax>>({ part: '', amount: 0, bank: '', date: '' });
     const [newRoadToll, setNewRoadToll] = useState<Partial<GreenLeafRoadToll>>({ part: '', amount: 0, bank: '', date: '' });
@@ -86,10 +86,11 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
 
     // Currency Purchase State
     const [currencyForm, setCurrencyForm] = useState<CurrencyPurchaseData>({
-        payments: [], purchasedAmount: 0, purchasedCurrencyType: '', purchaseDate: '', brokerName: '', exchangeName: '', deliveredAmount: 0, deliveredCurrencyType: '', deliveryDate: '', recipientName: '', remittedAmount: 0, isDelivered: false, tranches: []
+        payments: [], purchasedAmount: 0, purchasedCurrencyType: '', purchaseDate: '', brokerName: '', exchangeName: '', deliveredAmount: 0, deliveredCurrencyType: '', deliveryDate: '', recipientName: '', remittedAmount: 0, isDelivered: false, tranches: [], guaranteeCheque: undefined
     });
     
     const [newCurrencyTranche, setNewCurrencyTranche] = useState<Partial<CurrencyTranche>>({ amount: 0, currencyType: 'EUR', date: '', exchangeName: '', brokerName: '', isDelivered: false, deliveryDate: '' });
+    const [currencyGuarantee, setCurrencyGuarantee] = useState<{amount: string, bank: string, number: string, date: string, isDelivered: boolean}>({amount: '', bank: '', number: '', date: '', isDelivered: false});
 
     // Shipping Docs State
     const [activeShippingSubTab, setActiveShippingSubTab] = useState<ShippingDocType>('Commercial Invoice');
@@ -133,6 +134,17 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
             const curData = selectedRecord.currencyPurchaseData || { payments: [], purchasedAmount: 0, purchasedCurrencyType: selectedRecord.mainCurrency || 'EUR', tranches: [], isDelivered: false, deliveredAmount: 0 };
             if (!curData.tranches) curData.tranches = [];
             setCurrencyForm(curData as CurrencyPurchaseData);
+            if (curData.guaranteeCheque) {
+                setCurrencyGuarantee({
+                    amount: formatNumberString(curData.guaranteeCheque.amount),
+                    bank: curData.guaranteeCheque.bank,
+                    number: curData.guaranteeCheque.chequeNumber,
+                    date: curData.guaranteeCheque.dueDate,
+                    isDelivered: curData.guaranteeCheque.isDelivered || false
+                });
+            } else {
+                setCurrencyGuarantee({amount: '', bank: '', number: '', date: '', isDelivered: false});
+            }
             
             // Reset Inputs
             setNewLicenseTx({ amount: 0, bank: '', date: '', description: 'هزینه ثبت سفارش' });
@@ -143,7 +155,7 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
             setNewWarehouseReceipt({ number: '', part: '', issueDate: '' });
             setNewClearancePayment({ amount: 0, part: '', bank: '', date: '', payingBank: '' });
             setNewCustomsDuty({ cottageNumber: '', part: '', amount: 0, paymentMethod: 'Bank', bank: '', date: '' });
-            setNewGuaranteeDetails({ guaranteeNumber: '', chequeNumber: '', chequeBank: '', chequeDate: '', cashAmount: 0, cashBank: '', cashDate: '' });
+            setNewGuaranteeDetails({ guaranteeNumber: '', chequeNumber: '', chequeBank: '', chequeDate: '', cashAmount: 0, cashBank: '', cashDate: '', chequeAmount: 0 });
             setNewTax({ part: '', amount: 0, bank: '', date: '' });
             setNewRoadToll({ part: '', amount: 0, bank: '', date: '' });
             setShippingDocForm({ status: 'Draft', documentNumber: '', documentDate: '', attachments: [], currency: selectedRecord.mainCurrency || 'EUR', invoiceItems: [], freightCost: 0 });
@@ -207,8 +219,8 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
         let total = 0;
         // 1. Bank payments from Customs Duties
         total += data.duties.filter(d => d.paymentMethod === 'Bank').reduce((acc, d) => acc + d.amount, 0);
-        // 2. Cash deposits from Guarantees
-        total += data.guarantees.reduce((acc, g) => acc + (g.cashAmount || 0), 0);
+        // 2. Cash deposits and Cheque Amounts from Guarantees
+        total += data.guarantees.reduce((acc, g) => acc + (g.cashAmount || 0) + (g.chequeAmount || 0), 0);
         // 3. Tax
         total += data.taxes.reduce((acc, t) => acc + t.amount, 0);
         // 4. Road Tolls
@@ -264,6 +276,8 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
             chequeNumber: newGuaranteeDetails.chequeNumber,
             chequeBank: newGuaranteeDetails.chequeBank,
             chequeDate: newGuaranteeDetails.chequeDate,
+            chequeAmount: Number(newGuaranteeDetails.chequeAmount) || 0,
+            isDelivered: false,
             cashAmount: Number(newGuaranteeDetails.cashAmount) || 0,
             cashBank: newGuaranteeDetails.cashBank,
             cashDate: newGuaranteeDetails.cashDate,
@@ -271,12 +285,19 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
         };
         const updatedGuarantees = [...greenLeafForm.guarantees, guarantee];
         await updateGreenLeafRecord({ ...greenLeafForm, guarantees: updatedGuarantees });
-        setNewGuaranteeDetails({ guaranteeNumber: '', chequeNumber: '', chequeBank: '', chequeDate: '', cashAmount: 0, cashBank: '', cashDate: '' });
+        setNewGuaranteeDetails({ guaranteeNumber: '', chequeNumber: '', chequeBank: '', chequeDate: '', cashAmount: 0, cashBank: '', cashDate: '', chequeAmount: 0 });
         setSelectedDutyForGuarantee('');
     };
 
     const handleDeleteGuarantee = async (id: string) => {
         const updatedGuarantees = greenLeafForm.guarantees.filter(g => g.id !== id);
+        await updateGreenLeafRecord({ ...greenLeafForm, guarantees: updatedGuarantees });
+    };
+
+    const handleToggleGuaranteeDelivery = async (id: string) => {
+        const updatedGuarantees = greenLeafForm.guarantees.map(g => 
+            g.id === id ? { ...g, isDelivered: !g.isDelivered } : g
+        );
         await updateGreenLeafRecord({ ...greenLeafForm, guarantees: updatedGuarantees });
     };
 
@@ -310,6 +331,22 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
     // Currency Handlers
     const handleAddCurrencyTranche = async () => { if (!selectedRecord || !newCurrencyTranche.amount) return; const tranche: CurrencyTranche = { id: generateUUID(), date: newCurrencyTranche.date || '', amount: Number(newCurrencyTranche.amount), currencyType: newCurrencyTranche.currencyType || selectedRecord.mainCurrency || 'EUR', brokerName: newCurrencyTranche.brokerName || '', exchangeName: newCurrencyTranche.exchangeName || '', rate: Number(newCurrencyTranche.rate) || 0, isDelivered: newCurrencyTranche.isDelivered, deliveryDate: newCurrencyTranche.deliveryDate }; const currentTranches = currencyForm.tranches || []; const updatedTranches = [...currentTranches, tranche]; const totalPurchased = updatedTranches.reduce((acc, t) => acc + t.amount, 0); const totalDelivered = updatedTranches.filter(t => t.isDelivered).reduce((acc, t) => acc + t.amount, 0); const updatedForm = { ...currencyForm, tranches: updatedTranches, purchasedAmount: totalPurchased, deliveredAmount: totalDelivered }; setCurrencyForm(updatedForm); const updatedRecord = { ...selectedRecord, currencyPurchaseData: updatedForm }; await updateTradeRecord(updatedRecord); setSelectedRecord(updatedRecord); setNewCurrencyTranche({ amount: 0, currencyType: selectedRecord.mainCurrency || 'EUR', date: '', exchangeName: '', brokerName: '', isDelivered: false }); };
     const handleRemoveTranche = async (id: string) => { if (!selectedRecord) return; if (!confirm('آیا از حذف این پارت مطمئن هستید؟')) return; const updatedTranches = (currencyForm.tranches || []).filter(t => t.id !== id); const totalPurchased = updatedTranches.reduce((acc, t) => acc + t.amount, 0); const totalDelivered = updatedTranches.filter(t => t.isDelivered).reduce((acc, t) => acc + t.amount, 0); const updatedForm = { ...currencyForm, tranches: updatedTranches, purchasedAmount: totalPurchased, deliveredAmount: totalDelivered }; setCurrencyForm(updatedForm); const updatedRecord = { ...selectedRecord, currencyPurchaseData: updatedForm }; await updateTradeRecord(updatedRecord); setSelectedRecord(updatedRecord); }
+    const handleSaveCurrencyGuarantee = async () => {
+        if (!selectedRecord) return;
+        const gCheck = {
+            amount: deformatNumberString(currencyGuarantee.amount),
+            bank: currencyGuarantee.bank,
+            chequeNumber: currencyGuarantee.number,
+            dueDate: currencyGuarantee.date,
+            isDelivered: currencyGuarantee.isDelivered
+        };
+        const updatedForm = { ...currencyForm, guaranteeCheque: gCheck };
+        setCurrencyForm(updatedForm);
+        const updatedRecord = { ...selectedRecord, currencyPurchaseData: updatedForm };
+        await updateTradeRecord(updatedRecord);
+        setSelectedRecord(updatedRecord);
+        alert("اطلاعات چک ضمانت ارزی ذخیره شد.");
+    };
 
     // Shipping Docs Handlers
     const handleAddInvoiceItem = () => { if (!newInvoiceItem.name) return; const newItem: InvoiceItem = { id: generateUUID(), name: newInvoiceItem.name, weight: Number(newInvoiceItem.weight), unitPrice: Number(newInvoiceItem.unitPrice), totalPrice: Number(newInvoiceItem.totalPrice) || (Number(newInvoiceItem.weight) * Number(newInvoiceItem.unitPrice)) }; setShippingDocForm(prev => ({ ...prev, invoiceItems: [...(prev.invoiceItems || []), newItem] })); setNewInvoiceItem({ name: '', weight: 0, unitPrice: 0, totalPrice: 0 }); };
@@ -323,7 +360,7 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
     const handleStageFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => { const file = e.target.files?.[0]; if (!file) return; setUploadingStageFile(true); const reader = new FileReader(); reader.onload = async (ev) => { const base64 = ev.target?.result as string; try { const result = await uploadFile(file.name, base64); setStageFormData(prev => ({ ...prev, attachments: [...(prev.attachments || []), { fileName: result.fileName, url: result.url }] })); } catch (error) { alert('خطا در آپلود'); } finally { setUploadingStageFile(false); } }; reader.readAsDataURL(file); e.target.value = ''; };
     const handleSaveStage = async () => { if (!selectedRecord || !editingStage) return; const updatedRecord = { ...selectedRecord }; updatedRecord.stages[editingStage] = { ...getStageData(selectedRecord, editingStage), ...stageFormData, updatedAt: Date.now(), updatedBy: currentUser.fullName }; if (editingStage === TradeStage.ALLOCATION_QUEUE && stageFormData.queueDate) { updatedRecord.stages[TradeStage.ALLOCATION_QUEUE].queueDate = stageFormData.queueDate; } if (editingStage === TradeStage.ALLOCATION_APPROVED) { updatedRecord.stages[TradeStage.ALLOCATION_APPROVED].allocationDate = stageFormData.allocationDate; updatedRecord.stages[TradeStage.ALLOCATION_APPROVED].allocationCode = stageFormData.allocationCode; updatedRecord.stages[TradeStage.ALLOCATION_APPROVED].allocationExpiry = stageFormData.allocationExpiry; } await updateTradeRecord(updatedRecord); setSelectedRecord(updatedRecord); setEditingStage(null); };
 
-    // Reports Logic
+    // ... (Reports Logic - renderReportContent - kept mostly same)
     const renderReportContent = () => {
         let filteredRecords = records;
         if (reportFilterCompany) filteredRecords = records.filter(r => r.company === reportFilterCompany);
@@ -344,6 +381,7 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
     };
 
     if (viewMode === 'reports') {
+        // ... (Return Reports view - kept same)
         return (
             <div className="flex h-[calc(100vh-100px)] bg-gray-50 rounded-2xl overflow-hidden border">
                 <div className="w-64 bg-white border-l p-4 flex flex-col gap-2">
@@ -365,8 +403,6 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
     }
 
     if (selectedRecord && viewMode === 'details') {
-        // ... (Details View Implementation remains same as restored version with Tabs)
-        // Calculating total cost for sidebar
         const totalRial = STAGES.reduce((sum, stage) => sum + (selectedRecord.stages[stage]?.costRial || 0), 0);
         const totalCurrency = STAGES.reduce((sum, stage) => sum + (selectedRecord.stages[stage]?.costCurrency || 0), 0);
 
@@ -406,6 +442,7 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
                     </div>
                 )}
 
+                {/* Header */}
                 <div className="bg-white border-b p-4 flex justify-between items-center shadow-sm z-10">
                     <div className="flex items-center gap-4"><button onClick={() => setViewMode('dashboard')} className="p-2 hover:bg-gray-100 rounded-full"><ArrowRight /></button><div><h1 className="text-xl font-bold flex items-center gap-2">{selectedRecord.goodsName}<span className="text-sm font-normal text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">{selectedRecord.fileNumber}</span></h1><p className="text-xs text-gray-500">{selectedRecord.company} | {selectedRecord.sellerName}</p></div></div>
                     <div className="flex gap-2">
@@ -428,7 +465,6 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
                                 {STAGES.map((stage, i) => {
                                     const data = selectedRecord.stages[stage];
                                     const isCompleted = data?.isCompleted;
-                                    const isPending = !isCompleted && (i === 0 || selectedRecord.stages[STAGES[i-1]]?.isCompleted);
                                     
                                     // Day Counter Logic for Allocation Queue
                                     let dayCounter = null;
@@ -470,6 +506,12 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
                                      <div className="space-y-1"><label className="text-xs font-bold text-gray-500">ارز پایه</label><select className="w-full border rounded p-2 bg-white" value={selectedRecord.mainCurrency} onChange={(e) => handleUpdateProforma('mainCurrency', e.target.value)}>{CURRENCIES.map(c => <option key={c.code} value={c.code}>{c.label}</option>)}</select></div>
                                  </div>
                                  
+                                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6 bg-blue-50 p-4 rounded border border-blue-100">
+                                     <div className="space-y-1"><label className="text-xs font-bold text-blue-800">شماره ثبت سفارش</label><input className="w-full border rounded p-2" value={selectedRecord.registrationNumber || ''} onChange={(e) => handleUpdateProforma('registrationNumber', e.target.value)} /></div>
+                                     <div className="space-y-1"><label className="text-xs font-bold text-blue-800">تاریخ صدور ثبت سفارش</label><input className="w-full border rounded p-2" value={selectedRecord.registrationDate || ''} onChange={(e) => handleUpdateProforma('registrationDate', e.target.value)} placeholder="1403/01/01"/></div>
+                                     <div className="space-y-1"><label className="text-xs font-bold text-blue-800">مهلت ثبت سفارش</label><input className="w-full border rounded p-2" value={selectedRecord.registrationExpiry || ''} onChange={(e) => handleUpdateProforma('registrationExpiry', e.target.value)} placeholder="1403/07/01"/></div>
+                                 </div>
+
                                  {/* License Costs */}
                                  <div className="border-t pt-4">
                                      <h3 className="font-bold text-gray-700 mb-3 flex items-center gap-2"><Wallet size={18} /> هزینه‌های مجوز و ثبت سفارش</h3>
@@ -534,6 +576,32 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
                                     </div>
                                     <div className="space-y-1">{currencyForm.tranches?.map((t, idx) => (<div key={t.id} className="flex justify-between items-center bg-white border p-2 rounded text-sm"><span className="font-bold text-blue-600">{formatCurrency(t.amount)} {t.currencyType}</span><span>نرخ: {formatCurrency(t.rate || 0)}</span><span>{t.exchangeName}</span><span>{t.date}</span><button onClick={() => handleRemoveTranche(t.id)} className="text-red-500"><Trash2 size={14}/></button></div>))}</div>
                                     <div className="bg-gray-100 p-2 rounded mt-2 text-center text-sm font-bold">مجموع خریداری شده: <span className="text-blue-600">{formatCurrency(currencyForm.purchasedAmount)} {selectedRecord.mainCurrency}</span></div>
+                                </div>
+
+                                {/* Guarantee Cheque Section */}
+                                <div>
+                                    <h3 className="font-bold text-gray-700 mb-3 flex items-center gap-2"><ShieldCheck size={20} className="text-blue-600"/> چک ضمانت ارزی</h3>
+                                    <div className="bg-blue-50 p-4 rounded-xl border border-blue-200">
+                                        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
+                                            <div><label className="text-xs font-bold block mb-1">مبلغ چک</label><input className="w-full border rounded p-2 text-sm" value={currencyGuarantee.amount} onChange={e => setCurrencyGuarantee({...currencyGuarantee, amount: formatNumberString(deformatNumberString(e.target.value).toString())})}/></div>
+                                            <div>
+                                                <label className="text-xs font-bold block mb-1">بانک</label>
+                                                <select className="w-full border rounded p-2 text-sm bg-white" value={currencyGuarantee.bank} onChange={e => setCurrencyGuarantee({...currencyGuarantee, bank: e.target.value})}>
+                                                    <option value="">انتخاب کنید...</option>
+                                                    {availableBanks.map(b => <option key={b} value={b}>{b}</option>)}
+                                                </select>
+                                            </div>
+                                            <div><label className="text-xs font-bold block mb-1">شماره چک</label><input className="w-full border rounded p-2 text-sm" value={currencyGuarantee.number} onChange={e => setCurrencyGuarantee({...currencyGuarantee, number: e.target.value})}/></div>
+                                            <div><label className="text-xs font-bold block mb-1">تاریخ سررسید</label><input className="w-full border rounded p-2 text-sm" value={currencyGuarantee.date} onChange={e => setCurrencyGuarantee({...currencyGuarantee, date: e.target.value})}/></div>
+                                        </div>
+                                        <div className="flex justify-between items-center">
+                                            <label className="flex items-center gap-2 cursor-pointer bg-white px-3 py-1.5 rounded border border-blue-200">
+                                                <input type="checkbox" checked={currencyGuarantee.isDelivered} onChange={e => setCurrencyGuarantee({...currencyGuarantee, isDelivered: e.target.checked})} className="w-4 h-4 text-blue-600"/>
+                                                <span className={`text-sm font-bold ${currencyGuarantee.isDelivered ? 'text-green-600' : 'text-gray-500'}`}>{currencyGuarantee.isDelivered ? 'تحویل شده' : 'نزد شرکت'}</span>
+                                            </label>
+                                            <button onClick={handleSaveCurrencyGuarantee} className="bg-blue-600 text-white px-6 py-2 rounded-lg font-bold hover:bg-blue-700">ذخیره اطلاعات چک</button>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                         )}
@@ -690,8 +758,15 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
                                                     <div><label className="text-[10px] block mb-1 font-bold">شماره ضمانت‌نامه</label><input className="w-full border rounded p-1.5 text-sm" value={newGuaranteeDetails.guaranteeNumber} onChange={e => setNewGuaranteeDetails({...newGuaranteeDetails, guaranteeNumber: e.target.value})} /></div>
                                                     <div><label className="text-[10px] block mb-1 font-bold">شماره چک</label><input className="w-full border rounded p-1.5 text-sm" value={newGuaranteeDetails.chequeNumber} onChange={e => setNewGuaranteeDetails({...newGuaranteeDetails, chequeNumber: e.target.value})} /></div>
                                                 </div>
-                                                <div className="grid grid-cols-2 gap-2">
-                                                    <div><label className="text-[10px] block mb-1 font-bold">بانک چک</label><input className="w-full border rounded p-1.5 text-sm" value={newGuaranteeDetails.chequeBank} onChange={e => setNewGuaranteeDetails({...newGuaranteeDetails, chequeBank: e.target.value})} /></div>
+                                                <div className="grid grid-cols-3 gap-2">
+                                                    <div>
+                                                        <label className="text-[10px] block mb-1 font-bold">بانک چک</label>
+                                                        <select className="w-full border rounded p-1.5 text-sm bg-white" value={newGuaranteeDetails.chequeBank} onChange={e => setNewGuaranteeDetails({...newGuaranteeDetails, chequeBank: e.target.value})}>
+                                                            <option value="">انتخاب کنید...</option>
+                                                            {availableBanks.map(b => <option key={b} value={b}>{b}</option>)}
+                                                        </select>
+                                                    </div>
+                                                    <div><label className="text-[10px] block mb-1 font-bold">مبلغ چک</label><input className="w-full border rounded p-1.5 text-sm" value={formatNumberString(newGuaranteeDetails.chequeAmount)} onChange={e => setNewGuaranteeDetails({...newGuaranteeDetails, chequeAmount: deformatNumberString(e.target.value)})} /></div>
                                                     <div><label className="text-[10px] block mb-1 font-bold">تاریخ سررسید</label><input className="w-full border rounded p-1.5 text-sm" value={newGuaranteeDetails.chequeDate} onChange={e => setNewGuaranteeDetails({...newGuaranteeDetails, chequeDate: e.target.value})} /></div>
                                                 </div>
                                                 <div className="bg-white p-2 rounded border border-purple-200">
@@ -707,19 +782,40 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
                                         )}
                                     </div>
 
-                                    <div className="space-y-1">
+                                    <div className="space-y-2">
                                         {greenLeafForm.guarantees.map(g => {
                                             const duty = greenLeafForm.duties.find(d => d.id === g.relatedDutyId);
                                             return (
-                                                <div key={g.id} className="bg-white border p-3 rounded text-sm hover:bg-gray-50">
-                                                    <div className="flex justify-between items-center mb-1">
-                                                        <span className="font-bold text-purple-700">ضمانت: {g.guaranteeNumber}</span>
-                                                        <span className="text-xs text-gray-500">برای کوتاژ: {duty?.cottageNumber}</span>
+                                                <div key={g.id} className="bg-white border p-3 rounded text-sm hover:bg-gray-50 flex flex-col gap-2">
+                                                    <div className="flex justify-between items-center mb-1 border-b pb-1">
+                                                        <div className="flex items-center gap-2">
+                                                            <span className="font-bold text-purple-700">ضمانت: {g.guaranteeNumber}</span>
+                                                            <span className="text-xs bg-gray-100 px-2 py-0.5 rounded text-gray-500">پارت: {duty?.part}</span>
+                                                        </div>
                                                         <button onClick={() => handleDeleteGuarantee(g.id)} className="text-red-500"><Trash2 size={14}/></button>
                                                     </div>
-                                                    <div className="flex gap-4 text-xs text-gray-600">
-                                                        <span>چک: {g.chequeNumber} ({g.chequeBank})</span>
-                                                        <span className="font-bold text-green-600">نقدی: {formatCurrency(g.cashAmount)}</span>
+                                                    <div className="flex flex-col gap-1">
+                                                        <div className="flex justify-between items-center">
+                                                            <span className="text-xs text-gray-600 flex items-center gap-1">
+                                                                <Square size={12} className="fill-current text-gray-300"/> چک: {g.chequeNumber} ({g.chequeBank})
+                                                            </span>
+                                                            <span className="font-bold font-mono">{formatCurrency(g.chequeAmount || 0)}</span>
+                                                        </div>
+                                                        <div className="flex justify-between items-center">
+                                                            <span className="text-xs text-gray-600 flex items-center gap-1">
+                                                                <Square size={12} className="fill-current text-green-200"/> نقدی: {g.cashBank} ({g.cashDate})
+                                                            </span>
+                                                            <span className="font-bold font-mono text-green-600">{formatCurrency(g.cashAmount)}</span>
+                                                        </div>
+                                                        <div className="mt-1 pt-1 border-t flex justify-end">
+                                                            <button 
+                                                                onClick={() => handleToggleGuaranteeDelivery(g.id)} 
+                                                                className={`flex items-center gap-1 text-xs border px-2 py-0.5 rounded cursor-pointer ${g.isDelivered ? 'bg-green-50 text-green-700 border-green-200' : 'bg-gray-50 text-gray-500 border-gray-200'}`}
+                                                            >
+                                                                {g.isDelivered ? <CheckSquare size={14}/> : <Square size={14}/>}
+                                                                {g.isDelivered ? 'چک تحویل شد' : 'چک تحویل نشده'}
+                                                            </button>
+                                                        </div>
                                                     </div>
                                                 </div>
                                             );
