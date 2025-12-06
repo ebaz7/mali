@@ -3,7 +3,7 @@ import React, { useState, useMemo } from 'react';
 import { PaymentOrder, OrderStatus, PaymentMethod, SystemSettings } from '../types';
 import { formatCurrency, parsePersianDate, formatNumberString } from '../constants';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts';
-import { TrendingUp, Clock, CheckCircle, Archive, Activity, Building2, X, XCircle, AlertCircle, Banknote, Calendar as CalendarIcon, ExternalLink, Share2, Plus, CalendarDays, Loader2, Send } from 'lucide-react';
+import { TrendingUp, Clock, CheckCircle, Archive, Activity, Building2, X, XCircle, AlertCircle, Banknote, Calendar as CalendarIcon, ExternalLink, Share2, Plus, CalendarDays, Loader2, Send, Camera } from 'lucide-react';
 import { apiCall } from '../services/apiService';
 
 interface DashboardProps {
@@ -23,6 +23,7 @@ const Dashboard: React.FC<DashboardProps> = ({ orders, settings, onViewArchive, 
   const [showWhatsAppModal, setShowWhatsAppModal] = useState(false);
   const [whatsAppTarget, setWhatsAppTarget] = useState('');
   const [whatsAppMessage, setWhatsAppMessage] = useState('');
+  const [sendAsImage, setSendAsImage] = useState(false);
   const [sendingReport, setSendingReport] = useState(false);
   
   // Calendar Internal Logic (If no Google ID)
@@ -99,6 +100,7 @@ const Dashboard: React.FC<DashboardProps> = ({ orders, settings, onViewArchive, 
 
       setWhatsAppMessage(text);
       setWhatsAppTarget(settings?.whatsappNumber || '');
+      setSendAsImage(false);
       setShowWhatsAppModal(true);
   };
 
@@ -110,7 +112,26 @@ const Dashboard: React.FC<DashboardProps> = ({ orders, settings, onViewArchive, 
 
       setSendingReport(true);
       try {
-          await apiCall('/send-whatsapp', 'POST', { number: whatsAppTarget, message: whatsAppMessage });
+          let mediaData = null;
+          if (sendAsImage) {
+              const element = document.getElementById('dashboard-content-area');
+              if (element) {
+                  // @ts-ignore
+                  const canvas = await window.html2canvas(element, { scale: 2, useCORS: true, backgroundColor: '#f3f4f6' });
+                  const base64 = canvas.toDataURL('image/png').split(',')[1];
+                  mediaData = {
+                      data: base64,
+                      mimeType: 'image/png',
+                      filename: 'dashboard_report.png'
+                  };
+              }
+          }
+
+          await apiCall('/send-whatsapp', 'POST', { 
+              number: whatsAppTarget, 
+              message: whatsAppMessage,
+              mediaData: mediaData 
+          });
           alert('پیام با موفقیت در صف ارسال سرور قرار گرفت.');
           setShowWhatsAppModal(false);
       } catch (e: any) {
@@ -171,7 +192,7 @@ const Dashboard: React.FC<DashboardProps> = ({ orders, settings, onViewArchive, 
   };
 
   return (
-    <div className="space-y-6 animate-fade-in min-w-0 relative">
+    <div id="dashboard-content-area" className="space-y-6 animate-fade-in min-w-0 relative">
       
       {/* WhatsApp Modal */}
       {showWhatsAppModal && (
@@ -184,24 +205,28 @@ const Dashboard: React.FC<DashboardProps> = ({ orders, settings, onViewArchive, 
                   
                   <div className="space-y-4">
                       <div>
-                          <label className="text-sm font-bold text-gray-700 block mb-1">انتخاب مخاطب / شماره</label>
+                          <label className="text-sm font-bold text-gray-700 block mb-1">انتخاب مخاطب / گروه</label>
                           
                           {/* Saved Contacts Dropdown */}
-                          {settings?.savedContacts && settings.savedContacts.length > 0 && (
-                              <div className="mb-2">
-                                  <select 
-                                    className="w-full border border-gray-300 rounded-lg p-2 text-sm bg-white"
-                                    onChange={(e) => {
-                                        if(e.target.value) setWhatsAppTarget(e.target.value);
-                                    }}
-                                  >
-                                      <option value="">-- انتخاب از مخاطبین ذخیره شده --</option>
-                                      {settings.savedContacts.map(c => (
-                                          <option key={c.id} value={c.number}>{c.name}</option>
-                                      ))}
-                                  </select>
-                              </div>
-                          )}
+                          <div className="mb-2">
+                              <select 
+                                className="w-full border border-gray-300 rounded-lg p-2 text-sm bg-white"
+                                onChange={(e) => {
+                                    if(e.target.value) setWhatsAppTarget(e.target.value);
+                                }}
+                              >
+                                  <option value="">-- انتخاب از مخاطبین ذخیره شده --</option>
+                                  {settings?.savedContacts && settings.savedContacts.length > 0 ? (
+                                      settings.savedContacts.map(c => (
+                                          <option key={c.id} value={c.number}>
+                                              {c.isGroup ? `[گروه] ${c.name}` : c.name}
+                                          </option>
+                                      ))
+                                  ) : (
+                                      <option disabled>لیست مخاطبین خالی است (از تنظیمات اضافه کنید)</option>
+                                  )}
+                              </select>
+                          </div>
 
                           <input 
                             type="text" 
@@ -213,10 +238,23 @@ const Dashboard: React.FC<DashboardProps> = ({ orders, settings, onViewArchive, 
                           <p className="text-[10px] text-gray-500 mt-1">شماره را بدون + یا 00 وارد کنید (مثال: 98912...). برای گروه از ID استفاده کنید.</p>
                       </div>
 
+                      <div className="flex items-center gap-2 bg-gray-100 p-2 rounded-lg">
+                          <input 
+                            type="checkbox" 
+                            id="sendAsImage" 
+                            checked={sendAsImage} 
+                            onChange={e => setSendAsImage(e.target.checked)} 
+                            className="w-4 h-4 text-green-600 rounded"
+                          />
+                          <label htmlFor="sendAsImage" className="text-sm font-bold flex items-center gap-1 cursor-pointer">
+                              <Camera size={16}/> ارسال به صورت تصویر (اسکرین‌شات)
+                          </label>
+                      </div>
+
                       <div>
                           <label className="text-sm font-bold text-gray-700 block mb-1">متن گزارش (قابل ویرایش)</label>
                           <textarea 
-                            rows={10} 
+                            rows={8} 
                             className="w-full border rounded-lg p-2 text-xs leading-relaxed resize-none" 
                             value={whatsAppMessage}
                             onChange={(e) => setWhatsAppMessage(e.target.value)}

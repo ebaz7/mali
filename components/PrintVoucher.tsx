@@ -2,7 +2,8 @@
 import React, { useState } from 'react';
 import { PaymentOrder, OrderStatus, PaymentMethod, SystemSettings } from '../types';
 import { formatCurrency, formatDate } from '../constants';
-import { X, Printer, Image as ImageIcon, FileDown, Loader2, CheckCircle, XCircle, Pencil } from 'lucide-react';
+import { X, Printer, Image as ImageIcon, FileDown, Loader2, CheckCircle, XCircle, Pencil, Share2 } from 'lucide-react';
+import { apiCall } from '../services/apiService';
 
 interface PrintVoucherProps {
   order: PaymentOrder;
@@ -15,6 +16,7 @@ interface PrintVoucherProps {
 
 const PrintVoucher: React.FC<PrintVoucherProps> = ({ order, onClose, settings, onApprove, onReject, onEdit }) => {
   const [processing, setProcessing] = useState(false);
+  const [sharing, setSharing] = useState(false);
 
   // Smart Compact Mode: If more than 2 payment lines, shrink fonts/padding to fit A5
   const isCompact = order.paymentDetails.length > 2;
@@ -226,6 +228,50 @@ const PrintVoucher: React.FC<PrintVoucherProps> = ({ order, onClose, settings, o
     }
   };
 
+  const handleSendToWhatsApp = async () => {
+      if (!settings?.whatsappNumber) {
+          alert('شماره واتساپ در تنظیمات وارد نشده است.');
+          return;
+      }
+      
+      // Prompt for target if needed, or use default
+      let target = prompt("شماره یا آیدی گروه را وارد کنید:", settings.whatsappNumber);
+      if (!target) return;
+
+      setSharing(true);
+      const element = document.getElementById('print-area');
+      if (!element) return;
+
+      try {
+          // @ts-ignore
+          const canvas = await window.html2canvas(element, { 
+              scale: 2, 
+              useCORS: true, 
+              backgroundColor: '#ffffff',
+              onclone: (doc) => {
+                  const el = doc.getElementById('print-area');
+                  if (el) el.style.direction = 'rtl';
+              }
+          });
+          const base64 = canvas.toDataURL('image/png').split(',')[1];
+          
+          await apiCall('/send-whatsapp', 'POST', {
+              number: target,
+              message: `رسید دستور پرداخت #${order.trackingNumber}`,
+              mediaData: {
+                  data: base64,
+                  mimeType: 'image/png',
+                  filename: `voucher_${order.trackingNumber}.png`
+              }
+          });
+          alert('رسید با موفقیت ارسال شد.');
+      } catch (e: any) {
+          alert(`خطا در ارسال: ${e.message}`);
+      } finally {
+          setSharing(false);
+      }
+  };
+
   // Helper component for the Stamp
   const Stamp = ({ name, title }: { name: string; title: string }) => (
     <div className={`border-[2px] border-blue-800 text-blue-800 rounded-lg ${isCompact ? 'py-0.5 px-2' : 'py-1 px-3'} rotate-[-5deg] opacity-90 mix-blend-multiply bg-white/80 print:bg-transparent shadow-sm inline-block`}>
@@ -266,7 +312,7 @@ const PrintVoucher: React.FC<PrintVoucherProps> = ({ order, onClose, settings, o
              )}
 
              {/* Output Options */}
-             <div className="grid grid-cols-3 gap-2">
+             <div className="grid grid-cols-4 gap-2">
                  <button 
                     onClick={handleDownloadImage}
                     disabled={processing}
@@ -289,6 +335,15 @@ const PrintVoucher: React.FC<PrintVoucherProps> = ({ order, onClose, settings, o
                  >
                      <Printer size={14} />
                      چاپ
+                 </button>
+                 <button 
+                    onClick={handleSendToWhatsApp}
+                    disabled={sharing}
+                    className="bg-green-600 hover:bg-green-700 text-white py-2 rounded-lg flex items-center justify-center gap-1 text-xs font-bold transition-colors"
+                    title="ارسال تصویر به واتساپ"
+                 >
+                     {sharing ? <Loader2 size={14} className="animate-spin"/> : <Share2 size={14} />}
+                     واتساپ
                  </button>
              </div>
          </div>

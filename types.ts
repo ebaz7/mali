@@ -99,6 +99,7 @@ export interface Contact {
     id: string;
     name: string;
     number: string;
+    isGroup?: boolean; // New: Flag to identify WhatsApp Groups
 }
 
 export interface SystemSettings {

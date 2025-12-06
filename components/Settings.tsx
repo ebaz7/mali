@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { getSettings, saveSettings, restoreSystemData, uploadFile } from '../services/storageService';
 import { SystemSettings, UserRole, RolePermissions, Company, Contact } from '../types';
-import { Settings as SettingsIcon, Save, Loader2, Download, Database, Bell, Plus, Trash2, Building, ShieldCheck, Landmark, Package, AppWindow, BellRing, BellOff, Send, Crown, Image as ImageIcon, Pencil, X, Check, MessageSquare, Calendar, Phone, QrCode, LogOut, RefreshCw, Users } from 'lucide-react';
+import { Settings as SettingsIcon, Save, Loader2, Download, Database, Bell, Plus, Trash2, Building, ShieldCheck, Landmark, Package, AppWindow, BellRing, BellOff, Send, Crown, Image as ImageIcon, Pencil, X, Check, MessageSquare, Calendar, Phone, QrCode, LogOut, RefreshCw, Users, FolderSync } from 'lucide-react';
 import { apiCall } from '../services/apiService';
 import { requestNotificationPermission, setNotificationPreference, isNotificationEnabledInApp } from '../services/notificationService';
 import { generateUUID } from '../constants';
@@ -25,6 +25,8 @@ const Settings: React.FC = () => {
   const [refreshingWA, setRefreshingWA] = useState(false);
   const [contactName, setContactName] = useState('');
   const [contactNumber, setContactNumber] = useState('');
+  const [isGroupContact, setIsGroupContact] = useState(false);
+  const [fetchingGroups, setFetchingGroups] = useState(false);
 
   const [newBank, setNewBank] = useState('');
   const [newCommodity, setNewCommodity] = useState('');
@@ -94,6 +96,43 @@ const Settings: React.FC = () => {
       }
   };
 
+  const handleFetchGroups = async () => {
+      if (!whatsappStatus?.ready) {
+          alert("واتساپ متصل نیست.");
+          return;
+      }
+      setFetchingGroups(true);
+      try {
+          const response = await apiCall<{success: boolean, groups: {id: string, name: string}[]}>('/whatsapp/groups');
+          if (response.success && response.groups) {
+              // Merge with existing contacts, avoiding duplicates by ID (number)
+              const existingIds = new Set((settings.savedContacts || []).map(c => c.number));
+              const newGroups = response.groups
+                  .filter(g => !existingIds.has(g.id))
+                  .map(g => ({
+                      id: generateUUID(),
+                      name: g.name,
+                      number: g.id,
+                      isGroup: true
+                  }));
+              
+              if (newGroups.length === 0) {
+                  alert("گروه جدیدی یافت نشد یا قبلاً اضافه شده‌اند.");
+              } else {
+                  setSettings({ 
+                      ...settings, 
+                      savedContacts: [...(settings.savedContacts || []), ...newGroups] 
+                  });
+                  alert(`${newGroups.length} گروه جدید اضافه شد.`);
+              }
+          }
+      } catch (e) {
+          alert("خطا در دریافت لیست گروه‌ها.");
+      } finally {
+          setFetchingGroups(false);
+      }
+  };
+
   useEffect(() => {
       let interval: any;
       if (activeTab === 'whatsapp' && whatsappStatus && !whatsappStatus.ready) {
@@ -129,11 +168,13 @@ const Settings: React.FC = () => {
       const newContact: Contact = {
           id: generateUUID(),
           name: contactName.trim(),
-          number: contactNumber.trim()
+          number: contactNumber.trim(),
+          isGroup: isGroupContact
       };
       setSettings({ ...settings, savedContacts: [...(settings.savedContacts || []), newContact] });
       setContactName('');
       setContactNumber('');
+      setIsGroupContact(false);
   };
 
   const handleDeleteContact = (id: string) => {
@@ -327,16 +368,32 @@ const Settings: React.FC = () => {
 
                     {/* Contacts Manager */}
                     <div className="bg-white p-4 rounded-xl border border-gray-200">
-                        <h4 className="font-bold text-gray-800 mb-4 flex items-center gap-2"><Users size={20} className="text-purple-600"/> مدیریت مخاطبین (دفترچه تلفن)</h4>
+                        <div className="flex justify-between items-center mb-4">
+                            <h4 className="font-bold text-gray-800 flex items-center gap-2"><Users size={20} className="text-purple-600"/> مدیریت مخاطبین و گروه‌ها</h4>
+                            <button 
+                                type="button"
+                                onClick={handleFetchGroups} 
+                                disabled={fetchingGroups || !whatsappStatus?.ready}
+                                className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-1.5 rounded-lg flex items-center gap-1 transition-colors"
+                            >
+                                {fetchingGroups ? <Loader2 size={12} className="animate-spin"/> : <FolderSync size={14}/>} همگام‌سازی گروه‌ها
+                            </button>
+                        </div>
                         
                         <div className="bg-purple-50 p-3 rounded-lg border border-purple-100 flex flex-wrap gap-2 items-end mb-4">
                             <div className="flex-1 min-w-[120px]">
-                                <label className="text-xs font-bold text-gray-700 block mb-1">نام مخاطب</label>
-                                <input className="w-full border rounded-lg p-2 text-sm" placeholder="مثال: آقای احمدی" value={contactName} onChange={e => setContactName(e.target.value)} />
+                                <label className="text-xs font-bold text-gray-700 block mb-1">نام مخاطب/گروه</label>
+                                <input className="w-full border rounded-lg p-2 text-sm" placeholder="نام..." value={contactName} onChange={e => setContactName(e.target.value)} />
                             </div>
                             <div className="flex-1 min-w-[120px]">
-                                <label className="text-xs font-bold text-gray-700 block mb-1">شماره (با کد کشور)</label>
+                                <label className="text-xs font-bold text-gray-700 block mb-1">شماره/ID (با کد کشور)</label>
                                 <input className="w-full border rounded-lg p-2 text-sm dir-ltr font-mono" placeholder="98912..." value={contactNumber} onChange={e => setContactNumber(e.target.value)} />
+                            </div>
+                            <div className="flex items-center pb-3 px-2">
+                                <label className="flex items-center gap-1 text-xs cursor-pointer select-none">
+                                    <input type="checkbox" checked={isGroupContact} onChange={e => setIsGroupContact(e.target.checked)} className="w-4 h-4 text-purple-600"/>
+                                    گروه است
+                                </label>
                             </div>
                             <button type="button" onClick={handleAddContact} className="bg-purple-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-purple-700 h-[38px] flex items-center justify-center"><Plus size={18} /></button>
                         </div>
@@ -346,7 +403,9 @@ const Settings: React.FC = () => {
                                 settings.savedContacts.map(contact => (
                                     <div key={contact.id} className="flex justify-between items-center bg-gray-50 p-2 rounded-lg border text-sm">
                                         <div className="flex items-center gap-3">
-                                            <div className="bg-white p-1.5 rounded-full border"><Users size={16} className="text-gray-500"/></div>
+                                            <div className={`p-1.5 rounded-full border ${contact.isGroup ? 'bg-orange-100 text-orange-600' : 'bg-white text-gray-500'}`}>
+                                                {contact.isGroup ? <Users size={16}/> : <Users size={16}/>}
+                                            </div>
                                             <div>
                                                 <div className="font-bold text-gray-800">{contact.name}</div>
                                                 <div className="text-xs text-gray-500 font-mono">{contact.number}</div>

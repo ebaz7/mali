@@ -81,6 +81,7 @@ const saveDb = (data) => {
 
 // --- WHATSAPP CLIENT SETUP (Dynamic Import) ---
 let whatsappClient = null;
+let MessageMedia = null; // Store reference to MessageMedia class
 let isWhatsAppReady = false;
 let currentQR = null; // Store QR to send to frontend
 let whatsappUser = null; // Store connected user info
@@ -89,7 +90,9 @@ const initWhatsApp = async () => {
     try {
         console.log('Attempting to load WhatsApp modules...');
         const wwebjs = await import('whatsapp-web.js');
-        const { Client, LocalAuth } = wwebjs.default || wwebjs;
+        const { Client, LocalAuth, MessageMedia: MM } = wwebjs.default || wwebjs;
+        MessageMedia = MM; // Assign to global variable
+        
         const qrcodeModule = await import('qrcode-terminal');
         const qrcode = qrcodeModule.default || qrcodeModule;
 
@@ -226,6 +229,24 @@ app.get('/api/whatsapp/status', (req, res) => {
     });
 });
 
+app.get('/api/whatsapp/groups', async (req, res) => {
+    if (!whatsappClient || !isWhatsAppReady) {
+        return res.status(503).json({ success: false, message: 'WhatsApp not ready' });
+    }
+    try {
+        const chats = await whatsappClient.getChats();
+        const groups = chats
+            .filter(chat => chat.isGroup)
+            .map(chat => ({
+                id: chat.id._serialized,
+                name: chat.name
+            }));
+        res.json({ success: true, groups });
+    } catch (e) {
+        res.status(500).json({ success: false, message: e.message });
+    }
+});
+
 app.post('/api/whatsapp/logout', async (req, res) => {
     if (whatsappClient) {
         try {
@@ -247,8 +268,8 @@ app.post('/api/send-whatsapp', async (req, res) => {
         return res.status(503).json({ success: false, message: 'ربات واتساپ سرور فعال نیست. لطفا لاگ سرور را بررسی کنید.' });
     }
     
-    const { number, message } = req.body;
-    if (!number || !message) return res.status(400).json({ error: 'Missing number or message' });
+    const { number, message, mediaData } = req.body; // mediaData: { data: base64, mimeType: 'image/png', filename: '...' }
+    if (!number) return res.status(400).json({ error: 'Missing number' });
 
     try {
         let chatId;
@@ -266,7 +287,16 @@ app.post('/api/send-whatsapp', async (req, res) => {
             chatId = `${cleanNumber}@c.us`;
         }
         
-        await whatsappClient.sendMessage(chatId, message);
+        // Handle Media Sending
+        if (mediaData && mediaData.data) {
+            const media = new MessageMedia(mediaData.mimeType || 'image/png', mediaData.data, mediaData.filename);
+            await whatsappClient.sendMessage(chatId, media, { caption: message || '' });
+        } else if (message) {
+            await whatsappClient.sendMessage(chatId, message);
+        } else {
+            return res.status(400).json({ error: 'Missing message or media' });
+        }
+
         res.json({ success: true });
     } catch (e) {
         console.error("WhatsApp Send Error:", e);
