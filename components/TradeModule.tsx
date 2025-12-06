@@ -694,7 +694,8 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
                     table { width: 100%; border-collapse: collapse; font-size: 9pt; }
                     th, td { border: 1px solid #000; padding: 4px; text-align: center; }
                     th { background-color: #f3f4f6 !important; color: #000 !important; font-weight: bold; }
-                    .no-print { display: none !important; }
+                    /* Explicitly show everything */
+                    .no-print { display: table-cell !important; } 
                 }
               </style>
             </head>
@@ -764,6 +765,11 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
         await updateTradeRecord(updated);
     };
 
+    // Helper for US Locale Currency Formatting
+    const formatUSD = (val: number) => {
+        return val.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    };
+
     // Render Logic
     const renderReportContent = () => {
         let filteredRecords = records;
@@ -802,6 +808,29 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
                     'TRY': 0.031,
                     'GBP': 1.26
                 };
+
+                // Aggregation Logic for Company Summary
+                const companySummary: Record<string, { allocated: number, queue: number }> = {};
+
+                // Iterate specifically over the filtered records
+                queueRecords.forEach(r => {
+                    const totalAmount = r.items.reduce((sum, i) => sum + i.totalPrice, 0) + (r.freightCost || 0);
+                    const currency = r.mainCurrency || 'EUR';
+                    const crossRate = dynamicCrossRates[currency] || 1; 
+                    const usdAmount = totalAmount * crossRate;
+                    
+                    const companyName = r.company || 'سایر';
+                    if (!companySummary[companyName]) {
+                        companySummary[companyName] = { allocated: 0, queue: 0 };
+                    }
+
+                    const isAllocated = !!r.stages[TradeStage.ALLOCATION_APPROVED]?.allocationDate;
+                    if (isAllocated) {
+                        companySummary[companyName].allocated += usdAmount;
+                    } else {
+                        companySummary[companyName].queue += usdAmount;
+                    }
+                });
 
                 return (
                     <div id="allocation-report-table" className="relative">
@@ -854,8 +883,8 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
                                             <th className="p-2 border border-gray-600">مانده مهلت (روز)</th>
                                             <th className="p-2 border border-gray-600">وضعیت تخصیص</th>
                                             <th className="p-2 border border-gray-600">بانک عامل</th>
-                                            <th className="p-2 border border-gray-600 w-10 no-print">اولویت</th>
-                                            <th className="p-2 border border-gray-600 no-print">نوع ارز</th>
+                                            <th className="p-2 border border-gray-600 w-10">اولویت</th>
+                                            <th className="p-2 border border-gray-600">نوع ارز</th>
                                         </tr>
                                     </thead>
                                     <tbody>
@@ -918,18 +947,18 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
                                                     <td className="p-2 border border-gray-200 font-mono font-bold">{r.registrationNumber || '-'}</td>
                                                     <td className="p-2 border border-gray-200">{r.company}</td>
                                                     <td className="p-2 border border-gray-200 font-mono dir-ltr">{formatNumberString(totalAmount)} {currency}</td>
-                                                    <td className="p-2 border border-gray-200 font-mono dir-ltr bg-gray-100 font-bold">{formatNumberString(usdAmount.toFixed(2))} $</td>
+                                                    <td className="p-2 border border-gray-200 font-mono dir-ltr bg-gray-100 font-bold">{formatUSD(usdAmount)} $</td>
                                                     <td className="p-2 border border-gray-200 font-mono dir-ltr bg-blue-50 text-blue-800 font-bold">{formatCurrency(rialAmount)}</td>
                                                     <td className="p-2 border border-gray-200 font-mono text-[10px]">{queueDate || '-'}</td>
                                                     <td className="p-2 border border-gray-200 font-mono text-[10px]">{allocDateDisplay}</td>
                                                     <td className={`p-2 border border-gray-200 font-bold ${parseInt(daysRemaining) < 5 ? 'text-red-600' : 'text-green-600'}`}>{daysRemaining}</td>
                                                     <td className={`p-2 border border-gray-200 font-bold ${isAllocated ? 'text-green-700 bg-green-100' : 'text-yellow-700 bg-yellow-100'}`}>{status}</td>
                                                     <td className="p-2 border border-gray-200 text-xs">{r.operatingBank || '-'}</td>
-                                                    <td className="p-2 border border-gray-200 no-print">
+                                                    <td className="p-2 border border-gray-200">
                                                         {/* @ts-ignore */}
                                                         <input type="checkbox" checked={priority} onChange={(e) => handleUpdateRecordFromTable(r, { allocationPriority: e.target.checked })} className="w-4 h-4 cursor-pointer accent-blue-600"/>
                                                     </td>
-                                                    <td className="p-2 border border-gray-200 no-print">
+                                                    <td className="p-2 border border-gray-200">
                                                         {/* @ts-ignore */}
                                                         <select className="border rounded text-[10px] bg-transparent" value={currencyCategory} onChange={(e) => handleUpdateRecordFromTable(r, { currencyCategory: e.target.value })}>
                                                             <option value="نوع اول">نوع اول</option>
@@ -942,6 +971,37 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
                                         })}
                                     </tbody>
                                 </table>
+
+                                {/* SUMMARY TABLE */}
+                                <div className="mt-8 break-inside-avoid">
+                                    <h3 className="font-bold text-gray-800 mb-2 border-r-4 border-blue-600 pr-2">خلاصه وضعیت ارزی به تفکیک شرکت (دلار آمریکا)</h3>
+                                    <table className="min-w-full text-xs text-center border-collapse">
+                                        <thead className="bg-gray-100 font-bold">
+                                            <tr>
+                                                <th className="p-2 border border-gray-300">نام شرکت</th>
+                                                <th className="p-2 border border-gray-300">جمع تخصیص یافته ($)</th>
+                                                <th className="p-2 border border-gray-300">جمع در صف ($)</th>
+                                                <th className="p-2 border border-gray-300">مجموع کل ($)</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {Object.entries(companySummary).map(([company, totals]) => (
+                                                <tr key={company}>
+                                                    <td className="p-2 border border-gray-300 font-bold bg-white">{company}</td>
+                                                    <td className="p-2 border border-gray-300 font-mono dir-ltr bg-green-50 text-green-800 font-bold">{formatUSD(totals.allocated)}</td>
+                                                    <td className="p-2 border border-gray-300 font-mono dir-ltr bg-yellow-50 text-yellow-800 font-bold">{formatUSD(totals.queue)}</td>
+                                                    <td className="p-2 border border-gray-300 font-mono dir-ltr bg-gray-50 font-black">{formatUSD(totals.allocated + totals.queue)}</td>
+                                                </tr>
+                                            ))}
+                                            <tr className="bg-gray-200 font-black">
+                                                <td className="p-2 border border-gray-400">جمع نهایی</td>
+                                                <td className="p-2 border border-gray-400 font-mono dir-ltr">{formatUSD(Object.values(companySummary).reduce((a, b) => a + b.allocated, 0))}</td>
+                                                <td className="p-2 border border-gray-400 font-mono dir-ltr">{formatUSD(Object.values(companySummary).reduce((a, b) => a + b.queue, 0))}</td>
+                                                <td className="p-2 border border-gray-400 font-mono dir-ltr">{formatUSD(Object.values(companySummary).reduce((a, b) => a + b.allocated + b.queue, 0))}</td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
                             </div>
                         </div>
                         {queueRecords.length === 0 && <div className="text-center py-8 text-gray-400">موردی برای نمایش یافت نشد.</div>}
