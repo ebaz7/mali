@@ -51,6 +51,7 @@ const getDb = () => {
                 bankNames: [],
                 commodityGroups: [],
                 rolePermissions: {},
+                savedContacts: [], // New Address Book
                 telegramBotToken: '',
                 telegramAdminId: '',
                 smsApiKey: '',

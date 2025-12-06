@@ -1,15 +1,15 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { getSettings, saveSettings, restoreSystemData, uploadFile } from '../services/storageService';
-import { SystemSettings, UserRole, RolePermissions, Company } from '../types';
-import { Settings as SettingsIcon, Save, Loader2, Download, Database, Bell, Plus, Trash2, Building, ShieldCheck, Landmark, Package, AppWindow, BellRing, BellOff, Send, Crown, Image as ImageIcon, Pencil, X, Check, MessageSquare, Calendar, Phone, QrCode, LogOut, RefreshCw } from 'lucide-react';
+import { SystemSettings, UserRole, RolePermissions, Company, Contact } from '../types';
+import { Settings as SettingsIcon, Save, Loader2, Download, Database, Bell, Plus, Trash2, Building, ShieldCheck, Landmark, Package, AppWindow, BellRing, BellOff, Send, Crown, Image as ImageIcon, Pencil, X, Check, MessageSquare, Calendar, Phone, QrCode, LogOut, RefreshCw, Users } from 'lucide-react';
 import { apiCall } from '../services/apiService';
 import { requestNotificationPermission, setNotificationPreference, isNotificationEnabledInApp } from '../services/notificationService';
 import { generateUUID } from '../constants';
 
 const Settings: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'general' | 'permissions' | 'whatsapp'>('general');
-  const [settings, setSettings] = useState<SystemSettings>({ currentTrackingNumber: 1000, companyNames: [], companies: [], defaultCompany: '', bankNames: [], commodityGroups: [], rolePermissions: {} as any, pwaIcon: '', telegramBotToken: '', telegramAdminId: '', smsApiKey: '', smsSenderNumber: '', googleCalendarId: '', whatsappNumber: '' });
+  const [settings, setSettings] = useState<SystemSettings>({ currentTrackingNumber: 1000, companyNames: [], companies: [], defaultCompany: '', bankNames: [], commodityGroups: [], rolePermissions: {} as any, savedContacts: [], pwaIcon: '', telegramBotToken: '', telegramAdminId: '', smsApiKey: '', smsSenderNumber: '', googleCalendarId: '', whatsappNumber: '' });
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
   
@@ -20,9 +20,11 @@ const Settings: React.FC = () => {
   const [isUploadingLogo, setIsUploadingLogo] = useState(false);
   const companyLogoInputRef = useRef<HTMLInputElement>(null);
 
-  // WhatsApp Session State
+  // WhatsApp Session & Contacts State
   const [whatsappStatus, setWhatsappStatus] = useState<{ready: boolean, qr: string | null, user: string | null} | null>(null);
   const [refreshingWA, setRefreshingWA] = useState(false);
+  const [contactName, setContactName] = useState('');
+  const [contactNumber, setContactNumber] = useState('');
 
   const [newBank, setNewBank] = useState('');
   const [newCommodity, setNewCommodity] = useState('');
@@ -49,6 +51,7 @@ const Settings: React.FC = () => {
               bankNames: data.bankNames || [], 
               commodityGroups: data.commodityGroups || [], 
               rolePermissions: data.rolePermissions || {}, 
+              savedContacts: data.savedContacts || [],
               pwaIcon: data.pwaIcon || '', 
               telegramBotToken: data.telegramBotToken || '', 
               telegramAdminId: data.telegramAdminId || '',
@@ -118,6 +121,23 @@ const Settings: React.FC = () => {
       } finally { 
           setLoading(false); 
       } 
+  };
+
+  // Contacts Management
+  const handleAddContact = () => {
+      if (!contactName.trim() || !contactNumber.trim()) return;
+      const newContact: Contact = {
+          id: generateUUID(),
+          name: contactName.trim(),
+          number: contactNumber.trim()
+      };
+      setSettings({ ...settings, savedContacts: [...(settings.savedContacts || []), newContact] });
+      setContactName('');
+      setContactNumber('');
+  };
+
+  const handleDeleteContact = (id: string) => {
+      setSettings({ ...settings, savedContacts: (settings.savedContacts || []).filter(c => c.id !== id) });
   };
 
   // Company Management Handlers
@@ -239,70 +259,110 @@ const Settings: React.FC = () => {
         
         {activeTab === 'whatsapp' ? (
             <div className="space-y-6">
-                <div className="flex justify-between items-center bg-green-50 p-4 rounded-xl border border-green-200">
-                    <div className="flex items-center gap-3">
-                        <div className="bg-white p-2 rounded-full text-green-600 shadow-sm"><Phone size={24}/></div>
-                        <div>
-                            <h3 className="font-bold text-green-900">مدیریت حساب واتساپ</h3>
-                            <p className="text-xs text-green-700">وضعیت اتصال ربات سرور به واتساپ</p>
+                <form onSubmit={handleSave} className="space-y-6">
+                    <div className="flex justify-between items-center bg-green-50 p-4 rounded-xl border border-green-200">
+                        <div className="flex items-center gap-3">
+                            <div className="bg-white p-2 rounded-full text-green-600 shadow-sm"><Phone size={24}/></div>
+                            <div>
+                                <h3 className="font-bold text-green-900">مدیریت حساب واتساپ</h3>
+                                <p className="text-xs text-green-700">وضعیت اتصال ربات سرور به واتساپ</p>
+                            </div>
+                        </div>
+                        <button type="button" onClick={checkWhatsappStatus} className="p-2 bg-white rounded-full hover:bg-gray-100 text-gray-600" title="بروزرسانی وضعیت"><RefreshCw size={20} className={refreshingWA ? "animate-spin" : ""} /></button>
+                    </div>
+
+                    <div className="bg-white border rounded-xl p-6 flex flex-col items-center justify-center min-h-[300px]">
+                        {whatsappStatus?.ready ? (
+                            <div className="text-center space-y-4">
+                                <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto text-green-600 mb-2">
+                                    <Check size={40} />
+                                </div>
+                                <h2 className="text-xl font-bold text-gray-800">واتساپ متصل است</h2>
+                                <p className="text-gray-500">شماره متصل: <span className="font-mono dir-ltr">{whatsappStatus.user || 'نامشخص'}</span></p>
+                                <button type="button" onClick={handleWhatsappLogout} className="bg-red-50 text-red-600 border border-red-200 px-6 py-2 rounded-lg hover:bg-red-100 flex items-center gap-2 mx-auto">
+                                    <LogOut size={18}/> خروج از حساب (تغییر شماره)
+                                </button>
+                            </div>
+                        ) : (
+                            <div className="text-center space-y-4 w-full">
+                                {whatsappStatus?.qr ? (
+                                    <>
+                                        <h2 className="text-lg font-bold text-gray-800 mb-2">اسکن کد QR</h2>
+                                        <p className="text-xs text-gray-500 mb-4">لطفا با واتساپ گوشی خود اسکن کنید (Linked Devices)</p>
+                                        <div className="bg-white p-2 inline-block border-4 border-gray-800 rounded-xl">
+                                            {/* Use a public API to render QR to avoid adding heavy libs to frontend */}
+                                            <img 
+                                                src={`https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(whatsappStatus.qr)}`} 
+                                                alt="WhatsApp QR Code" 
+                                                className="w-64 h-64 object-contain"
+                                            />
+                                        </div>
+                                        <p className="text-[10px] text-gray-400 mt-2">این کد هر چند ثانیه منقضی می‌شود. در صورت نیاز رفرش کنید.</p>
+                                    </>
+                                ) : (
+                                    <div className="flex flex-col items-center">
+                                        <Loader2 size={40} className="text-blue-500 animate-spin mb-4"/>
+                                        <p className="text-gray-500">در حال دریافت وضعیت از سرور...</p>
+                                        <p className="text-xs text-gray-400 mt-2">اگر طول کشید، سرور را ریستارت کنید.</p>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+                    </div>
+                    
+                    <div className="bg-blue-50 p-4 rounded-xl border border-blue-100 text-sm text-blue-800">
+                        <h4 className="font-bold mb-2 flex items-center gap-2"><Send size={16}/> تنظیمات ارسال</h4>
+                        <div className="space-y-2">
+                            <label className="text-xs font-bold text-gray-700 block">شماره پیش‌فرض گیرنده گزارشات:</label>
+                            <input 
+                                type="text" 
+                                className="w-full border border-blue-200 rounded-lg p-2 text-sm dir-ltr font-mono" 
+                                placeholder="98912xxxxxxx"
+                                value={settings.whatsappNumber}
+                                onChange={(e) => setSettings({...settings, whatsappNumber: e.target.value})}
+                            />
+                            <p className="text-[10px] text-gray-500">این شماره به عنوان پیش‌فرض در فرم ارسال گزارش پر می‌شود.</p>
                         </div>
                     </div>
-                    <button onClick={checkWhatsappStatus} className="p-2 bg-white rounded-full hover:bg-gray-100 text-gray-600" title="بروزرسانی وضعیت"><RefreshCw size={20} className={refreshingWA ? "animate-spin" : ""} /></button>
-                </div>
 
-                <div className="bg-white border rounded-xl p-6 flex flex-col items-center justify-center min-h-[300px]">
-                    {whatsappStatus?.ready ? (
-                        <div className="text-center space-y-4">
-                            <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto text-green-600 mb-2">
-                                <Check size={40} />
+                    {/* Contacts Manager */}
+                    <div className="bg-white p-4 rounded-xl border border-gray-200">
+                        <h4 className="font-bold text-gray-800 mb-4 flex items-center gap-2"><Users size={20} className="text-purple-600"/> مدیریت مخاطبین (دفترچه تلفن)</h4>
+                        
+                        <div className="bg-purple-50 p-3 rounded-lg border border-purple-100 flex flex-wrap gap-2 items-end mb-4">
+                            <div className="flex-1 min-w-[120px]">
+                                <label className="text-xs font-bold text-gray-700 block mb-1">نام مخاطب</label>
+                                <input className="w-full border rounded-lg p-2 text-sm" placeholder="مثال: آقای احمدی" value={contactName} onChange={e => setContactName(e.target.value)} />
                             </div>
-                            <h2 className="text-xl font-bold text-gray-800">واتساپ متصل است</h2>
-                            <p className="text-gray-500">شماره متصل: <span className="font-mono dir-ltr">{whatsappStatus.user || 'نامشخص'}</span></p>
-                            <button onClick={handleWhatsappLogout} className="bg-red-50 text-red-600 border border-red-200 px-6 py-2 rounded-lg hover:bg-red-100 flex items-center gap-2 mx-auto">
-                                <LogOut size={18}/> خروج از حساب (تغییر شماره)
-                            </button>
+                            <div className="flex-1 min-w-[120px]">
+                                <label className="text-xs font-bold text-gray-700 block mb-1">شماره (با کد کشور)</label>
+                                <input className="w-full border rounded-lg p-2 text-sm dir-ltr font-mono" placeholder="98912..." value={contactNumber} onChange={e => setContactNumber(e.target.value)} />
+                            </div>
+                            <button type="button" onClick={handleAddContact} className="bg-purple-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-purple-700 h-[38px] flex items-center justify-center"><Plus size={18} /></button>
                         </div>
-                    ) : (
-                        <div className="text-center space-y-4 w-full">
-                            {whatsappStatus?.qr ? (
-                                <>
-                                    <h2 className="text-lg font-bold text-gray-800 mb-2">اسکن کد QR</h2>
-                                    <p className="text-xs text-gray-500 mb-4">لطفا با واتساپ گوشی خود اسکن کنید (Linked Devices)</p>
-                                    <div className="bg-white p-2 inline-block border-4 border-gray-800 rounded-xl">
-                                        {/* Use a public API to render QR to avoid adding heavy libs to frontend */}
-                                        <img 
-                                            src={`https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(whatsappStatus.qr)}`} 
-                                            alt="WhatsApp QR Code" 
-                                            className="w-64 h-64 object-contain"
-                                        />
+
+                        <div className="max-h-60 overflow-y-auto space-y-2">
+                            {settings.savedContacts && settings.savedContacts.length > 0 ? (
+                                settings.savedContacts.map(contact => (
+                                    <div key={contact.id} className="flex justify-between items-center bg-gray-50 p-2 rounded-lg border text-sm">
+                                        <div className="flex items-center gap-3">
+                                            <div className="bg-white p-1.5 rounded-full border"><Users size={16} className="text-gray-500"/></div>
+                                            <div>
+                                                <div className="font-bold text-gray-800">{contact.name}</div>
+                                                <div className="text-xs text-gray-500 font-mono">{contact.number}</div>
+                                            </div>
+                                        </div>
+                                        <button type="button" onClick={() => handleDeleteContact(contact.id)} className="text-red-500 hover:bg-red-50 p-1.5 rounded"><Trash2 size={16}/></button>
                                     </div>
-                                    <p className="text-[10px] text-gray-400 mt-2">این کد هر چند ثانیه منقضی می‌شود. در صورت نیاز رفرش کنید.</p>
-                                </>
+                                ))
                             ) : (
-                                <div className="flex flex-col items-center">
-                                    <Loader2 size={40} className="text-blue-500 animate-spin mb-4"/>
-                                    <p className="text-gray-500">در حال دریافت وضعیت از سرور...</p>
-                                    <p className="text-xs text-gray-400 mt-2">اگر طول کشید، سرور را ریستارت کنید.</p>
-                                </div>
+                                <div className="text-center text-gray-400 py-4 text-xs">مخاطبی ثبت نشده است.</div>
                             )}
                         </div>
-                    )}
-                </div>
-                
-                <div className="bg-blue-50 p-4 rounded-xl border border-blue-100 text-sm text-blue-800">
-                    <h4 className="font-bold mb-2 flex items-center gap-2"><Send size={16}/> تنظیمات ارسال</h4>
-                    <div className="space-y-2">
-                        <label className="text-xs font-bold text-gray-700 block">شماره پیش‌فرض گیرنده گزارشات:</label>
-                        <input 
-                            type="text" 
-                            className="w-full border border-blue-200 rounded-lg p-2 text-sm dir-ltr font-mono" 
-                            placeholder="98912xxxxxxx"
-                            value={settings.whatsappNumber}
-                            onChange={(e) => setSettings({...settings, whatsappNumber: e.target.value})}
-                        />
-                        <p className="text-[10px] text-gray-500">این شماره به عنوان پیش‌فرض در فرم ارسال گزارش پر می‌شود.</p>
                     </div>
-                </div>
+
+                    <div className="flex justify-end border-t border-gray-100 pt-6"><button type="submit" disabled={loading} className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2.5 rounded-xl font-medium flex items-center gap-2 transition-all disabled:opacity-70">{loading ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}ذخیره تنظیمات</button></div>
+                </form>
             </div>
         ) : (
         <form onSubmit={handleSave} className="space-y-8">

@@ -95,6 +95,12 @@ export interface Company {
     logo?: string; // URL or Base64
 }
 
+export interface Contact {
+    id: string;
+    name: string;
+    number: string;
+}
+
 export interface SystemSettings {
   currentTrackingNumber: number;
   companyNames: string[]; // Legacy: List of available companies
@@ -103,6 +109,7 @@ export interface SystemSettings {
   bankNames: string[]; // List of available banks
   commodityGroups: string[]; // Trade: Commodity Groups
   rolePermissions: Record<string, RolePermissions>; // Dynamic permissions
+  savedContacts?: Contact[]; // New: Address book for WhatsApp
   pwaIcon?: string; // Custom PWA Icon URL
   telegramBotToken?: string; // Token for Telegram Bot Notifications
   telegramAdminId?: string; // Chat ID of the main admin for backups

@@ -184,7 +184,25 @@ const Dashboard: React.FC<DashboardProps> = ({ orders, settings, onViewArchive, 
                   
                   <div className="space-y-4">
                       <div>
-                          <label className="text-sm font-bold text-gray-700 block mb-1">شماره گیرنده / آیدی گروه</label>
+                          <label className="text-sm font-bold text-gray-700 block mb-1">انتخاب مخاطب / شماره</label>
+                          
+                          {/* Saved Contacts Dropdown */}
+                          {settings?.savedContacts && settings.savedContacts.length > 0 && (
+                              <div className="mb-2">
+                                  <select 
+                                    className="w-full border border-gray-300 rounded-lg p-2 text-sm bg-white"
+                                    onChange={(e) => {
+                                        if(e.target.value) setWhatsAppTarget(e.target.value);
+                                    }}
+                                  >
+                                      <option value="">-- انتخاب از مخاطبین ذخیره شده --</option>
+                                      {settings.savedContacts.map(c => (
+                                          <option key={c.id} value={c.number}>{c.name}</option>
+                                      ))}
+                                  </select>
+                              </div>
+                          )}
+
                           <input 
                             type="text" 
                             className="w-full border border-green-200 rounded-lg p-2 text-sm dir-ltr font-mono bg-green-50" 
