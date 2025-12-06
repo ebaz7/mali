@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { User, TradeRecord, TradeStage, TradeItem, SystemSettings, InsuranceEndorsement, CurrencyPurchaseData, TradeTransaction, CurrencyTranche, TradeStageData, ShippingDocument, ShippingDocType, DocStatus, InvoiceItem, InspectionData, InspectionPayment, InspectionCertificate, ClearanceData, WarehouseReceipt, ClearancePayment, GreenLeafData, GreenLeafCustomsDuty, GreenLeafGuarantee, GreenLeafTax, GreenLeafRoadToll, InternalShippingData, ShippingPayment, AgentData, AgentPayment, PackingItem } from '../types';
 import { getTradeRecords, saveTradeRecord, updateTradeRecord, deleteTradeRecord, getSettings, uploadFile } from '../services/storageService';
 import { generateUUID, formatCurrency, formatNumberString, deformatNumberString, parsePersianDate, formatDate, calculateDaysDiff, getStatusLabel } from '../constants';
-import { Container, Plus, Search, CheckCircle2, Save, Trash2, X, Package, ArrowRight, History, Banknote, Coins, Wallet, FileSpreadsheet, Shield, LayoutDashboard, Printer, FileDown, Paperclip, Building2, FolderOpen, Home, Calculator, FileText, Microscope, ListFilter, Warehouse, Calendar, PieChart, BarChart, Clock, Leaf, Scale, ShieldCheck, Percent, Truck, CheckSquare, Square, ToggleLeft, ToggleRight, DollarSign, UserCheck, Check, Archive, AlertCircle, RefreshCw, Box, Loader2 } from 'lucide-react';
+import { Container, Plus, Search, CheckCircle2, Save, Trash2, X, Package, ArrowRight, History, Banknote, Coins, Wallet, FileSpreadsheet, Shield, LayoutDashboard, Printer, FileDown, Paperclip, Building2, FolderOpen, Home, Calculator, FileText, Microscope, ListFilter, Warehouse, Calendar as CalendarIcon, PieChart, BarChart, Clock, Leaf, Scale, ShieldCheck, Percent, Truck, CheckSquare, Square, ToggleLeft, ToggleRight, DollarSign, UserCheck, Check, Archive, AlertCircle, RefreshCw, Box, Loader2, Share2, ChevronLeft, ChevronRight, ExternalLink, CalendarDays, Info } from 'lucide-react';
 
 interface TradeModuleProps {
     currentUser: User;
@@ -19,7 +19,7 @@ const CURRENCIES = [
 ];
 
 // Report Types
-type ReportType = 'general' | 'allocation_queue' | 'allocated' | 'currency' | 'insurance' | 'shipping' | 'inspection' | 'clearance' | 'green_leaf';
+type ReportType = 'general' | 'allocation_queue' | 'allocated' | 'currency' | 'insurance' | 'shipping' | 'inspection' | 'clearance' | 'green_leaf' | 'calendar';
 
 const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
     const [records, setRecords] = useState<TradeRecord[]>([]);
@@ -27,6 +27,7 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
     const [commodityGroups, setCommodityGroups] = useState<string[]>([]);
     const [availableBanks, setAvailableBanks] = useState<string[]>([]);
     const [availableCompanies, setAvailableCompanies] = useState<string[]>([]);
+    const [settings, setSettingsData] = useState<SystemSettings | null>(null);
 
     // Navigation State
     const [navLevel, setNavLevel] = useState<'ROOT' | 'COMPANY' | 'GROUP'>('ROOT');
@@ -44,6 +45,10 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
     const [reportUsdRialRate, setReportUsdRialRate] = useState<string>('500000'); // Default Rial Rate
     const [reportEurUsdRate, setReportEurUsdRate] = useState<string>('1.08'); // Default EUR to USD Rate
     const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
+
+    // Calendar State
+    const [calendarMonth, setCalendarMonth] = useState(new Date());
+    const [calendarEvents, setCalendarEvents] = useState<{date: string, title: string, type: 'expiry' | 'cheque' | 'allocation' | 'note', description?: string}[]>([]);
 
     // Modal & Form States
     const [showNewModal, setShowNewModal] = useState(false);
@@ -129,6 +134,7 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
     useEffect(() => {
         loadRecords();
         getSettings().then(s => {
+            setSettingsData(s);
             setCommodityGroups(s.commodityGroups || []);
             setAvailableBanks(s.bankNames || []);
             setAvailableCompanies(s.companyNames || []);
@@ -136,35 +142,42 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
         });
     }, []);
 
+    // Calendar Effect: Populate events
+    useEffect(() => {
+        if (activeReport === 'calendar' && records.length > 0) {
+            const evts: {date: string, title: string, type: 'expiry' | 'cheque' | 'allocation' | 'note', description?: string}[] = [];
+            records.forEach(r => {
+                // Registration Expiry
+                if (r.registrationExpiry) evts.push({date: r.registrationExpiry, title: `انقضا ثبت: ${r.fileNumber}`, description: `انقضای ثبت سفارش ${r.fileNumber} (${r.goodsName})`, type: 'expiry'});
+                // Allocation Date
+                if (r.stages[TradeStage.ALLOCATION_APPROVED]?.allocationDate) evts.push({date: r.stages[TradeStage.ALLOCATION_APPROVED].allocationDate!, title: `تخصیص: ${r.fileNumber}`, description: `تخصیص ارز پرونده ${r.fileNumber}`, type: 'allocation'});
+                // Allocation Expiry
+                if (r.stages[TradeStage.ALLOCATION_APPROVED]?.allocationExpiry) evts.push({date: r.stages[TradeStage.ALLOCATION_APPROVED].allocationExpiry!, title: `انقضا تخصیص: ${r.fileNumber}`, description: `مهلت خرید ارز پرونده ${r.fileNumber}`, type: 'expiry'});
+                // Cheques
+                if (r.currencyPurchaseData?.guaranteeCheque?.dueDate) evts.push({date: r.currencyPurchaseData.guaranteeCheque.dueDate, title: `چک ارزی: ${r.fileNumber}`, description: `سررسید چک ضمانت ارزی پرونده ${r.fileNumber}`, type: 'cheque'});
+                r.greenLeafData?.guarantees.forEach(g => {
+                    if (g.chequeDate) evts.push({date: g.chequeDate, title: `چک گمرک: ${r.fileNumber}`, description: `سررسید چک گمرکی پرونده ${r.fileNumber}`, type: 'cheque'});
+                });
+            });
+            setCalendarEvents(evts);
+        }
+    }, [activeReport, records]);
+
+    // ... (UseEffect for initializing forms - No Changes) ...
     useEffect(() => {
         if (selectedRecord) {
             // Initialize Forms
             setInsuranceForm(selectedRecord.insuranceData || { policyNumber: '', company: '', cost: 0, bank: '', endorsements: [] });
-            
             const inspData = selectedRecord.inspectionData || { certificates: [], payments: [] };
             if (inspData.certificates.length === 0 && selectedRecord.inspectionData?.certificateNumber) {
                  inspData.certificates.push({ id: generateUUID(), part: 'Original', certificateNumber: selectedRecord.inspectionData.certificateNumber, company: selectedRecord.inspectionData.inspectionCompany || '', amount: selectedRecord.inspectionData.totalInvoiceAmount || 0 });
             }
             setInspectionForm(inspData);
-
             setClearanceForm(selectedRecord.clearanceData || { receipts: [], payments: [] });
-
             setGreenLeafForm(selectedRecord.greenLeafData || { duties: [], guarantees: [], taxes: [], roadTolls: [] });
-            
             setInternalShippingForm(selectedRecord.internalShippingData || { payments: [] });
-
             setAgentForm(selectedRecord.agentData || { payments: [] });
-
-            const curData = (selectedRecord.currencyPurchaseData || { 
-                payments: [], 
-                purchasedAmount: 0, 
-                purchasedCurrencyType: selectedRecord.mainCurrency || 'EUR', 
-                tranches: [], 
-                isDelivered: false, 
-                deliveredAmount: 0,
-                remittedAmount: 0
-            }) as CurrencyPurchaseData;
-
+            const curData = (selectedRecord.currencyPurchaseData || { payments: [], purchasedAmount: 0, purchasedCurrencyType: selectedRecord.mainCurrency || 'EUR', tranches: [], isDelivered: false, deliveredAmount: 0, remittedAmount: 0 }) as CurrencyPurchaseData;
             if (!curData.tranches) curData.tranches = [];
             setCurrencyForm(curData);
             if (curData.guaranteeCheque) {
@@ -178,11 +191,7 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
             } else {
                 setCurrencyGuarantee({amount: '', bank: '', number: '', date: '', isDelivered: false});
             }
-            
-            // Calc Rate
             setCalcExchangeRate(selectedRecord.exchangeRate || 0);
-
-            // Reset Inputs
             setNewLicenseTx({ amount: 0, bank: '', date: '', description: 'هزینه ثبت سفارش' });
             setNewCurrencyTranche({ amount: 0, currencyType: selectedRecord.mainCurrency || 'EUR', date: '', exchangeName: '', brokerName: '', isDelivered: false });
             setNewItem({ name: '', weight: 0, unitPrice: 0, totalPrice: 0 });
@@ -209,9 +218,7 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
     const goGroup = (group: string) => { setSelectedGroup(group); setNavLevel('GROUP'); setSearchTerm(''); };
 
     const getGroupedData = () => {
-        // STRICT SEPARATION: If archive mode is on, ONLY show archived. If off, ONLY active.
         const currentRecords = records.filter(r => showArchived ? r.isArchived : !r.isArchived);
-
         if (navLevel === 'ROOT') {
             const companies: Record<string, number> = {};
             currentRecords.forEach(r => { const c = r.company || 'بدون شرکت'; companies[c] = (companies[c] || 0) + 1; });
@@ -229,490 +236,112 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
         return record.stages[stage] || { stage, isCompleted: false, description: '', costRial: 0, costCurrency: 0, currencyType: 'EUR', attachments: [], updatedAt: 0, updatedBy: '' };
     };
 
-    const handleCreateRecord = async () => { 
-        if (!newFileNumber || !newGoodsName) return; 
-        const newRecord: TradeRecord = { 
-            id: generateUUID(), 
-            company: newRecordCompany, 
-            fileNumber: newFileNumber, 
-            orderNumber: newFileNumber, 
-            goodsName: newGoodsName, // Used as Title on Dashboard
-            registrationNumber: '', 
-            sellerName: newSellerName, 
-            commodityGroup: newCommodityGroup, 
-            mainCurrency: newMainCurrency, 
-            items: [], 
-            freightCost: 0, 
-            startDate: new Date().toISOString(), 
-            status: 'Active', 
-            stages: {}, 
-            createdAt: Date.now(), 
-            createdBy: currentUser.fullName, 
-            licenseData: { transactions: [] }, 
-            shippingDocuments: [] 
-        }; 
-        STAGES.forEach(stage => { newRecord.stages[stage] = { stage, isCompleted: false, description: '', costRial: 0, costCurrency: 0, currencyType: newMainCurrency, attachments: [], updatedAt: Date.now(), updatedBy: '' }; }); 
-        await saveTradeRecord(newRecord); 
-        await loadRecords(); 
-        setShowNewModal(false); 
-        setNewFileNumber(''); 
-        setNewGoodsName(''); 
-        setSelectedRecord(newRecord); 
-        setActiveTab('proforma'); 
-        setViewMode('details'); 
-    };
-    
+    // ... (Handlers: handleCreateRecord to handleArchiveRecord - No Changes) ...
+    const handleCreateRecord = async () => { if (!newFileNumber || !newGoodsName) return; const newRecord: TradeRecord = { id: generateUUID(), company: newRecordCompany, fileNumber: newFileNumber, orderNumber: newFileNumber, goodsName: newGoodsName, registrationNumber: '', sellerName: newSellerName, commodityGroup: newCommodityGroup, mainCurrency: newMainCurrency, items: [], freightCost: 0, startDate: new Date().toISOString(), status: 'Active', stages: {}, createdAt: Date.now(), createdBy: currentUser.fullName, licenseData: { transactions: [] }, shippingDocuments: [] }; STAGES.forEach(stage => { newRecord.stages[stage] = { stage, isCompleted: false, description: '', costRial: 0, costCurrency: 0, currencyType: newMainCurrency, attachments: [], updatedAt: Date.now(), updatedBy: '' }; }); await saveTradeRecord(newRecord); await loadRecords(); setShowNewModal(false); setNewFileNumber(''); setNewGoodsName(''); setSelectedRecord(newRecord); setActiveTab('proforma'); setViewMode('details'); };
     const handleDeleteRecord = async (id: string) => { if (confirm("آیا از حذف این پرونده بازرگانی اطمینان دارید؟")) { await deleteTradeRecord(id); if (selectedRecord?.id === id) setSelectedRecord(null); loadRecords(); } };
-    
-    // Proforma Handlers
     const handleUpdateProforma = (field: keyof TradeRecord, value: string | number) => { if (!selectedRecord) return; const updatedRecord = { ...selectedRecord, [field]: value }; updateTradeRecord(updatedRecord); setSelectedRecord(updatedRecord); };
     const handleAddItem = async () => { if (!selectedRecord || !newItem.name) return; const item: TradeItem = { id: generateUUID(), name: newItem.name, weight: Number(newItem.weight), unitPrice: Number(newItem.unitPrice), totalPrice: Number(newItem.totalPrice) || (Number(newItem.weight) * Number(newItem.unitPrice)) }; const updatedItems = [...selectedRecord.items, item]; const updatedRecord = { ...selectedRecord, items: updatedItems }; await updateTradeRecord(updatedRecord); setSelectedRecord(updatedRecord); setNewItem({ name: '', weight: 0, unitPrice: 0, totalPrice: 0 }); };
     const handleRemoveItem = async (id: string) => { if (!selectedRecord) return; const updatedItems = selectedRecord.items.filter(i => i.id !== id); const updatedRecord = { ...selectedRecord, items: updatedItems }; await updateTradeRecord(updatedRecord); setSelectedRecord(updatedRecord); };
     const handleAddLicenseTx = async () => { if (!selectedRecord || !newLicenseTx.amount) return; const tx: TradeTransaction = { id: generateUUID(), date: newLicenseTx.date || '', amount: Number(newLicenseTx.amount), bank: newLicenseTx.bank || '', description: newLicenseTx.description || '' }; const currentLicenseData = selectedRecord.licenseData || { transactions: [] }; const updatedTransactions = [...(currentLicenseData.transactions || []), tx]; const updatedRecord = { ...selectedRecord, licenseData: { ...currentLicenseData, transactions: updatedTransactions } }; const totalCost = updatedTransactions.reduce((acc, t) => acc + t.amount, 0); if (!updatedRecord.stages[TradeStage.LICENSES]) updatedRecord.stages[TradeStage.LICENSES] = getStageData(updatedRecord, TradeStage.LICENSES); updatedRecord.stages[TradeStage.LICENSES].costRial = totalCost; updatedRecord.stages[TradeStage.LICENSES].isCompleted = totalCost > 0; await updateTradeRecord(updatedRecord); setSelectedRecord(updatedRecord); setNewLicenseTx({ amount: 0, bank: '', date: '', description: 'هزینه ثبت سفارش' }); };
     const handleRemoveLicenseTx = async (id: string) => { if (!selectedRecord) return; const currentLicenseData = selectedRecord.licenseData || { transactions: [] }; const updatedTransactions = (currentLicenseData.transactions || []).filter(t => t.id !== id); const updatedRecord = { ...selectedRecord, licenseData: { ...currentLicenseData, transactions: updatedTransactions } }; const totalCost = updatedTransactions.reduce((acc, t) => acc + t.amount, 0); if (!updatedRecord.stages[TradeStage.LICENSES]) updatedRecord.stages[TradeStage.LICENSES] = getStageData(updatedRecord, TradeStage.LICENSES); updatedRecord.stages[TradeStage.LICENSES].costRial = totalCost; await updateTradeRecord(updatedRecord); setSelectedRecord(updatedRecord); };
-
-    // Insurance Handlers
     const handleSaveInsurance = async () => { if (!selectedRecord) return; const updatedRecord = { ...selectedRecord, insuranceData: insuranceForm }; const totalCost = (Number(insuranceForm.cost) || 0) + (insuranceForm.endorsements || []).reduce((acc, e) => acc + e.amount, 0); if (!updatedRecord.stages[TradeStage.INSURANCE]) updatedRecord.stages[TradeStage.INSURANCE] = getStageData(updatedRecord, TradeStage.INSURANCE); updatedRecord.stages[TradeStage.INSURANCE].costRial = totalCost; updatedRecord.stages[TradeStage.INSURANCE].isCompleted = !!insuranceForm.policyNumber; await updateTradeRecord(updatedRecord); setSelectedRecord(updatedRecord); alert("اطلاعات بیمه ذخیره شد."); };
     const handleAddEndorsement = () => { if (!newEndorsement.amount) return; const amount = endorsementType === 'increase' ? Number(newEndorsement.amount) : -Number(newEndorsement.amount); const endorsement: InsuranceEndorsement = { id: generateUUID(), date: newEndorsement.date || '', amount: amount, description: newEndorsement.description || '' }; const updatedEndorsements = [...(insuranceForm.endorsements || []), endorsement]; setInsuranceForm({ ...insuranceForm, endorsements: updatedEndorsements }); setNewEndorsement({ amount: 0, description: '', date: '' }); };
     const handleDeleteEndorsement = (id: string) => { setInsuranceForm({ ...insuranceForm, endorsements: insuranceForm.endorsements?.filter(e => e.id !== id) }); };
-
-    // Inspection Handlers
     const handleAddInspectionCertificate = async () => { if (!selectedRecord || !newInspectionCertificate.amount) return; const cert: InspectionCertificate = { id: generateUUID(), part: newInspectionCertificate.part || 'Part', company: newInspectionCertificate.company || '', certificateNumber: newInspectionCertificate.certificateNumber || '', amount: Number(newInspectionCertificate.amount), description: '' }; const updatedCertificates = [...(inspectionForm.certificates || []), cert]; const updatedData = { ...inspectionForm, certificates: updatedCertificates }; setInspectionForm(updatedData); setNewInspectionCertificate({ part: '', company: '', certificateNumber: '', amount: 0 }); const updatedRecord = { ...selectedRecord, inspectionData: updatedData }; if (!updatedRecord.stages[TradeStage.INSPECTION]) updatedRecord.stages[TradeStage.INSPECTION] = getStageData(updatedRecord, TradeStage.INSPECTION); updatedRecord.stages[TradeStage.INSPECTION].isCompleted = updatedCertificates.length > 0; await updateTradeRecord(updatedRecord); setSelectedRecord(updatedRecord); };
     const handleDeleteInspectionCertificate = async (id: string) => { if (!selectedRecord) return; const updatedCertificates = (inspectionForm.certificates || []).filter(c => c.id !== id); const updatedData = { ...inspectionForm, certificates: updatedCertificates }; setInspectionForm(updatedData); const updatedRecord = { ...selectedRecord, inspectionData: updatedData }; await updateTradeRecord(updatedRecord); setSelectedRecord(updatedRecord); };
     const handleAddInspectionPayment = async () => { if (!selectedRecord || !newInspectionPayment.amount) return; const payment: InspectionPayment = { id: generateUUID(), part: newInspectionPayment.part || 'Part', amount: Number(newInspectionPayment.amount), date: newInspectionPayment.date || '', bank: newInspectionPayment.bank || '', description: '' }; const updatedPayments = [...(inspectionForm.payments || []), payment]; const updatedData = { ...inspectionForm, payments: updatedPayments }; setInspectionForm(updatedData); setNewInspectionPayment({ part: '', amount: 0, date: '', bank: '' }); const updatedRecord = { ...selectedRecord, inspectionData: updatedData }; if (!updatedRecord.stages[TradeStage.INSPECTION]) updatedRecord.stages[TradeStage.INSPECTION] = getStageData(updatedRecord, TradeStage.INSPECTION); updatedRecord.stages[TradeStage.INSPECTION].costRial = updatedPayments.reduce((acc, p) => acc + p.amount, 0); await updateTradeRecord(updatedRecord); setSelectedRecord(updatedRecord); };
     const handleDeleteInspectionPayment = async (id: string) => { if (!selectedRecord) return; const updatedPayments = (inspectionForm.payments || []).filter(p => p.id !== id); const updatedData = { ...inspectionForm, payments: updatedPayments }; setInspectionForm(updatedData); const updatedRecord = { ...selectedRecord, inspectionData: updatedData }; if (!updatedRecord.stages[TradeStage.INSPECTION]) updatedRecord.stages[TradeStage.INSPECTION] = getStageData(updatedRecord, TradeStage.INSPECTION); updatedRecord.stages[TradeStage.INSPECTION].costRial = updatedPayments.reduce((acc, p) => acc + p.amount, 0); await updateTradeRecord(updatedRecord); setSelectedRecord(updatedRecord); };
-
-    // Clearance Handlers
     const handleAddWarehouseReceipt = async () => { if (!selectedRecord || !newWarehouseReceipt.number) return; const receipt: WarehouseReceipt = { id: generateUUID(), number: newWarehouseReceipt.number || '', part: newWarehouseReceipt.part || '', issueDate: newWarehouseReceipt.issueDate || '' }; const updatedReceipts = [...(clearanceForm.receipts || []), receipt]; const updatedData = { ...clearanceForm, receipts: updatedReceipts }; setClearanceForm(updatedData); setNewWarehouseReceipt({ number: '', part: '', issueDate: '' }); const updatedRecord = { ...selectedRecord, clearanceData: updatedData }; if (!updatedRecord.stages[TradeStage.CLEARANCE_DOCS]) updatedRecord.stages[TradeStage.CLEARANCE_DOCS] = getStageData(updatedRecord, TradeStage.CLEARANCE_DOCS); updatedRecord.stages[TradeStage.CLEARANCE_DOCS].isCompleted = updatedReceipts.length > 0; await updateTradeRecord(updatedRecord); setSelectedRecord(updatedRecord); };
     const handleDeleteWarehouseReceipt = async (id: string) => { if (!selectedRecord) return; const updatedReceipts = (clearanceForm.receipts || []).filter(r => r.id !== id); const updatedData = { ...clearanceForm, receipts: updatedReceipts }; setClearanceForm(updatedData); const updatedRecord = { ...selectedRecord, clearanceData: updatedData }; await updateTradeRecord(updatedRecord); setSelectedRecord(updatedRecord); };
     const handleAddClearancePayment = async () => { if (!selectedRecord || !newClearancePayment.amount) return; const payment: ClearancePayment = { id: generateUUID(), amount: Number(newClearancePayment.amount), part: newClearancePayment.part || '', bank: newClearancePayment.bank || '', date: newClearancePayment.date || '', payingBank: newClearancePayment.payingBank }; const updatedPayments = [...(clearanceForm.payments || []), payment]; const updatedData = { ...clearanceForm, payments: updatedPayments }; setClearanceForm(updatedData); setNewClearancePayment({ amount: 0, part: '', bank: '', date: '', payingBank: '' }); const totalCost = updatedPayments.reduce((acc, p) => acc + p.amount, 0); const updatedRecord = { ...selectedRecord, clearanceData: updatedData }; if (!updatedRecord.stages[TradeStage.CLEARANCE_DOCS]) updatedRecord.stages[TradeStage.CLEARANCE_DOCS] = getStageData(updatedRecord, TradeStage.CLEARANCE_DOCS); updatedRecord.stages[TradeStage.CLEARANCE_DOCS].costRial = totalCost; await updateTradeRecord(updatedRecord); setSelectedRecord(updatedRecord); };
     const handleDeleteClearancePayment = async (id: string) => { if (!selectedRecord) return; const updatedPayments = (clearanceForm.payments || []).filter(p => p.id !== id); const updatedData = { ...clearanceForm, payments: updatedPayments }; setClearanceForm(updatedData); const totalCost = updatedPayments.reduce((acc, p) => acc + p.amount, 0); const updatedRecord = { ...selectedRecord, clearanceData: updatedData }; if (!updatedRecord.stages[TradeStage.CLEARANCE_DOCS]) updatedRecord.stages[TradeStage.CLEARANCE_DOCS] = getStageData(updatedRecord, TradeStage.CLEARANCE_DOCS); updatedRecord.stages[TradeStage.CLEARANCE_DOCS].costRial = totalCost; await updateTradeRecord(updatedRecord); setSelectedRecord(updatedRecord); };
-
-    // Green Leaf Handlers
-    const calculateGreenLeafTotal = (data: GreenLeafData) => {
-        let total = 0;
-        // 1. Bank payments from Customs Duties
-        total += data.duties.filter(d => d.paymentMethod === 'Bank').reduce((acc, d) => acc + d.amount, 0);
-        // 2. Cash deposits and Cheque Amounts from Guarantees
-        total += data.guarantees.reduce((acc, g) => acc + (g.cashAmount || 0) + (g.chequeAmount || 0), 0);
-        // 3. Tax
-        total += data.taxes.reduce((acc, t) => acc + t.amount, 0);
-        // 4. Road Tolls
-        total += data.roadTolls.reduce((acc, r) => acc + r.amount, 0);
-        return total;
-    };
-
-    const updateGreenLeafRecord = async (newData: GreenLeafData) => {
-        if (!selectedRecord) return;
-        setGreenLeafForm(newData);
-        const totalCost = calculateGreenLeafTotal(newData);
-        const updatedRecord = { ...selectedRecord, greenLeafData: newData };
-        
-        if (!updatedRecord.stages[TradeStage.GREEN_LEAF]) updatedRecord.stages[TradeStage.GREEN_LEAF] = getStageData(updatedRecord, TradeStage.GREEN_LEAF);
-        updatedRecord.stages[TradeStage.GREEN_LEAF].costRial = totalCost;
-        updatedRecord.stages[TradeStage.GREEN_LEAF].isCompleted = (newData.duties.length > 0);
-        
-        await updateTradeRecord(updatedRecord);
-        setSelectedRecord(updatedRecord);
-    };
-
-    const handleAddCustomsDuty = async () => {
-        if (!newCustomsDuty.cottageNumber || !newCustomsDuty.amount) return;
-        const duty: GreenLeafCustomsDuty = {
-            id: generateUUID(),
-            cottageNumber: newCustomsDuty.cottageNumber,
-            part: newCustomsDuty.part || '',
-            amount: Number(newCustomsDuty.amount),
-            paymentMethod: (newCustomsDuty.paymentMethod as 'Bank' | 'Guarantee') || 'Bank',
-            bank: newCustomsDuty.bank,
-            date: newCustomsDuty.date
-        };
-        const updatedDuties = [...greenLeafForm.duties, duty];
-        await updateGreenLeafRecord({ ...greenLeafForm, duties: updatedDuties });
-        setNewCustomsDuty({ cottageNumber: '', part: '', amount: 0, paymentMethod: 'Bank', bank: '', date: '' });
-    };
-
-    const handleDeleteCustomsDuty = async (id: string) => {
-        const updatedDuties = greenLeafForm.duties.filter(d => d.id !== id);
-        const updatedGuarantees = greenLeafForm.guarantees.filter(g => g.relatedDutyId !== id);
-        await updateGreenLeafRecord({ ...greenLeafForm, duties: updatedDuties, guarantees: updatedGuarantees });
-    };
-
-    const handleAddGuarantee = async () => {
-        if (!selectedDutyForGuarantee || !newGuaranteeDetails.guaranteeNumber) return;
-        
-        const duty = greenLeafForm.duties.find(d => d.id === selectedDutyForGuarantee);
-        const guarantee: GreenLeafGuarantee = {
-            id: generateUUID(),
-            relatedDutyId: selectedDutyForGuarantee,
-            guaranteeNumber: newGuaranteeDetails.guaranteeNumber,
-            chequeNumber: newGuaranteeDetails.chequeNumber,
-            chequeBank: newGuaranteeDetails.chequeBank,
-            chequeDate: newGuaranteeDetails.chequeDate,
-            chequeAmount: Number(newGuaranteeDetails.chequeAmount) || 0,
-            isDelivered: false,
-            cashAmount: Number(newGuaranteeDetails.cashAmount) || 0,
-            cashBank: newGuaranteeDetails.cashBank,
-            cashDate: newGuaranteeDetails.cashDate,
-            part: duty?.part // Inherit part from duty
-        };
-        const updatedGuarantees = [...greenLeafForm.guarantees, guarantee];
-        await updateGreenLeafRecord({ ...greenLeafForm, guarantees: updatedGuarantees });
-        setNewGuaranteeDetails({ guaranteeNumber: '', chequeNumber: '', chequeBank: '', chequeDate: '', cashAmount: 0, cashBank: '', cashDate: '', chequeAmount: 0 });
-        setSelectedDutyForGuarantee('');
-    };
-
-    const handleDeleteGuarantee = async (id: string) => {
-        const updatedGuarantees = greenLeafForm.guarantees.filter(g => g.id !== id);
-        await updateGreenLeafRecord({ ...greenLeafForm, guarantees: updatedGuarantees });
-    };
-
-    const handleToggleGuaranteeDelivery = async (id: string) => {
-        const updatedGuarantees = greenLeafForm.guarantees.map(g => 
-            g.id === id ? { ...g, isDelivered: !g.isDelivered } : g
-        );
-        await updateGreenLeafRecord({ ...greenLeafForm, guarantees: updatedGuarantees });
-    };
-
-    const handleAddTax = async () => {
-        if (!newTax.amount) return;
-        const tax: GreenLeafTax = { id: generateUUID(), amount: Number(newTax.amount), part: newTax.part || '', bank: newTax.bank || '', date: newTax.date || '' };
-        const updatedTaxes = [...greenLeafForm.taxes, tax];
-        await updateGreenLeafRecord({ ...greenLeafForm, taxes: updatedTaxes });
-        setNewTax({ part: '', amount: 0, bank: '', date: '' });
-    };
-    
-    const handleDeleteTax = async (id: string) => {
-        const updatedTaxes = greenLeafForm.taxes.filter(t => t.id !== id);
-        await updateGreenLeafRecord({ ...greenLeafForm, taxes: updatedTaxes });
-    };
-
-    const handleAddRoadToll = async () => {
-        if (!newRoadToll.amount) return;
-        const toll: GreenLeafRoadToll = { id: generateUUID(), amount: Number(newRoadToll.amount), part: newRoadToll.part || '', bank: newRoadToll.bank || '', date: newRoadToll.date || '' };
-        const updatedTolls = [...greenLeafForm.roadTolls, toll];
-        await updateGreenLeafRecord({ ...greenLeafForm, roadTolls: updatedTolls });
-        setNewRoadToll({ part: '', amount: 0, bank: '', date: '' });
-    };
-
-    const handleDeleteRoadToll = async (id: string) => {
-        const updatedTolls = greenLeafForm.roadTolls.filter(t => t.id !== id);
-        await updateGreenLeafRecord({ ...greenLeafForm, roadTolls: updatedTolls });
-    };
-
-    // Internal Shipping Handlers
-    const handleAddShippingPayment = async () => {
-        if (!selectedRecord || !newShippingPayment.amount) return;
-        const payment: ShippingPayment = {
-            id: generateUUID(),
-            part: newShippingPayment.part || '',
-            amount: Number(newShippingPayment.amount),
-            date: newShippingPayment.date || '',
-            bank: newShippingPayment.bank || '',
-            description: newShippingPayment.description || ''
-        };
-        const updatedPayments = [...(internalShippingForm.payments || []), payment];
-        const updatedData = { ...internalShippingForm, payments: updatedPayments };
-        setInternalShippingForm(updatedData);
-        setNewShippingPayment({ part: '', amount: 0, date: '', bank: '', description: '' });
-        
-        const updatedRecord = { ...selectedRecord, internalShippingData: updatedData };
-        if (!updatedRecord.stages[TradeStage.INTERNAL_SHIPPING]) updatedRecord.stages[TradeStage.INTERNAL_SHIPPING] = getStageData(updatedRecord, TradeStage.INTERNAL_SHIPPING);
-        
-        updatedRecord.stages[TradeStage.INTERNAL_SHIPPING].costRial = updatedPayments.reduce((acc, p) => acc + p.amount, 0);
-        updatedRecord.stages[TradeStage.INTERNAL_SHIPPING].isCompleted = updatedPayments.length > 0;
-        
-        await updateTradeRecord(updatedRecord);
-        setSelectedRecord(updatedRecord);
-    };
-
-    const handleDeleteShippingPayment = async (id: string) => {
-        if (!selectedRecord) return;
-        const updatedPayments = (internalShippingForm.payments || []).filter(p => p.id !== id);
-        const updatedData = { ...internalShippingForm, payments: updatedPayments };
-        setInternalShippingForm(updatedData);
-        
-        const updatedRecord = { ...selectedRecord, internalShippingData: updatedData };
-        if (!updatedRecord.stages[TradeStage.INTERNAL_SHIPPING]) updatedRecord.stages[TradeStage.INTERNAL_SHIPPING] = getStageData(updatedRecord, TradeStage.INTERNAL_SHIPPING);
-        
-        updatedRecord.stages[TradeStage.INTERNAL_SHIPPING].costRial = updatedPayments.reduce((acc, p) => acc + p.amount, 0);
-        
-        await updateTradeRecord(updatedRecord);
-        setSelectedRecord(updatedRecord);
-    };
-
-    // Agent / Clearance Fees Handlers
-    const handleAddAgentPayment = async () => {
-        if (!selectedRecord || !newAgentPayment.amount || !newAgentPayment.agentName) return;
-        const payment: AgentPayment = {
-            id: generateUUID(),
-            agentName: newAgentPayment.agentName,
-            amount: Number(newAgentPayment.amount),
-            bank: newAgentPayment.bank || '',
-            date: newAgentPayment.date || '',
-            part: newAgentPayment.part || '',
-            description: newAgentPayment.description || ''
-        };
-        const updatedPayments = [...(agentForm.payments || []), payment];
-        const updatedData = { ...agentForm, payments: updatedPayments };
-        setAgentForm(updatedData);
-        setNewAgentPayment({ agentName: newAgentPayment.agentName, amount: 0, bank: '', date: '', part: '', description: '' }); // Keep agent name for convenience
-
-        const updatedRecord = { ...selectedRecord, agentData: updatedData };
-        if (!updatedRecord.stages[TradeStage.AGENT_FEES]) updatedRecord.stages[TradeStage.AGENT_FEES] = getStageData(updatedRecord, TradeStage.AGENT_FEES);
-        
-        updatedRecord.stages[TradeStage.AGENT_FEES].costRial = updatedPayments.reduce((acc, p) => acc + p.amount, 0);
-        updatedRecord.stages[TradeStage.AGENT_FEES].isCompleted = updatedPayments.length > 0;
-        
-        await updateTradeRecord(updatedRecord);
-        setSelectedRecord(updatedRecord);
-    };
-
-    const handleDeleteAgentPayment = async (id: string) => {
-        if (!selectedRecord) return;
-        const updatedPayments = (agentForm.payments || []).filter(p => p.id !== id);
-        const updatedData = { ...agentForm, payments: updatedPayments };
-        setAgentForm(updatedData);
-        
-        const updatedRecord = { ...selectedRecord, agentData: updatedData };
-        if (!updatedRecord.stages[TradeStage.AGENT_FEES]) updatedRecord.stages[TradeStage.AGENT_FEES] = getStageData(updatedRecord, TradeStage.AGENT_FEES);
-        
-        updatedRecord.stages[TradeStage.AGENT_FEES].costRial = updatedPayments.reduce((acc, p) => acc + p.amount, 0);
-        
-        await updateTradeRecord(updatedRecord);
-        setSelectedRecord(updatedRecord);
-    };
-
-    // Currency Handlers
+    const calculateGreenLeafTotal = (data: GreenLeafData) => { let total = 0; total += data.duties.filter(d => d.paymentMethod === 'Bank').reduce((acc, d) => acc + d.amount, 0); total += data.guarantees.reduce((acc, g) => acc + (g.cashAmount || 0) + (g.chequeAmount || 0), 0); total += data.taxes.reduce((acc, t) => acc + t.amount, 0); total += data.roadTolls.reduce((acc, r) => acc + r.amount, 0); return total; };
+    const updateGreenLeafRecord = async (newData: GreenLeafData) => { if (!selectedRecord) return; setGreenLeafForm(newData); const totalCost = calculateGreenLeafTotal(newData); const updatedRecord = { ...selectedRecord, greenLeafData: newData }; if (!updatedRecord.stages[TradeStage.GREEN_LEAF]) updatedRecord.stages[TradeStage.GREEN_LEAF] = getStageData(updatedRecord, TradeStage.GREEN_LEAF); updatedRecord.stages[TradeStage.GREEN_LEAF].costRial = totalCost; updatedRecord.stages[TradeStage.GREEN_LEAF].isCompleted = (newData.duties.length > 0); await updateTradeRecord(updatedRecord); setSelectedRecord(updatedRecord); };
+    const handleAddCustomsDuty = async () => { if (!newCustomsDuty.cottageNumber || !newCustomsDuty.amount) return; const duty: GreenLeafCustomsDuty = { id: generateUUID(), cottageNumber: newCustomsDuty.cottageNumber, part: newCustomsDuty.part || '', amount: Number(newCustomsDuty.amount), paymentMethod: (newCustomsDuty.paymentMethod as 'Bank' | 'Guarantee') || 'Bank', bank: newCustomsDuty.bank, date: newCustomsDuty.date }; const updatedDuties = [...greenLeafForm.duties, duty]; await updateGreenLeafRecord({ ...greenLeafForm, duties: updatedDuties }); setNewCustomsDuty({ cottageNumber: '', part: '', amount: 0, paymentMethod: 'Bank', bank: '', date: '' }); };
+    const handleDeleteCustomsDuty = async (id: string) => { const updatedDuties = greenLeafForm.duties.filter(d => d.id !== id); const updatedGuarantees = greenLeafForm.guarantees.filter(g => g.relatedDutyId !== id); await updateGreenLeafRecord({ ...greenLeafForm, duties: updatedDuties, guarantees: updatedGuarantees }); };
+    const handleAddGuarantee = async () => { if (!selectedDutyForGuarantee || !newGuaranteeDetails.guaranteeNumber) return; const duty = greenLeafForm.duties.find(d => d.id === selectedDutyForGuarantee); const guarantee: GreenLeafGuarantee = { id: generateUUID(), relatedDutyId: selectedDutyForGuarantee, guaranteeNumber: newGuaranteeDetails.guaranteeNumber, chequeNumber: newGuaranteeDetails.chequeNumber, chequeBank: newGuaranteeDetails.chequeBank, chequeDate: newGuaranteeDetails.chequeDate, chequeAmount: Number(newGuaranteeDetails.chequeAmount) || 0, isDelivered: false, cashAmount: Number(newGuaranteeDetails.cashAmount) || 0, cashBank: newGuaranteeDetails.cashBank, cashDate: newGuaranteeDetails.cashDate, part: duty?.part }; const updatedGuarantees = [...greenLeafForm.guarantees, guarantee]; await updateGreenLeafRecord({ ...greenLeafForm, guarantees: updatedGuarantees }); setNewGuaranteeDetails({ guaranteeNumber: '', chequeNumber: '', chequeBank: '', chequeDate: '', cashAmount: 0, cashBank: '', cashDate: '', chequeAmount: 0 }); setSelectedDutyForGuarantee(''); };
+    const handleDeleteGuarantee = async (id: string) => { const updatedGuarantees = greenLeafForm.guarantees.filter(g => g.id !== id); await updateGreenLeafRecord({ ...greenLeafForm, guarantees: updatedGuarantees }); };
+    const handleToggleGuaranteeDelivery = async (id: string) => { const updatedGuarantees = greenLeafForm.guarantees.map(g => g.id === id ? { ...g, isDelivered: !g.isDelivered } : g); await updateGreenLeafRecord({ ...greenLeafForm, guarantees: updatedGuarantees }); };
+    const handleAddTax = async () => { if (!newTax.amount) return; const tax: GreenLeafTax = { id: generateUUID(), amount: Number(newTax.amount), part: newTax.part || '', bank: newTax.bank || '', date: newTax.date || '' }; const updatedTaxes = [...greenLeafForm.taxes, tax]; await updateGreenLeafRecord({ ...greenLeafForm, taxes: updatedTaxes }); setNewTax({ part: '', amount: 0, bank: '', date: '' }); };
+    const handleDeleteTax = async (id: string) => { const updatedTaxes = greenLeafForm.taxes.filter(t => t.id !== id); await updateGreenLeafRecord({ ...greenLeafForm, taxes: updatedTaxes }); };
+    const handleAddRoadToll = async () => { if (!newRoadToll.amount) return; const toll: GreenLeafRoadToll = { id: generateUUID(), amount: Number(newRoadToll.amount), part: newRoadToll.part || '', bank: newRoadToll.bank || '', date: newRoadToll.date || '' }; const updatedTolls = [...greenLeafForm.roadTolls, toll]; await updateGreenLeafRecord({ ...greenLeafForm, roadTolls: updatedTolls }); setNewRoadToll({ part: '', amount: 0, bank: '', date: '' }); };
+    const handleDeleteRoadToll = async (id: string) => { const updatedTolls = greenLeafForm.roadTolls.filter(t => t.id !== id); await updateGreenLeafRecord({ ...greenLeafForm, roadTolls: updatedTolls }); };
+    const handleAddShippingPayment = async () => { if (!selectedRecord || !newShippingPayment.amount) return; const payment: ShippingPayment = { id: generateUUID(), part: newShippingPayment.part || '', amount: Number(newShippingPayment.amount), date: newShippingPayment.date || '', bank: newShippingPayment.bank || '', description: newShippingPayment.description || '' }; const updatedPayments = [...(internalShippingForm.payments || []), payment]; const updatedData = { ...internalShippingForm, payments: updatedPayments }; setInternalShippingForm(updatedData); setNewShippingPayment({ part: '', amount: 0, date: '', bank: '', description: '' }); const updatedRecord = { ...selectedRecord, internalShippingData: updatedData }; if (!updatedRecord.stages[TradeStage.INTERNAL_SHIPPING]) updatedRecord.stages[TradeStage.INTERNAL_SHIPPING] = getStageData(updatedRecord, TradeStage.INTERNAL_SHIPPING); updatedRecord.stages[TradeStage.INTERNAL_SHIPPING].costRial = updatedPayments.reduce((acc, p) => acc + p.amount, 0); updatedRecord.stages[TradeStage.INTERNAL_SHIPPING].isCompleted = updatedPayments.length > 0; await updateTradeRecord(updatedRecord); setSelectedRecord(updatedRecord); };
+    const handleDeleteShippingPayment = async (id: string) => { if (!selectedRecord) return; const updatedPayments = (internalShippingForm.payments || []).filter(p => p.id !== id); const updatedData = { ...internalShippingForm, payments: updatedPayments }; setInternalShippingForm(updatedData); const updatedRecord = { ...selectedRecord, internalShippingData: updatedData }; if (!updatedRecord.stages[TradeStage.INTERNAL_SHIPPING]) updatedRecord.stages[TradeStage.INTERNAL_SHIPPING] = getStageData(updatedRecord, TradeStage.INTERNAL_SHIPPING); updatedRecord.stages[TradeStage.INTERNAL_SHIPPING].costRial = updatedPayments.reduce((acc, p) => acc + p.amount, 0); await updateTradeRecord(updatedRecord); setSelectedRecord(updatedRecord); };
+    const handleAddAgentPayment = async () => { if (!selectedRecord || !newAgentPayment.amount || !newAgentPayment.agentName) return; const payment: AgentPayment = { id: generateUUID(), agentName: newAgentPayment.agentName, amount: Number(newAgentPayment.amount), bank: newAgentPayment.bank || '', date: newAgentPayment.date || '', part: newAgentPayment.part || '', description: newAgentPayment.description || '' }; const updatedPayments = [...(agentForm.payments || []), payment]; const updatedData = { ...agentForm, payments: updatedPayments }; setAgentForm(updatedData); setNewAgentPayment({ agentName: newAgentPayment.agentName, amount: 0, bank: '', date: '', part: '', description: '' }); const updatedRecord = { ...selectedRecord, agentData: updatedData }; if (!updatedRecord.stages[TradeStage.AGENT_FEES]) updatedRecord.stages[TradeStage.AGENT_FEES] = getStageData(updatedRecord, TradeStage.AGENT_FEES); updatedRecord.stages[TradeStage.AGENT_FEES].costRial = updatedPayments.reduce((acc, p) => acc + p.amount, 0); updatedRecord.stages[TradeStage.AGENT_FEES].isCompleted = updatedPayments.length > 0; await updateTradeRecord(updatedRecord); setSelectedRecord(updatedRecord); };
+    const handleDeleteAgentPayment = async (id: string) => { if (!selectedRecord) return; const updatedPayments = (agentForm.payments || []).filter(p => p.id !== id); const updatedData = { ...agentForm, payments: updatedPayments }; setAgentForm(updatedData); const updatedRecord = { ...selectedRecord, agentData: updatedData }; if (!updatedRecord.stages[TradeStage.AGENT_FEES]) updatedRecord.stages[TradeStage.AGENT_FEES] = getStageData(updatedRecord, TradeStage.AGENT_FEES); updatedRecord.stages[TradeStage.AGENT_FEES].costRial = updatedPayments.reduce((acc, p) => acc + p.amount, 0); await updateTradeRecord(updatedRecord); setSelectedRecord(updatedRecord); };
     const handleAddCurrencyTranche = async () => { if (!selectedRecord || !newCurrencyTranche.amount) return; const tranche: CurrencyTranche = { id: generateUUID(), date: newCurrencyTranche.date || '', amount: Number(newCurrencyTranche.amount), currencyType: newCurrencyTranche.currencyType || selectedRecord.mainCurrency || 'EUR', brokerName: newCurrencyTranche.brokerName || '', exchangeName: newCurrencyTranche.exchangeName || '', rate: Number(newCurrencyTranche.rate) || 0, isDelivered: newCurrencyTranche.isDelivered, deliveryDate: newCurrencyTranche.deliveryDate }; const currentTranches = currencyForm.tranches || []; const updatedTranches = [...currentTranches, tranche]; const totalPurchased = updatedTranches.reduce((acc, t) => acc + t.amount, 0); const totalDelivered = updatedTranches.filter(t => t.isDelivered).reduce((acc, t) => acc + t.amount, 0); const updatedForm = { ...currencyForm, tranches: updatedTranches, purchasedAmount: totalPurchased, deliveredAmount: totalDelivered }; setCurrencyForm(updatedForm); const updatedRecord = { ...selectedRecord, currencyPurchaseData: updatedForm }; await updateTradeRecord(updatedRecord); setSelectedRecord(updatedRecord); setNewCurrencyTranche({ amount: 0, currencyType: selectedRecord.mainCurrency || 'EUR', date: '', exchangeName: '', brokerName: '', isDelivered: false }); };
     const handleRemoveTranche = async (id: string) => { if (!selectedRecord) return; if (!confirm('آیا از حذف این پارت مطمئن هستید؟')) return; const updatedTranches = (currencyForm.tranches || []).filter(t => t.id !== id); const totalPurchased = updatedTranches.reduce((acc, t) => acc + t.amount, 0); const totalDelivered = updatedTranches.filter(t => t.isDelivered).reduce((acc, t) => acc + t.amount, 0); const updatedForm = { ...currencyForm, tranches: updatedTranches, purchasedAmount: totalPurchased, deliveredAmount: totalDelivered }; setCurrencyForm(updatedForm); const updatedRecord = { ...selectedRecord, currencyPurchaseData: updatedForm }; await updateTradeRecord(updatedRecord); setSelectedRecord(updatedRecord); }
-    
-    const handleToggleTrancheDelivery = async (id: string) => {
-        if (!selectedRecord) return;
-        const updatedTranches = (currencyForm.tranches || []).map(t => {
-            if (t.id === id) return { ...t, isDelivered: !t.isDelivered };
-            return t;
-        });
-        
-        // Recalculate totals
-        const totalPurchased = updatedTranches.reduce((acc, t) => acc + t.amount, 0);
-        const totalDelivered = updatedTranches.filter(t => t.isDelivered).reduce((acc, t) => acc + t.amount, 0);
-
-        const updatedForm = {
-            ...currencyForm,
-            tranches: updatedTranches,
-            purchasedAmount: totalPurchased,
-            deliveredAmount: totalDelivered
-        };
-
-        setCurrencyForm(updatedForm);
-        const updatedRecord = { ...selectedRecord, currencyPurchaseData: updatedForm };
-        await updateTradeRecord(updatedRecord);
-        setSelectedRecord(updatedRecord);
-    };
-
-    const handleSaveCurrencyGuarantee = async () => {
-        if (!selectedRecord) return;
-        const gCheck = {
-            amount: deformatNumberString(currencyGuarantee.amount),
-            bank: currencyGuarantee.bank,
-            chequeNumber: currencyGuarantee.number,
-            dueDate: currencyGuarantee.date,
-            isDelivered: currencyGuarantee.isDelivered
-        };
-        const updatedForm = { ...currencyForm, guaranteeCheque: gCheck };
-        setCurrencyForm(updatedForm);
-        const updatedRecord = { ...selectedRecord, currencyPurchaseData: updatedForm };
-        await updateTradeRecord(updatedRecord);
-        setSelectedRecord(updatedRecord);
-        alert("اطلاعات چک ضمانت ارزی ذخیره شد.");
-    };
-
-    const handleToggleCurrencyGuaranteeDelivery = async () => {
-         if (!selectedRecord || !selectedRecord.currencyPurchaseData?.guaranteeCheque) return;
-         const currentStatus = selectedRecord.currencyPurchaseData.guaranteeCheque.isDelivered || false;
-         
-         // Update Local
-         setCurrencyGuarantee(prev => ({ ...prev, isDelivered: !currentStatus }));
-
-         // Update Record
-         const updatedForm = { 
-             ...currencyForm, 
-             guaranteeCheque: { 
-                 ...currencyForm.guaranteeCheque!, 
-                 isDelivered: !currentStatus 
-             } 
-         };
-         setCurrencyForm(updatedForm);
-         const updatedRecord = { ...selectedRecord, currencyPurchaseData: updatedForm };
-         await updateTradeRecord(updatedRecord);
-         setSelectedRecord(updatedRecord);
-    };
-
-    // Shipping Docs Handlers (Updated)
+    const handleToggleTrancheDelivery = async (id: string) => { if (!selectedRecord) return; const updatedTranches = (currencyForm.tranches || []).map(t => { if (t.id === id) return { ...t, isDelivered: !t.isDelivered }; return t; }); const totalPurchased = updatedTranches.reduce((acc, t) => acc + t.amount, 0); const totalDelivered = updatedTranches.filter(t => t.isDelivered).reduce((acc, t) => acc + t.amount, 0); const updatedForm = { ...currencyForm, tranches: updatedTranches, purchasedAmount: totalPurchased, deliveredAmount: totalDelivered }; setCurrencyForm(updatedForm); const updatedRecord = { ...selectedRecord, currencyPurchaseData: updatedForm }; await updateTradeRecord(updatedRecord); setSelectedRecord(updatedRecord); };
+    const handleSaveCurrencyGuarantee = async () => { if (!selectedRecord) return; const gCheck = { amount: deformatNumberString(currencyGuarantee.amount), bank: currencyGuarantee.bank, chequeNumber: currencyGuarantee.number, dueDate: currencyGuarantee.date, isDelivered: currencyGuarantee.isDelivered }; const updatedForm = { ...currencyForm, guaranteeCheque: gCheck }; setCurrencyForm(updatedForm); const updatedRecord = { ...selectedRecord, currencyPurchaseData: updatedForm }; await updateTradeRecord(updatedRecord); setSelectedRecord(updatedRecord); alert("اطلاعات چک ضمانت ارزی ذخیره شد."); };
+    const handleToggleCurrencyGuaranteeDelivery = async () => { if (!selectedRecord || !selectedRecord.currencyPurchaseData?.guaranteeCheque) return; const currentStatus = selectedRecord.currencyPurchaseData.guaranteeCheque.isDelivered || false; setCurrencyGuarantee(prev => ({ ...prev, isDelivered: !currentStatus })); const updatedForm = { ...currencyForm, guaranteeCheque: { ...currencyForm.guaranteeCheque!, isDelivered: !currentStatus } }; setCurrencyForm(updatedForm); const updatedRecord = { ...selectedRecord, currencyPurchaseData: updatedForm }; await updateTradeRecord(updatedRecord); setSelectedRecord(updatedRecord); };
     const handleAddInvoiceItem = () => { if (!newInvoiceItem.name) return; const newItem: InvoiceItem = { id: generateUUID(), name: newInvoiceItem.name, weight: Number(newInvoiceItem.weight), unitPrice: Number(newInvoiceItem.unitPrice), totalPrice: Number(newInvoiceItem.totalPrice) || (Number(newInvoiceItem.weight) * Number(newInvoiceItem.unitPrice)), part: newInvoiceItem.part || '' }; setShippingDocForm(prev => ({ ...prev, invoiceItems: [...(prev.invoiceItems || []), newItem] })); setNewInvoiceItem({ name: '', weight: 0, unitPrice: 0, totalPrice: 0, part: '' }); };
     const handleRemoveInvoiceItem = (id: string) => { setShippingDocForm(prev => ({ ...prev, invoiceItems: (prev.invoiceItems || []).filter(i => i.id !== id) })); };
-    
-    // NEW: Packing Item Handlers
     const handleAddPackingItem = () => { if (!newPackingItem.description) return; const item: PackingItem = { id: generateUUID(), description: newPackingItem.description, netWeight: Number(newPackingItem.netWeight), grossWeight: Number(newPackingItem.grossWeight), packageCount: Number(newPackingItem.packageCount), part: newPackingItem.part || '' }; setShippingDocForm(prev => ({ ...prev, packingItems: [...(prev.packingItems || []), item] })); setNewPackingItem({ description: '', netWeight: 0, grossWeight: 0, packageCount: 0, part: '' }); };
     const handleRemovePackingItem = (id: string) => { setShippingDocForm(prev => ({ ...prev, packingItems: (prev.packingItems || []).filter(i => i.id !== id) })); };
-
     const handleDocFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => { const file = e.target.files?.[0]; if (!file) return; setUploadingDocFile(true); const reader = new FileReader(); reader.onload = async (ev) => { const base64 = ev.target?.result as string; try { const result = await uploadFile(file.name, base64); setShippingDocForm(prev => ({ ...prev, attachments: [...(prev.attachments || []), { fileName: result.fileName, url: result.url }] })); } catch (error) { alert('خطا در آپلود فایل'); } finally { setUploadingDocFile(false); } }; reader.readAsDataURL(file); e.target.value = ''; };
-    
-    const handleSaveShippingDoc = async () => { 
-        if (!selectedRecord || !shippingDocForm.documentNumber) return; 
-        
-        // Calculate Totals for Packing List from Items if available
-        let totalNet = shippingDocForm.netWeight;
-        let totalGross = shippingDocForm.grossWeight;
-        let totalPackages = shippingDocForm.packagesCount;
-
-        if (activeShippingSubTab === 'Packing List' && shippingDocForm.packingItems && shippingDocForm.packingItems.length > 0) {
-            totalNet = shippingDocForm.packingItems.reduce((acc, i) => acc + i.netWeight, 0);
-            totalGross = shippingDocForm.packingItems.reduce((acc, i) => acc + i.grossWeight, 0);
-            totalPackages = shippingDocForm.packingItems.reduce((acc, i) => acc + i.packageCount, 0);
-        }
-
-        const newDoc: ShippingDocument = { 
-            id: generateUUID(), 
-            type: activeShippingSubTab, 
-            status: shippingDocForm.status || 'Draft', 
-            documentNumber: shippingDocForm.documentNumber, 
-            documentDate: shippingDocForm.documentDate || '', 
-            createdAt: Date.now(), 
-            createdBy: currentUser.fullName, 
-            attachments: shippingDocForm.attachments || [], 
-            invoiceItems: activeShippingSubTab === 'Commercial Invoice' ? shippingDocForm.invoiceItems : undefined, 
-            packingItems: activeShippingSubTab === 'Packing List' ? shippingDocForm.packingItems : undefined,
-            freightCost: activeShippingSubTab === 'Commercial Invoice' ? Number(shippingDocForm.freightCost) : undefined, 
-            currency: shippingDocForm.currency, 
-            netWeight: totalNet, 
-            grossWeight: totalGross, 
-            packagesCount: totalPackages, 
-            vesselName: shippingDocForm.vesselName, 
-            portOfLoading: shippingDocForm.portOfLoading, 
-            portOfDischarge: shippingDocForm.portOfDischarge, 
-            description: shippingDocForm.description 
-        }; 
-        const updatedDocs = [...(selectedRecord.shippingDocuments || []), newDoc]; 
-        const updatedRecord = { ...selectedRecord, shippingDocuments: updatedDocs }; 
-        if (!updatedRecord.stages[TradeStage.SHIPPING_DOCS]) updatedRecord.stages[TradeStage.SHIPPING_DOCS] = getStageData(updatedRecord, TradeStage.SHIPPING_DOCS); 
-        if (activeShippingSubTab === 'Commercial Invoice') { 
-            updatedRecord.stages[TradeStage.SHIPPING_DOCS].costCurrency = updatedDocs.filter(d => d.type === 'Commercial Invoice').reduce((acc, d) => acc + (d.invoiceItems?.reduce((sum, i) => sum + i.totalPrice, 0) || 0) + (d.freightCost || 0), 0); 
-        } 
-        await updateTradeRecord(updatedRecord); 
-        setSelectedRecord(updatedRecord); 
-        setShippingDocForm({ status: 'Draft', documentNumber: '', documentDate: '', attachments: [], invoiceItems: [], packingItems: [], freightCost: 0 }); 
-    };
-    
+    const handleSaveShippingDoc = async () => { if (!selectedRecord || !shippingDocForm.documentNumber) return; let totalNet = shippingDocForm.netWeight; let totalGross = shippingDocForm.grossWeight; let totalPackages = shippingDocForm.packagesCount; if (activeShippingSubTab === 'Packing List' && shippingDocForm.packingItems && shippingDocForm.packingItems.length > 0) { totalNet = shippingDocForm.packingItems.reduce((acc, i) => acc + i.netWeight, 0); totalGross = shippingDocForm.packingItems.reduce((acc, i) => acc + i.grossWeight, 0); totalPackages = shippingDocForm.packingItems.reduce((acc, i) => acc + i.packageCount, 0); } const newDoc: ShippingDocument = { id: generateUUID(), type: activeShippingSubTab, status: shippingDocForm.status || 'Draft', documentNumber: shippingDocForm.documentNumber, documentDate: shippingDocForm.documentDate || '', createdAt: Date.now(), createdBy: currentUser.fullName, attachments: shippingDocForm.attachments || [], invoiceItems: activeShippingSubTab === 'Commercial Invoice' ? shippingDocForm.invoiceItems : undefined, packingItems: activeShippingSubTab === 'Packing List' ? shippingDocForm.packingItems : undefined, freightCost: activeShippingSubTab === 'Commercial Invoice' ? Number(shippingDocForm.freightCost) : undefined, currency: shippingDocForm.currency, netWeight: totalNet, grossWeight: totalGross, packagesCount: totalPackages, vesselName: shippingDocForm.vesselName, portOfLoading: shippingDocForm.portOfLoading, portOfDischarge: shippingDocForm.portOfDischarge, description: shippingDocForm.description }; const updatedDocs = [...(selectedRecord.shippingDocuments || []), newDoc]; const updatedRecord = { ...selectedRecord, shippingDocuments: updatedDocs }; if (!updatedRecord.stages[TradeStage.SHIPPING_DOCS]) updatedRecord.stages[TradeStage.SHIPPING_DOCS] = getStageData(updatedRecord, TradeStage.SHIPPING_DOCS); if (activeShippingSubTab === 'Commercial Invoice') { updatedRecord.stages[TradeStage.SHIPPING_DOCS].costCurrency = updatedDocs.filter(d => d.type === 'Commercial Invoice').reduce((acc, d) => acc + (d.invoiceItems?.reduce((sum, i) => sum + i.totalPrice, 0) || 0) + (d.freightCost || 0), 0); } await updateTradeRecord(updatedRecord); setSelectedRecord(updatedRecord); setShippingDocForm({ status: 'Draft', documentNumber: '', documentDate: '', attachments: [], invoiceItems: [], packingItems: [], freightCost: 0 }); };
     const handleDeleteShippingDoc = async (id: string) => { if (!selectedRecord) return; const updatedDocs = (selectedRecord.shippingDocuments || []).filter(d => d.id !== id); const updatedRecord = { ...selectedRecord, shippingDocuments: updatedDocs }; await updateTradeRecord(updatedRecord); setSelectedRecord(updatedRecord); };
-
-    // NEW: Sync Invoice to Proforma
-    const handleSyncInvoiceToProforma = async () => {
-        if (!selectedRecord) return;
-        if (!confirm('آیا مطمئن هستید؟ این عملیات اقلام و هزینه حمل پروفرما را با مقادیر این اینویس جایگزین می‌کند. اقلام هم‌نام (از پارت‌های مختلف) تجمیع خواهند شد.')) return;
-        
-        const invoiceItems = shippingDocForm.invoiceItems || [];
-        const aggregatedMap = new Map<string, { weight: number, totalPrice: number }>();
-
-        // Aggregate by Name
-        for (const item of invoiceItems) {
-            const name = item.name.trim(); 
-            const current = aggregatedMap.get(name) || { weight: 0, totalPrice: 0 };
-            aggregatedMap.set(name, {
-                weight: current.weight + item.weight,
-                totalPrice: current.totalPrice + item.totalPrice
-            });
-        }
-
-        // Create new Trade Items
-        const newItems: TradeItem[] = [];
-        aggregatedMap.forEach((val, name) => {
-            newItems.push({
-                id: generateUUID(),
-                name: name,
-                weight: val.weight,
-                unitPrice: val.weight > 0 ? val.totalPrice / val.weight : 0, // Avg Unit Price
-                totalPrice: val.totalPrice
-            });
-        });
-        
-        const updatedRecord = {
-            ...selectedRecord,
-            items: newItems,
-            freightCost: Number(shippingDocForm.freightCost) || 0
-        };
-        
-        await updateTradeRecord(updatedRecord);
-        setSelectedRecord(updatedRecord);
-        alert('پروفرما با موفقیت بروزرسانی شد (تجمیع بر اساس نام کالا).');
-    };
-
-    // Timeline Modal Handlers
+    const handleSyncInvoiceToProforma = async () => { if (!selectedRecord) return; if (!confirm('آیا مطمئن هستید؟ این عملیات اقلام و هزینه حمل پروفرما را با مقادیر این اینویس جایگزین می‌کند. اقلام هم‌نام (از پارت‌های مختلف) تجمیع خواهند شد.')) return; const invoiceItems = shippingDocForm.invoiceItems || []; const aggregatedMap = new Map<string, { weight: number, totalPrice: number }>(); for (const item of invoiceItems) { const name = item.name.trim(); const current = aggregatedMap.get(name) || { weight: 0, totalPrice: 0 }; aggregatedMap.set(name, { weight: current.weight + item.weight, totalPrice: current.totalPrice + item.totalPrice }); } const newItems: TradeItem[] = []; aggregatedMap.forEach((val, name) => { newItems.push({ id: generateUUID(), name: name, weight: val.weight, unitPrice: val.weight > 0 ? val.totalPrice / val.weight : 0, totalPrice: val.totalPrice }); }); const updatedRecord = { ...selectedRecord, items: newItems, freightCost: Number(shippingDocForm.freightCost) || 0 }; await updateTradeRecord(updatedRecord); setSelectedRecord(updatedRecord); alert('پروفرما با موفقیت بروزرسانی شد (تجمیع بر اساس نام کالا).'); };
     const handleStageClick = (stage: TradeStage) => { const data = getStageData(selectedRecord, stage); setEditingStage(stage); setStageFormData(data); };
     const handleStageFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => { const file = e.target.files?.[0]; if (!file) return; setUploadingStageFile(true); const reader = new FileReader(); reader.onload = async (ev) => { const base64 = ev.target?.result as string; try { const result = await uploadFile(file.name, base64); setStageFormData(prev => ({ ...prev, attachments: [...(prev.attachments || []), { fileName: result.fileName, url: result.url }] })); } catch (error) { alert('خطا در آپلود'); } finally { setUploadingStageFile(false); } }; reader.readAsDataURL(file); e.target.value = ''; };
     const handleSaveStage = async () => { if (!selectedRecord || !editingStage) return; const updatedRecord = { ...selectedRecord }; updatedRecord.stages[editingStage] = { ...getStageData(selectedRecord, editingStage), ...stageFormData, updatedAt: Date.now(), updatedBy: currentUser.fullName }; if (editingStage === TradeStage.ALLOCATION_QUEUE && stageFormData.queueDate) { updatedRecord.stages[TradeStage.ALLOCATION_QUEUE].queueDate = stageFormData.queueDate; } if (editingStage === TradeStage.ALLOCATION_APPROVED) { updatedRecord.stages[TradeStage.ALLOCATION_APPROVED].allocationDate = stageFormData.allocationDate; updatedRecord.stages[TradeStage.ALLOCATION_APPROVED].allocationCode = stageFormData.allocationCode; updatedRecord.stages[TradeStage.ALLOCATION_APPROVED].allocationExpiry = stageFormData.allocationExpiry; } await updateTradeRecord(updatedRecord); setSelectedRecord(updatedRecord); setEditingStage(null); };
-
-    // Final Calculation Handlers
     const toggleCommitment = async () => { if (!selectedRecord) return; const updatedRecord = { ...selectedRecord, isCommitmentFulfilled: !selectedRecord.isCommitmentFulfilled }; await updateTradeRecord(updatedRecord); setSelectedRecord(updatedRecord); };
     const handleArchiveRecord = async () => { if (!selectedRecord) return; if (!confirm('آیا از انتقال این پرونده به بایگانی (ترخیص شده) اطمینان دارید؟')) return; const updatedRecord = { ...selectedRecord, isArchived: true, status: 'Completed' as const }; await updateTradeRecord(updatedRecord); setSelectedRecord(updatedRecord); alert('پرونده با موفقیت بایگانی شد.'); setViewMode('dashboard'); loadRecords(); };
     const handleUpdateCalcRate = async (rate: number) => { setCalcExchangeRate(rate); if (selectedRecord) { const updated = { ...selectedRecord, exchangeRate: rate }; await updateTradeRecord(updated); setSelectedRecord(updated); } };
     const getAllGuarantees = () => { const list = []; if (selectedRecord && selectedRecord.currencyPurchaseData?.guaranteeCheque) { list.push({ id: 'currency_g', type: 'ارزی', number: selectedRecord.currencyPurchaseData.guaranteeCheque.chequeNumber, bank: selectedRecord.currencyPurchaseData.guaranteeCheque.bank, amount: selectedRecord.currencyPurchaseData.guaranteeCheque.amount, isDelivered: selectedRecord.currencyPurchaseData.guaranteeCheque.isDelivered, toggleFunc: handleToggleCurrencyGuaranteeDelivery }); } if (selectedRecord && selectedRecord.greenLeafData?.guarantees) { selectedRecord.greenLeafData.guarantees.forEach(g => { list.push({ id: g.id, type: 'گمرکی', number: g.guaranteeNumber + (g.chequeNumber ? ` / چک: ${g.chequeNumber}` : ''), bank: g.chequeBank, amount: g.chequeAmount, isDelivered: g.isDelivered, toggleFunc: () => handleToggleGuaranteeDelivery(g.id) }); }); } return list; };
 
-    // Print & PDF Logic
+    // Updated Print & PDF Logic: Switch to POPUP WINDOW for reliable rendering
     const handlePrintReport = () => {
         const content = document.getElementById('allocation-report-table-print-area');
         if (!content) return;
 
-        // Create a hidden iframe
-        const iframe = document.createElement('iframe');
-        iframe.style.position = 'fixed';
-        iframe.style.right = '0';
-        iframe.style.bottom = '0';
-        iframe.style.width = '0px';
-        iframe.style.height = '0px';
-        iframe.style.border = 'none';
-        document.body.appendChild(iframe);
-
-        const doc = iframe.contentWindow?.document;
-        if (!doc) return;
+        // Open a new window
+        const printWindow = window.open('', '_blank', 'width=1200,height=800');
+        if (!printWindow) {
+            alert("پنجره پاپ‌آپ مسدود شده است. لطفا اجازه دهید.");
+            return;
+        }
 
         // Get all style sheets
         const styleSheets = Array.from(document.querySelectorAll('link[rel="stylesheet"], style')).map(el => el.outerHTML).join('');
-        
-        doc.open();
-        doc.write(`
+
+        printWindow.document.write(`
           <html dir="rtl" lang="fa">
             <head>
               <title>گزارش صف تخصیص</title>
               ${styleSheets}
+              <script src="https://cdn.tailwindcss.com"></script>
+              <link href="https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.003/Vazirmatn-font-face.css" rel="stylesheet" type="text/css" />
               <style>
-                body { background: white !important; margin: 0 !important; padding: 0 !important; font-family: 'Vazirmatn', sans-serif !important; }
+                body { background: white; margin: 0; padding: 20px; font-family: 'Vazirmatn', sans-serif; direction: rtl; }
+                table { width: 100%; border-collapse: collapse; font-size: 10pt; }
+                th, td { border: 1px solid #000; padding: 4px; text-align: center; }
+                th { background-color: #f3f4f6; color: #000; font-weight: bold; }
+                .no-print { display: none !important; }
                 @media print {
-                    @page { size: A4 landscape; margin: 5mm; }
+                    @page { size: A4 landscape; margin: 10mm; }
                     body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-                    table { width: 100%; border-collapse: collapse; font-size: 8pt; }
-                    th, td { border: 1px solid #000; padding: 2px; text-align: center; }
-                    th { background-color: #f3f4f6 !important; color: #000 !important; font-weight: bold; }
-                    /* Explicitly show everything */
-                    .no-print { display: table-cell !important; } 
                 }
               </style>
             </head>
             <body>
-              <div style="width: 100%; padding: 10px;">
-                <h2 style="text-align: center; margin-bottom: 10px;">گزارش صف تخصیص ارز</h2>
+              <div style="width: 100%;">
+                <h2 style="text-align: center; margin-bottom: 20px; font-weight: bold;">گزارش صف تخصیص ارز</h2>
                 ${content.innerHTML}
               </div>
               <script>
-                // Increased timeout to ensure styles are loaded and layout is stabilized
-                window.onload = function() { setTimeout(function() { window.focus(); window.print(); }, 1000); };
+                // Wait for resources to load
+                setTimeout(function() {
+                    window.focus();
+                    window.print();
+                    // Optional: window.close(); 
+                }, 1000);
               </script>
             </body>
           </html>
         `);
-        doc.close();
-        setTimeout(() => { if (document.body.contains(iframe)) document.body.removeChild(iframe); }, 60000);
+        printWindow.document.close();
     };
 
     const handlePrintTrade = () => {
@@ -727,21 +356,19 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
         try {
             // @ts-ignore
             const canvas = await window.html2canvas(element, { 
-                scale: 2, // Moderate scale for performance
+                scale: 2, 
                 backgroundColor: '#ffffff',
                 useCORS: true,
                 onclone: (doc) => {
                     const el = doc.getElementById(elementId);
                     if (el) {
-                        // Force full width to ensure all columns render (no scroll)
-                        // Using a fixed large width to guarantee fit, then scaling down
                         el.style.width = '1400px'; 
                         el.style.maxWidth = 'none';
                         el.style.overflow = 'visible';
                         const table = el.querySelector('table');
                         if (table) {
                             table.style.width = '100%';
-                            table.style.fontSize = '10px'; // Ensure font is legible
+                            table.style.fontSize = '10px';
                         }
                     }
                 }
@@ -750,19 +377,11 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
             const imgData = canvas.toDataURL('image/png');
             // @ts-ignore
             const { jsPDF } = window.jspdf;
-            
-            // A4 Landscape: 297mm width, 210mm height
             const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
             const pdfWidth = 297; 
-            const pdfHeight = 210;
-            
-            // Calculate image dimensions to fit within A4 landscape width (with margins)
             const margin = 5;
             const contentWidth = pdfWidth - (2 * margin);
-            // Maintain aspect ratio
             const contentHeight = (canvas.height * contentWidth) / canvas.width;
-            
-            // If height exceeds page, it will be handled (for now assuming single page fit or split manually if needed)
             pdf.addImage(imgData, 'PNG', margin, margin, contentWidth, contentHeight);
             pdf.save(`${filename}.pdf`);
         } catch (e) {
@@ -775,18 +394,166 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
 
     const handleDownloadFinalCalculationPDF = () => handleDownloadReportPDF('print-trade-final', `Final_Calculation_${selectedRecord?.fileNumber}`);
 
+    const handleWhatsAppShare = () => {
+        // Construct a text report from current filter
+        let filteredRecords = records;
+        if (reportFilterCompany) filteredRecords = records.filter(r => r.company === reportFilterCompany);
+        const queueRecords = filteredRecords.filter(r => r.stages[TradeStage.ALLOCATION_QUEUE]?.queueDate);
+        
+        let text = `📊 *گزارش صف تخصیص ارز* 📊\n\n`;
+        text += `📅 تاریخ: ${new Date().toLocaleDateString('fa-IR')}\n`;
+        text += `🏢 شرکت: ${reportFilterCompany || 'همه'}\n`;
+        text += `----------------------\n`;
+        
+        let totalUSD = 0;
+
+        queueRecords.forEach((r, idx) => {
+            const usd = (r.items.reduce((s, i) => s + i.totalPrice, 0) + (r.freightCost || 0));
+            totalUSD += usd;
+            text += `${idx + 1}. *${r.goodsName}* (${r.fileNumber})\n`;
+            text += `   💰 مبلغ: ${formatNumberString(usd)} ${r.mainCurrency}\n`;
+            text += `   ⏳ وضعیت: ${r.stages[TradeStage.ALLOCATION_APPROVED]?.allocationDate ? 'تخصیص یافته' : 'در صف'}\n\n`;
+        });
+        
+        text += `----------------------\n`;
+        text += `💵 *مجموع کل:* ${formatNumberString(totalUSD)} ${queueRecords[0]?.mainCurrency || 'ارز پایه'}\n`;
+
+        window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
+    };
+
     // Update Record for Table Interaction
     const handleUpdateRecordFromTable = async (record: TradeRecord, updates: Partial<TradeRecord>) => {
         const updated = { ...record, ...updates };
-        // We update local state optimistically, but also save to DB
         const newRecords = records.map(r => r.id === record.id ? updated : r);
         setRecords(newRecords);
         await updateTradeRecord(updated);
     };
 
-    // Helper for US Locale Currency Formatting
     const formatUSD = (val: number) => {
         return val.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    };
+
+    // Google Calendar Helper: Generate Add Event Link
+    const getGoogleCalendarLink = (event: {date: string, title: string, description?: string}) => {
+        // Parse Shamsi date to Gregorian for Google
+        const gDate = parsePersianDate(event.date);
+        if (!gDate) return '#';
+        
+        const pad = (n: number) => n < 10 ? `0${n}` : n;
+        const startStr = `${gDate.getFullYear()}${pad(gDate.getMonth() + 1)}${pad(gDate.getDate())}`;
+        const endStr = `${gDate.getFullYear()}${pad(gDate.getMonth() + 1)}${pad(gDate.getDate() + 1)}`; // Next day for all-day event
+        
+        return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(event.title)}&details=${encodeURIComponent(event.description || '')}&dates=${startStr}/${endStr}`;
+    };
+
+    // Calendar Helper
+    const renderCalendar = () => {
+        // If Google Calendar ID is present, embed it
+        if (settings?.googleCalendarId) {
+            const calendarSrc = `https://calendar.google.com/calendar/embed?src=${encodeURIComponent(settings.googleCalendarId)}&ctz=Asia%2FTehran`;
+            return (
+                <div className="flex flex-col h-full bg-white rounded-xl shadow-sm border overflow-hidden">
+                    <div className="bg-blue-50 p-4 flex justify-between items-center border-b">
+                        <div className="flex items-center gap-2 text-blue-800 font-bold">
+                            <CalendarIcon size={20} />
+                            تقویم گوگل (متصل شده)
+                        </div>
+                        <a href="https://calendar.google.com" target="_blank" className="text-xs bg-white text-blue-600 px-3 py-1 rounded border hover:bg-blue-50 flex items-center gap-1">
+                            <ExternalLink size={12}/> مدیریت در گوگل
+                        </a>
+                    </div>
+                    <iframe src={calendarSrc} style={{border: 0}} width="100%" height="600" frameBorder="0" scrolling="no"></iframe>
+                    
+                    {/* Still show internal events list for "Add to Google" functionality */}
+                    <div className="p-4 bg-gray-50 border-t">
+                        <h4 className="font-bold text-sm mb-3 flex items-center gap-2"><CalendarDays size={16}/> رویدادهای سیستمی (جهت افزودن به تقویم)</h4>
+                        <div className="flex gap-2 overflow-x-auto pb-2">
+                            {calendarEvents.map((ev, idx) => (
+                                <a 
+                                    key={idx} 
+                                    href={getGoogleCalendarLink(ev)} 
+                                    target="_blank" 
+                                    className="flex-shrink-0 bg-white border p-2 rounded-lg text-xs hover:bg-blue-50 hover:border-blue-300 transition-colors min-w-[200px]"
+                                    title="افزودن به تقویم گوگل"
+                                >
+                                    <div className="font-bold text-gray-700 mb-1">{ev.title}</div>
+                                    <div className="text-gray-500">{ev.date}</div>
+                                    <div className="text-[10px] text-blue-600 mt-1 flex items-center gap-1"><Plus size={10}/> افزودن به گوگل</div>
+                                </a>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        // Fallback to Internal Calendar View if no ID provided
+        const year = calendarMonth.getFullYear(); // Gregorian for logic
+        const month = calendarMonth.getMonth();
+        const firstDay = new Date(year, month, 1);
+        const lastDay = new Date(year, month + 1, 0);
+        const daysInMonth = lastDay.getDate();
+        const startingDay = firstDay.getDay(); // 0 = Sun, 1 = Mon...
+        
+        const shamsiTitle = new Intl.DateTimeFormat('fa-IR', { year: 'numeric', month: 'long' }).format(calendarMonth);
+
+        const days = [];
+        // Empty slots
+        for (let i = 0; i < startingDay; i++) { days.push(<div key={`empty-${i}`} className="h-24 bg-gray-50 border-r border-b"></div>); }
+        // Days
+        for (let d = 1; d <= daysInMonth; d++) {
+            const shamsiDateStr = new Date(year, month, d).toLocaleDateString('fa-IR-u-nu-latn').replace(/\//g, '/');
+            const parts = shamsiDateStr.split('/');
+            const shamsiFormatted = `${parts[0]}/${parts[1].padStart(2,'0')}/${parts[2].padStart(2,'0')}`;
+
+            const dayEvents = calendarEvents.filter(e => e.date === shamsiFormatted || e.date === shamsiDateStr);
+
+            days.push(
+                <div key={d} className="h-32 border-r border-b p-1 relative hover:bg-blue-50 transition-colors group">
+                    <div className="font-bold text-xs text-gray-700 flex justify-between">
+                        <span>{d} <span className="text-[10px] text-gray-400">({shamsiFormatted.split('/')[2]})</span></span>
+                        {dayEvents.length > 0 && <span className="text-[9px] bg-red-100 text-red-600 px-1 rounded">{dayEvents.length}</span>}
+                    </div>
+                    <div className="mt-1 space-y-1 overflow-y-auto max-h-24">
+                        {dayEvents.map((ev, idx) => (
+                            <a 
+                                key={idx} 
+                                href={getGoogleCalendarLink(ev)} 
+                                target="_blank"
+                                className={`block text-[10px] p-1 rounded truncate cursor-pointer hover:opacity-80 ${ev.type === 'expiry' ? 'bg-red-100 text-red-700' : ev.type === 'allocation' ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'}`} 
+                                title={`${ev.title} (افزودن به گوگل)`}
+                            >
+                                {ev.title}
+                            </a>
+                        ))}
+                    </div>
+                </div>
+            );
+        }
+
+        return (
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200">
+                <div className="p-4 border-b bg-amber-50">
+                    <p className="text-xs text-amber-700 flex items-center gap-2">
+                        <Info size={16}/> 
+                        برای مشاهده تقویم گوگل خود در اینجا، لطفاً «شناسه تقویم» را در تنظیمات وارد کنید. در حال حاضر تقویم داخلی نمایش داده می‌شود.
+                        <br/>
+                        با کلیک روی هر رویداد، می‌توانید آن را به تقویم گوگل خود اضافه کنید.
+                    </p>
+                </div>
+                <div className="flex justify-between items-center p-4 border-b">
+                    <button onClick={() => setCalendarMonth(new Date(year, month - 1, 1))} className="p-2 hover:bg-gray-100 rounded-full"><ChevronRight/></button>
+                    <h3 className="font-bold text-lg">{shamsiTitle} <span className="text-sm text-gray-400 font-mono">({year}-{month+1})</span></h3>
+                    <button onClick={() => setCalendarMonth(new Date(year, month + 1, 1))} className="p-2 hover:bg-gray-100 rounded-full"><ChevronLeft/></button>
+                </div>
+                <div className="grid grid-cols-7 text-center text-xs font-bold bg-gray-50 border-b">
+                    <div className="p-2">یک‌شنبه</div><div className="p-2">دوشنبه</div><div className="p-2">سه‌شنبه</div><div className="p-2">چهارشنبه</div><div className="p-2">پنج‌شنبه</div><div className="p-2">جمعه</div><div className="p-2">شنبه</div>
+                </div>
+                <div className="grid grid-cols-7 dir-ltr">
+                    {days}
+                </div>
+            </div>
+        );
     };
 
     // Render Logic
@@ -810,6 +577,8 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
                 return (<div className="overflow-x-auto"><table className="w-full text-sm text-right"><thead className="bg-gray-100 text-gray-700"><tr><th className="p-3">شماره پرونده</th><th className="p-3">فروشنده</th><th className="p-3">کالا</th><th className="p-3">شرکت</th><th className="p-3">مرحله جاری</th><th className="p-3">وضعیت</th></tr></thead><tbody>{filteredRecords.map(r => { const currentStage = STAGES.slice().reverse().find(s => r.stages[s]?.isCompleted) || 'شروع نشده'; return (<tr key={r.id} className="border-b hover:bg-gray-50"><td className="p-3 font-mono">{r.fileNumber}</td><td className="p-3">{r.sellerName}</td><td className="p-3">{r.goodsName}</td><td className="p-3">{r.company}</td><td className="p-3"><span className="bg-blue-100 text-blue-700 px-2 py-1 rounded text-xs">{currentStage}</span></td><td className="p-3">{r.status}</td></tr>); })}</tbody></table></div>);
             case 'currency':
                 return (<div className="overflow-x-auto"><table className="w-full text-sm text-right"><thead className="bg-gray-100 text-gray-700"><tr><th className="p-3">شماره پرونده</th><th className="p-3">ارز</th><th className="p-3">خریداری شده</th><th className="p-3">تحویل شده</th><th className="p-3">باقیمانده</th></tr></thead><tbody>{filteredRecords.map(r => { const d = r.currencyPurchaseData; if (!d) return null; const purchased = d.purchasedAmount || 0; const delivered = d.deliveredAmount || 0; return (<tr key={r.id} className="border-b hover:bg-gray-50"><td className="p-3 font-mono">{r.fileNumber}</td><td className="p-3">{r.mainCurrency}</td><td className="p-3 font-bold text-blue-600">{formatCurrency(purchased)}</td><td className="p-3 font-bold text-green-600">{formatCurrency(delivered)}</td><td className="p-3 font-bold text-red-600">{formatCurrency(purchased - delivered)}</td></tr>); })}</tbody></table></div>);
+            case 'calendar':
+                return renderCalendar();
             case 'allocation_queue':
                 // Filter: Records that have a Queue Date set (meaning they entered the queue process)
                 const queueRecords = filteredRecords.filter(r => r.stages[TradeStage.ALLOCATION_QUEUE]?.queueDate);
@@ -880,6 +649,7 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
                                     value={reportSearchTerm}
                                     onChange={(e) => setReportSearchTerm(e.target.value)}
                                 />
+                                <button onClick={handleWhatsAppShare} className="bg-green-100 text-green-700 p-2 rounded hover:bg-green-200" title="ارسال به واتساپ"><Share2 size={18}/></button>
                                 <button onClick={handlePrintReport} className="bg-gray-100 p-2 rounded hover:bg-gray-200" title="چاپ"><Printer size={18}/></button>
                                 <button onClick={() => handleDownloadReportPDF('allocation-report-table-print-area', 'Allocation_Report')} disabled={isGeneratingPdf} className="bg-gray-100 p-2 rounded hover:bg-gray-200" title="PDF">{isGeneratingPdf ? <Loader2 size={18} className="animate-spin"/> : <FileDown size={18}/>}</button>
                             </div>
@@ -1042,13 +812,14 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
                     <div className="mb-4"><label className="text-xs font-bold text-gray-500 mb-1 block">فیلتر شرکت</label><select className="w-full border rounded p-1 text-sm" value={reportFilterCompany} onChange={e => setReportFilterCompany(e.target.value)}><option value="">همه شرکت‌ها</option>{availableCompanies.map(c => <option key={c} value={c}>{c}</option>)}</select></div>
                     <button onClick={() => setActiveReport('general')} className={`p-2 rounded text-right text-sm ${activeReport === 'general' ? 'bg-blue-50 text-blue-700 font-bold' : 'hover:bg-gray-50'}`}>📄 لیست کلی پرونده‌ها</button>
                     <button onClick={() => setActiveReport('allocation_queue')} className={`p-2 rounded text-right text-sm ${activeReport === 'allocation_queue' ? 'bg-blue-50 text-blue-700 font-bold' : 'hover:bg-gray-50'}`}>⏳ در صف تخصیص</button>
+                    <button onClick={() => setActiveReport('calendar')} className={`p-2 rounded text-right text-sm ${activeReport === 'calendar' ? 'bg-blue-50 text-blue-700 font-bold' : 'hover:bg-gray-50'}`}>📅 تقویم رویدادها</button>
                     <button onClick={() => setActiveReport('currency')} className={`p-2 rounded text-right text-sm ${activeReport === 'currency' ? 'bg-blue-50 text-blue-700 font-bold' : 'hover:bg-gray-50'}`}>💰 وضعیت خرید ارز</button>
                     <button onClick={() => setActiveReport('clearance')} className={`p-2 rounded text-right text-sm ${activeReport === 'clearance' ? 'bg-blue-50 text-blue-700 font-bold' : 'hover:bg-gray-50'}`}>🏭 ترخیصیه و قبض انبار</button>
                     <button onClick={() => setActiveReport('green_leaf')} className={`p-2 rounded text-right text-sm ${activeReport === 'green_leaf' ? 'bg-blue-50 text-blue-700 font-bold' : 'hover:bg-gray-50'}`}>🍃 برگ سبز و گمرک</button>
-                    <div className="mt-auto"><button onClick={() => window.print()} className="w-full flex items-center justify-center gap-2 border p-2 rounded hover:bg-gray-50 text-gray-600"><Printer size={16}/> چاپ گزارش</button><button onClick={() => setViewMode('dashboard')} className="w-full mt-2 flex items-center justify-center gap-2 bg-gray-800 text-white p-2 rounded hover:bg-gray-900">بازگشت به داشبورد</button></div>
+                    <div className="mt-auto"><button onClick={handlePrintReport} className="w-full flex items-center justify-center gap-2 border p-2 rounded hover:bg-gray-50 text-gray-600"><Printer size={16}/> چاپ گزارش</button><button onClick={() => setViewMode('dashboard')} className="w-full mt-2 flex items-center justify-center gap-2 bg-gray-800 text-white p-2 rounded hover:bg-gray-900">بازگشت به داشبورد</button></div>
                 </div>
                 <div className="flex-1 p-6 overflow-hidden flex flex-col w-full">
-                    <h2 className="text-xl font-bold mb-4">{activeReport === 'general' ? 'لیست کلی پرونده‌ها' : activeReport === 'allocation_queue' ? 'گزارش صف تخصیص' : activeReport === 'currency' ? 'گزارش ارزی' : 'گزارش'}</h2>
+                    <h2 className="text-xl font-bold mb-4">{activeReport === 'general' ? 'لیست کلی پرونده‌ها' : activeReport === 'allocation_queue' ? 'گزارش صف تخصیص' : activeReport === 'calendar' ? 'تقویم بازرگانی' : activeReport === 'currency' ? 'گزارش ارزی' : 'گزارش'}</h2>
                     {renderReportContent()}
                 </div>
             </div>
@@ -1058,8 +829,6 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
     if (selectedRecord && viewMode === 'details') {
         const totalRial = STAGES.reduce((sum, stage) => sum + (selectedRecord.stages[stage]?.costRial || 0), 0);
         const totalCurrency = STAGES.reduce((sum, stage) => sum + (selectedRecord.stages[stage]?.costCurrency || 0), 0);
-        
-        // Final Calculation Logic
         const exchangeRate = calcExchangeRate || 0;
         const grandTotalRial = totalRial + (totalCurrency * exchangeRate);
         const totalWeight = selectedRecord.items.reduce((sum, item) => sum + item.weight, 0);
@@ -1121,8 +890,7 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
 
                 {/* Content Area */}
                 <div className="flex-1 overflow-y-auto bg-gray-50">
-                    
-                    {/* Insurance Tab (Restored) */}
+                    {/* ... (Existing Tabs: insurance, currency_purchase, shipping_docs, etc. - No Changes) ... */}
                     {activeTab === 'insurance' && (
                         <div className="p-6 max-w-4xl mx-auto space-y-6">
                             <div className="bg-white p-6 rounded-xl shadow-sm border space-y-4">
@@ -1148,7 +916,7 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
                         </div>
                     )}
 
-                    {/* Currency Purchase Tab (Restored) */}
+                    {/* Currency Purchase Tab */}
                     {activeTab === 'currency_purchase' && (
                         <div className="p-6 max-w-5xl mx-auto space-y-6">
                             {/* Tranches Section */}
@@ -1210,7 +978,7 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
                         </div>
                     )}
 
-                    {/* Shipping Docs Tab (Restored) */}
+                    {/* Shipping Docs Tab */}
                     {activeTab === 'shipping_docs' && (
                         <div className="p-6 max-w-5xl mx-auto flex gap-6">
                             <div className="w-48 flex flex-col gap-2">
@@ -1660,102 +1428,118 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
             {showNewModal && (
                 <div className="fixed inset-0 bg-black/50 z-[100] flex items-center justify-center p-4">
                     <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6">
-                        <div className="flex justify-between items-center mb-6"><h3 className="font-bold text-lg text-gray-800">ایجاد پرونده بازرگانی جدید</h3><button onClick={() => setShowNewModal(false)}><X size={20} className="text-gray-400"/></button></div>
+                        <div className="flex justify-between items-center mb-6">
+                            <h3 className="font-bold text-lg text-gray-800">ایجاد پرونده جدید</h3>
+                            <button onClick={() => setShowNewModal(false)} className="text-gray-400 hover:text-red-500"><X size={20}/></button>
+                        </div>
                         <div className="space-y-4">
-                            <div><label className="text-sm font-bold text-gray-700 block mb-1">شماره پرونده (File Number)</label><input type="text" className="w-full border rounded-lg p-2.5" placeholder="مثال: 1403/101" value={newFileNumber} onChange={e => setNewFileNumber(e.target.value)} /></div>
-                            <div><label className="text-sm font-bold text-gray-700 block mb-1">عنوان پرونده (کالا)</label><input type="text" className="w-full border rounded-lg p-2.5" placeholder="مثال: قطعات یدکی پمپ" value={newGoodsName} onChange={e => setNewGoodsName(e.target.value)} /></div>
-                            <div><label className="text-sm font-bold text-gray-700 block mb-1">شرکت خریدار (واردکننده)</label><select className="w-full border rounded-lg p-2.5 bg-white" value={newRecordCompany} onChange={e => setNewRecordCompany(e.target.value)}><option value="">انتخاب شرکت</option>{availableCompanies.map(c => <option key={c} value={c}>{c}</option>)}</select></div>
-                            <div><label className="text-sm font-bold text-gray-700 block mb-1">فروشنده (Seller)</label><input type="text" className="w-full border rounded-lg p-2.5" value={newSellerName} onChange={e => setNewSellerName(e.target.value)} /></div>
+                            <div><label className="text-sm font-bold block mb-1">شماره پرونده</label><input className="w-full border rounded-lg p-2 text-sm font-mono dir-ltr" value={newFileNumber} onChange={e => { setNewFileNumber(e.target.value); setNewGoodsName(e.target.value); }} placeholder="e.g. 1403-101" /></div>
+                            <div><label className="text-sm font-bold block mb-1">نام کالا / شرح</label><input className="w-full border rounded-lg p-2 text-sm" value={newGoodsName} onChange={e => setNewGoodsName(e.target.value)} /></div>
+                            <div><label className="text-sm font-bold block mb-1">فروشنده</label><input className="w-full border rounded-lg p-2 text-sm" value={newSellerName} onChange={e => setNewSellerName(e.target.value)} /></div>
                             <div className="grid grid-cols-2 gap-4">
-                                <div><label className="text-sm font-bold text-gray-700 block mb-1">گروه کالایی</label><input list="commodity-list" className="w-full border rounded-lg p-2.5" value={newCommodityGroup} onChange={e => setNewCommodityGroup(e.target.value)} /><datalist id="commodity-list">{commodityGroups.map(g => <option key={g} value={g} />)}</datalist></div>
-                                <div><label className="text-sm font-bold text-gray-700 block mb-1">ارز پایه</label><select className="w-full border rounded-lg p-2.5 bg-white" value={newMainCurrency} onChange={e => setNewMainCurrency(e.target.value)}>{CURRENCIES.map(c => <option key={c.code} value={c.code}>{c.label}</option>)}</select></div>
+                                <div><label className="text-sm font-bold block mb-1">گروه کالایی</label><select className="w-full border rounded-lg p-2 text-sm" value={newCommodityGroup} onChange={e => setNewCommodityGroup(e.target.value)}><option value="">انتخاب...</option>{commodityGroups.map(g => <option key={g} value={g}>{g}</option>)}</select></div>
+                                <div><label className="text-sm font-bold block mb-1">ارز پایه</label><select className="w-full border rounded-lg p-2 text-sm" value={newMainCurrency} onChange={e => setNewMainCurrency(e.target.value)}>{CURRENCIES.map(c => <option key={c.code} value={c.code}>{c.label}</option>)}</select></div>
                             </div>
-                            <button onClick={handleCreateRecord} disabled={!newFileNumber || !newGoodsName} className="w-full bg-blue-600 text-white py-3 rounded-xl font-bold hover:bg-blue-700 disabled:opacity-50 mt-2">ایجاد پرونده</button>
+                            <div><label className="text-sm font-bold block mb-1">شرکت</label><select className="w-full border rounded-lg p-2 text-sm" value={newRecordCompany} onChange={e => setNewRecordCompany(e.target.value)}><option value="">انتخاب...</option>{availableCompanies.map(c => <option key={c} value={c}>{c}</option>)}</select></div>
+                            <button onClick={handleCreateRecord} className="w-full bg-blue-600 text-white py-2 rounded-lg font-bold hover:bg-blue-700 mt-4">ایجاد پرونده</button>
                         </div>
                     </div>
                 </div>
             )}
 
-            {/* Header & Filters */}
-            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white p-4 rounded-2xl shadow-sm border border-gray-200">
-                <div className="flex items-center gap-2 text-sm text-gray-600 overflow-x-auto whitespace-nowrap pb-2 md:pb-0">
-                    <button onClick={goRoot} className={`flex items-center gap-1 hover:text-blue-600 ${navLevel === 'ROOT' ? 'font-bold text-blue-600' : ''}`}><Home size={16}/> همه شرکت‌ها</button>
-                    {navLevel !== 'ROOT' && <><span className="text-gray-300">/</span><button onClick={() => selectedCompany && goCompany(selectedCompany)} className={`hover:text-blue-600 ${navLevel === 'COMPANY' ? 'font-bold text-blue-600' : ''}`}>{selectedCompany}</button></>}
-                    {navLevel === 'GROUP' && <><span className="text-gray-300">/</span><span className="font-bold text-blue-600">{selectedGroup}</span></>}
+            {/* Dashboard Header & Breadcrumbs */}
+            <div className="flex flex-col md:flex-row justify-between items-center bg-white p-4 rounded-xl border shadow-sm gap-4">
+                <div className="flex items-center gap-2 text-sm breadcrumbs overflow-x-auto w-full md:w-auto">
+                    <button onClick={goRoot} className={`flex items-center gap-1 hover:bg-gray-100 px-2 py-1 rounded ${navLevel === 'ROOT' ? 'font-bold text-blue-600' : 'text-gray-600'}`}><Home size={16}/> خانه</button>
+                    {navLevel !== 'ROOT' && <ChevronLeft size={14} className="text-gray-400"/>}
+                    {navLevel !== 'ROOT' && <button onClick={() => goCompany(selectedCompany!)} className={`flex items-center gap-1 hover:bg-gray-100 px-2 py-1 rounded ${navLevel === 'COMPANY' ? 'font-bold text-blue-600' : 'text-gray-600'}`}><Building2 size={16}/> {selectedCompany}</button>}
+                    {navLevel === 'GROUP' && <ChevronLeft size={14} className="text-gray-400"/>}
+                    {navLevel === 'GROUP' && <span className="font-bold text-blue-600 px-2 py-1 flex items-center gap-1"><Package size={16}/> {selectedGroup}</span>}
                 </div>
-                <div className="flex gap-2 w-full md:w-auto">
-                    <div className="relative flex-1 md:w-64"><Search className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} /><input type="text" placeholder="جستجو در پرونده‌ها..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full pl-4 pr-10 py-2 border rounded-xl text-sm" /></div>
-                    <button onClick={() => setShowArchived(!showArchived)} className={`p-2 rounded-xl border flex items-center justify-center gap-2 text-sm ${showArchived ? 'bg-gray-800 text-white border-gray-800' : 'bg-white text-gray-600 hover:bg-gray-50'}`}>{showArchived ? <Archive size={18} /> : <Archive size={18} />}</button>
-                    <button onClick={() => setViewMode('reports')} className="p-2 bg-purple-50 text-purple-600 rounded-xl border border-purple-100 hover:bg-purple-100" title="گزارشات"><FileSpreadsheet size={18}/></button>
-                    <button onClick={() => setShowNewModal(true)} className="bg-blue-600 text-white px-4 py-2 rounded-xl text-sm font-bold flex items-center gap-2 shadow-lg shadow-blue-600/20 hover:bg-blue-700"><Plus size={18} /> <span className="hidden sm:inline">پرونده جدید</span></button>
+                <div className="flex items-center gap-3 w-full md:w-auto">
+                    <div className="relative flex-1 md:w-64">
+                        <input className="w-full border rounded-lg pl-3 pr-9 py-2 text-sm" placeholder="جستجوی پرونده..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
+                        <Search className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
+                    </div>
+                    <button onClick={() => setShowNewModal(true)} className="bg-blue-600 text-white p-2 rounded-lg hover:bg-blue-700 flex items-center gap-2 text-sm font-bold"><Plus size={18}/> <span className="hidden md:inline">پرونده جدید</span></button>
+                    <button onClick={() => setViewMode('reports')} className="bg-white border border-gray-300 text-gray-700 p-2 rounded-lg hover:bg-gray-50 flex items-center gap-2 text-sm"><FileSpreadsheet size={18}/> <span className="hidden md:inline">گزارشات</span></button>
                 </div>
             </div>
 
-            {/* Dashboard Content */}
-            {navLevel === 'ROOT' || navLevel === 'COMPANY' ? (
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                    {getGroupedData().map((item, idx) => (
-                        <div key={idx} onClick={() => item.type === 'company' ? goCompany(item.name) : goGroup(item.name)} className="bg-white p-6 rounded-2xl shadow-sm border border-gray-200 cursor-pointer hover:shadow-md hover:border-blue-300 transition-all group">
-                            <div className="flex justify-between items-start mb-4">
-                                <div className={`p-3 rounded-xl ${item.type === 'company' ? 'bg-blue-50 text-blue-600' : 'bg-amber-50 text-amber-600'}`}>{item.type === 'company' ? <Building2 size={24} /> : <Box size={24} />}</div>
-                                <span className="bg-gray-100 text-gray-600 px-2 py-1 rounded-lg text-xs font-bold">{item.count} پرونده</span>
+            {/* Content Grid/List */}
+            {searchTerm ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {records.filter(r => r.fileNumber.includes(searchTerm) || r.goodsName.includes(searchTerm)).map(r => (
+                        <div key={r.id} onClick={() => { setSelectedRecord(r); setViewMode('details'); setActiveTab('timeline'); }} className="bg-white p-4 rounded-xl border shadow-sm hover:shadow-md cursor-pointer transition-all group">
+                            <div className="flex justify-between items-start mb-2"><h4 className="font-bold text-gray-800">{r.goodsName}</h4><span className="text-xs bg-gray-100 px-2 py-1 rounded font-mono">{r.fileNumber}</span></div>
+                            <div className="text-xs text-gray-500 mb-4">{r.company} | {r.sellerName}</div>
+                            <div className="flex justify-between items-center mt-auto pt-2 border-t text-xs">
+                                <span className={`px-2 py-1 rounded ${r.isArchived ? 'bg-gray-100 text-gray-500' : 'bg-green-100 text-green-700'}`}>{r.isArchived ? 'بایگانی' : 'فعال'}</span>
+                                <span className="text-blue-600 group-hover:underline flex items-center gap-1">مشاهده <ArrowRight size={12}/></span>
                             </div>
-                            <h3 className="font-bold text-gray-800 text-lg mb-1 truncate">{item.name}</h3>
-                            <p className="text-xs text-gray-500">{item.type === 'company' ? 'مشاهده گروه‌های کالایی' : 'مشاهده پرونده‌ها'}</p>
                         </div>
                     ))}
-                    {getGroupedData().length === 0 && (
-                        <div className="col-span-full text-center py-12 text-gray-400 bg-white rounded-2xl border border-dashed">
-                            <FolderOpen size={48} className="mx-auto mb-4 opacity-20"/>
-                            <p>هیچ موردی یافت نشد. {showArchived ? 'آرشیو خالی است.' : 'یک پرونده جدید ایجاد کنید.'}</p>
-                        </div>
-                    )}
                 </div>
             ) : (
-                /* Records Table for Group Level */
-                <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
-                    <div className="overflow-x-auto">
-                        <table className="w-full text-sm text-right">
-                            <thead className="bg-gray-50 text-gray-600 font-bold">
-                                <tr><th className="p-4">شماره پرونده</th><th className="p-4">کالا</th><th className="p-4">فروشنده</th><th className="p-4">ارز پایه</th><th className="p-4">وضعیت</th><th className="p-4">آخرین تغییر</th><th className="p-4 text-center">عملیات</th></tr>
-                            </thead>
-                            <tbody className="divide-y divide-gray-100">
-                                {records
-                                    .filter(r => (showArchived ? r.isArchived : !r.isArchived) && (navLevel === 'GROUP' ? (r.commodityGroup || 'سایر') === selectedGroup && (r.company || 'بدون شرکت') === selectedCompany : true))
-                                    .filter(r => r.fileNumber.includes(searchTerm) || r.goodsName.includes(searchTerm) || r.sellerName.includes(searchTerm))
-                                    .map(record => (
-                                        <tr key={record.id} className="hover:bg-gray-50 transition-colors">
-                                            <td className="p-4 font-mono font-bold text-blue-600">{record.fileNumber}</td>
-                                            <td className="p-4 font-bold text-gray-800">{record.goodsName}</td>
-                                            <td className="p-4 text-gray-600">{record.sellerName}</td>
-                                            <td className="p-4"><span className="bg-gray-100 px-2 py-1 rounded text-xs">{record.mainCurrency}</span></td>
-                                            <td className="p-4">
-                                                {record.isArchived ? (
-                                                    <span className="inline-flex items-center gap-1 bg-gray-100 text-gray-600 px-2 py-1 rounded text-xs"><Archive size={12}/> بایگانی</span>
-                                                ) : (
-                                                    <span className={`inline-flex items-center gap-1 px-2 py-1 rounded text-xs ${record.isCommitmentFulfilled ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'}`}>
-                                                        {record.isCommitmentFulfilled ? <CheckCircle2 size={12}/> : <RefreshCw size={12}/>}
-                                                        {record.isCommitmentFulfilled ? 'رفع تعهد شده' : 'در جریان'}
-                                                    </span>
-                                                )}
-                                            </td>
-                                            <td className="p-4 text-gray-400 text-xs">{new Date(record.stages[Object.keys(record.stages)[0]]?.updatedAt || record.createdAt).toLocaleDateString('fa-IR')}</td>
-                                            <td className="p-4 text-center">
-                                                <div className="flex items-center justify-center gap-2">
-                                                    <button onClick={() => { setSelectedRecord(record); setViewMode('details'); }} className="text-blue-600 hover:bg-blue-50 p-2 rounded-lg text-xs font-bold transition-colors">مشاهده جزئیات</button>
-                                                    <button onClick={() => handleDeleteRecord(record.id)} className="text-red-400 hover:bg-red-50 p-2 rounded-lg transition-colors"><Trash2 size={16}/></button>
-                                                </div>
-                                            </td>
-                                        </tr>
-                                    ))}
-                                {records.filter(r => (showArchived ? r.isArchived : !r.isArchived) && (navLevel === 'GROUP' ? r.commodityGroup === selectedGroup : true)).length === 0 && (
-                                    <tr><td colSpan={7} className="p-8 text-center text-gray-400">هیچ پرونده‌ای در این گروه یافت نشد.</td></tr>
-                                )}
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
+                <>
+                    {(navLevel === 'ROOT' || navLevel === 'COMPANY') && (
+                        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
+                            {getGroupedData().map((item) => (
+                                <div key={item.name} onClick={() => item.type === 'company' ? goCompany(item.name) : goGroup(item.name)} className="bg-white p-6 rounded-xl border shadow-sm hover:shadow-md cursor-pointer flex flex-col items-center justify-center gap-3 transition-all hover:scale-105">
+                                    <div className={`p-4 rounded-full ${item.type === 'company' ? 'bg-blue-50 text-blue-600' : 'bg-amber-50 text-amber-600'}`}>
+                                        {item.type === 'company' ? <Building2 size={32}/> : <Package size={32}/>}
+                                    </div>
+                                    <h4 className="font-bold text-center text-gray-800">{item.name}</h4>
+                                    <span className="text-xs text-gray-500">{item.count} پرونده</span>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+
+                    {navLevel === 'GROUP' && (
+                        <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
+                            <table className="w-full text-sm text-right">
+                                <thead className="bg-gray-50 text-gray-700">
+                                    <tr>
+                                        <th className="p-4">شماره پرونده</th>
+                                        <th className="p-4">کالا</th>
+                                        <th className="p-4">فروشنده</th>
+                                        <th className="p-4">ارز پایه</th>
+                                        <th className="p-4">مرحله</th>
+                                        <th className="p-4 text-center">عملیات</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-gray-100">
+                                    {records.filter(r => (r.company === selectedCompany || (!selectedCompany && !r.company)) && (r.commodityGroup === selectedGroup) && (showArchived ? r.isArchived : !r.isArchived)).map(r => {
+                                        const lastStage = STAGES.slice().reverse().find(s => r.stages[s]?.isCompleted) || 'آغاز';
+                                        return (
+                                            <tr key={r.id} className="hover:bg-gray-50 transition-colors cursor-pointer" onClick={() => { setSelectedRecord(r); setViewMode('details'); setActiveTab('timeline'); }}>
+                                                <td className="p-4 font-mono font-bold text-blue-600">{r.fileNumber}</td>
+                                                <td className="p-4 font-bold">{r.goodsName}</td>
+                                                <td className="p-4 text-gray-600">{r.sellerName}</td>
+                                                <td className="p-4 font-mono">{r.mainCurrency}</td>
+                                                <td className="p-4"><span className="bg-blue-50 text-blue-700 px-2 py-1 rounded text-xs">{lastStage}</span></td>
+                                                <td className="p-4 text-center" onClick={e => e.stopPropagation()}>
+                                                    <button onClick={() => handleDeleteRecord(r.id)} className="text-gray-400 hover:text-red-500 p-2"><Trash2 size={18}/></button>
+                                                </td>
+                                            </tr>
+                                        );
+                                    })}
+                                </tbody>
+                            </table>
+                            {records.filter(r => (r.company === selectedCompany) && (r.commodityGroup === selectedGroup) && (showArchived ? r.isArchived : !r.isArchived)).length === 0 && (
+                                <div className="text-center py-12 text-gray-400">هیچ پرونده فعالی در این گروه موجود نیست.</div>
+                            )}
+                        </div>
+                    )}
+                </>
             )}
+            
+            <div className="fixed bottom-6 left-6">
+                <button onClick={() => setShowArchived(!showArchived)} className={`p-3 rounded-full shadow-lg border flex items-center gap-2 text-sm font-bold transition-colors ${showArchived ? 'bg-gray-800 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'}`}>
+                    <Archive size={20}/> {showArchived ? 'مشاهده فعال‌ها' : 'مشاهده بایگانی'}
+                </button>
+            </div>
         </div>
     );
 };

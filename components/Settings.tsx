@@ -2,14 +2,14 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { getSettings, saveSettings, restoreSystemData, uploadFile } from '../services/storageService';
 import { SystemSettings, UserRole, RolePermissions, Company } from '../types';
-import { Settings as SettingsIcon, Save, Loader2, Download, Database, Bell, Plus, Trash2, Building, ShieldCheck, Landmark, Package, AppWindow, BellRing, BellOff, Send, Crown, Image as ImageIcon, Pencil, X, Check, MessageSquare } from 'lucide-react';
+import { Settings as SettingsIcon, Save, Loader2, Download, Database, Bell, Plus, Trash2, Building, ShieldCheck, Landmark, Package, AppWindow, BellRing, BellOff, Send, Crown, Image as ImageIcon, Pencil, X, Check, MessageSquare, Calendar } from 'lucide-react';
 import { apiCall } from '../services/apiService';
 import { requestNotificationPermission, setNotificationPreference, isNotificationEnabledInApp } from '../services/notificationService';
 import { generateUUID } from '../constants';
 
 const Settings: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'general' | 'permissions'>('general');
-  const [settings, setSettings] = useState<SystemSettings>({ currentTrackingNumber: 1000, companyNames: [], companies: [], defaultCompany: '', bankNames: [], commodityGroups: [], rolePermissions: {} as any, pwaIcon: '', telegramBotToken: '', telegramAdminId: '', smsApiKey: '', smsSenderNumber: '' });
+  const [settings, setSettings] = useState<SystemSettings>({ currentTrackingNumber: 1000, companyNames: [], companies: [], defaultCompany: '', bankNames: [], commodityGroups: [], rolePermissions: {} as any, pwaIcon: '', telegramBotToken: '', telegramAdminId: '', smsApiKey: '', smsSenderNumber: '', googleCalendarId: '' });
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
   
@@ -45,7 +45,8 @@ const Settings: React.FC = () => {
               telegramBotToken: data.telegramBotToken || '', 
               telegramAdminId: data.telegramAdminId || '',
               smsApiKey: data.smsApiKey || '',
-              smsSenderNumber: data.smsSenderNumber || ''
+              smsSenderNumber: data.smsSenderNumber || '',
+              googleCalendarId: data.googleCalendarId || ''
           }; 
           
           // Migrate old string companies to object structure if empty
@@ -246,6 +247,26 @@ const Settings: React.FC = () => {
                              />
                              <p className="text-[10px] text-gray-500 mt-1">فایل‌های بک‌آپ خودکار (هر ۸ ساعت) به این آیدی ارسال می‌شود. خودتان به ربات پیام دهید و /id را بزنید.</p>
                         </div>
+                    </div>
+                </div>
+
+                {/* GOOGLE CALENDAR SECTION */}
+                <div className="space-y-4 border-t pt-6">
+                    <div className="flex items-center gap-2 mb-2"><Calendar className="text-orange-500" size={20} /><h3 className="font-bold text-gray-800">تنظیمات تقویم گوگل</h3></div>
+                    <div className="bg-orange-50 p-4 rounded-xl border border-orange-100">
+                        <label className="text-xs font-bold text-gray-700 block mb-2">شناسه تقویم گوگل (Calendar ID)</label>
+                        <input 
+                            type="text" 
+                            className="w-full border border-orange-200 rounded-lg p-2 text-sm dir-ltr font-mono" 
+                            placeholder="example@gmail.com or ID..."
+                            value={settings.googleCalendarId || ''}
+                            onChange={(e) => setSettings({...settings, googleCalendarId: e.target.value})}
+                        />
+                        <p className="text-xs text-gray-600 mt-2">
+                            برای نمایش تقویم گوگل در بخش بازرگانی، شناسه تقویم خود را وارد کنید. 
+                            <br/>
+                            (توجه: تقویم باید Public باشد یا مرورگر شما در گوگل لاگین باشد).
+                        </p>
                     </div>
                 </div>
 

@@ -108,6 +108,7 @@ export interface SystemSettings {
   telegramAdminId?: string; // Chat ID of the main admin for backups
   smsApiKey?: string; // API Key for SMS Panel
   smsSenderNumber?: string; // Sender Number for SMS
+  googleCalendarId?: string; // New: Google Calendar ID for embedding
 }
 
 export interface DashboardStats {
