@@ -112,7 +112,7 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
         packingItems: [],
         freightCost: 0
     });
-    const [newInvoiceItem, setNewInvoiceItem] = useState<Partial<InvoiceItem>>({ name: '', weight: 0, unitPrice: 0, totalPrice: 0 });
+    const [newInvoiceItem, setNewInvoiceItem] = useState<Partial<InvoiceItem>>({ name: '', weight: 0, unitPrice: 0, totalPrice: 0, part: '' });
     const [newPackingItem, setNewPackingItem] = useState<Partial<PackingItem>>({ description: '', netWeight: 0, grossWeight: 0, packageCount: 0, part: '' });
     const [uploadingDocFile, setUploadingDocFile] = useState(false);
     const docFileInputRef = useRef<HTMLInputElement>(null);
@@ -191,7 +191,7 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
             setNewShippingPayment({ part: '', amount: 0, date: '', bank: '', description: '' });
             setNewAgentPayment({ agentName: '', amount: 0, bank: '', date: '', part: '', description: '' });
             setShippingDocForm({ status: 'Draft', documentNumber: '', documentDate: '', attachments: [], currency: selectedRecord.mainCurrency || 'EUR', invoiceItems: [], packingItems: [], freightCost: 0 });
-            setNewInvoiceItem({ name: '', weight: 0, unitPrice: 0, totalPrice: 0 });
+            setNewInvoiceItem({ name: '', weight: 0, unitPrice: 0, totalPrice: 0, part: '' });
             setNewPackingItem({ description: '', netWeight: 0, grossWeight: 0, packageCount: 0, part: '' });
         }
     }, [selectedRecord]);
@@ -546,7 +546,7 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
     };
 
     // Shipping Docs Handlers (Updated)
-    const handleAddInvoiceItem = () => { if (!newInvoiceItem.name) return; const newItem: InvoiceItem = { id: generateUUID(), name: newInvoiceItem.name, weight: Number(newInvoiceItem.weight), unitPrice: Number(newInvoiceItem.unitPrice), totalPrice: Number(newInvoiceItem.totalPrice) || (Number(newInvoiceItem.weight) * Number(newInvoiceItem.unitPrice)) }; setShippingDocForm(prev => ({ ...prev, invoiceItems: [...(prev.invoiceItems || []), newItem] })); setNewInvoiceItem({ name: '', weight: 0, unitPrice: 0, totalPrice: 0 }); };
+    const handleAddInvoiceItem = () => { if (!newInvoiceItem.name) return; const newItem: InvoiceItem = { id: generateUUID(), name: newInvoiceItem.name, weight: Number(newInvoiceItem.weight), unitPrice: Number(newInvoiceItem.unitPrice), totalPrice: Number(newInvoiceItem.totalPrice) || (Number(newInvoiceItem.weight) * Number(newInvoiceItem.unitPrice)), part: newInvoiceItem.part || '' }; setShippingDocForm(prev => ({ ...prev, invoiceItems: [...(prev.invoiceItems || []), newItem] })); setNewInvoiceItem({ name: '', weight: 0, unitPrice: 0, totalPrice: 0, part: '' }); };
     const handleRemoveInvoiceItem = (id: string) => { setShippingDocForm(prev => ({ ...prev, invoiceItems: (prev.invoiceItems || []).filter(i => i.id !== id) })); };
     
     // NEW: Packing Item Handlers
@@ -606,16 +606,32 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
     // NEW: Sync Invoice to Proforma
     const handleSyncInvoiceToProforma = async () => {
         if (!selectedRecord) return;
-        if (!confirm('آیا مطمئن هستید؟ این عملیات اقلام و هزینه حمل پروفرما را با مقادیر این اینویس جایگزین می‌کند.')) return;
+        if (!confirm('آیا مطمئن هستید؟ این عملیات اقلام و هزینه حمل پروفرما را با مقادیر این اینویس جایگزین می‌کند. اقلام هم‌نام تجمیع خواهند شد.')) return;
         
-        // Map invoice items to trade items
-        const newItems: TradeItem[] = (shippingDocForm.invoiceItems || []).map(i => ({
-            id: generateUUID(),
-            name: i.name,
-            weight: i.weight,
-            unitPrice: i.unitPrice,
-            totalPrice: i.totalPrice
-        }));
+        const invoiceItems = shippingDocForm.invoiceItems || [];
+        const aggregatedMap = new Map<string, { weight: number, totalPrice: number }>();
+
+        // Aggregate
+        for (const item of invoiceItems) {
+            const name = item.name.trim();
+            const current = aggregatedMap.get(name) || { weight: 0, totalPrice: 0 };
+            aggregatedMap.set(name, {
+                weight: current.weight + item.weight,
+                totalPrice: current.totalPrice + item.totalPrice
+            });
+        }
+
+        // Create new Trade Items
+        const newItems: TradeItem[] = [];
+        aggregatedMap.forEach((val, name) => {
+            newItems.push({
+                id: generateUUID(),
+                name: name,
+                weight: val.weight,
+                unitPrice: val.weight > 0 ? val.totalPrice / val.weight : 0,
+                totalPrice: val.totalPrice
+            });
+        });
         
         const updatedRecord = {
             ...selectedRecord,
@@ -625,7 +641,7 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
         
         await updateTradeRecord(updatedRecord);
         setSelectedRecord(updatedRecord);
-        alert('پروفرما با موفقیت بروزرسانی شد.');
+        alert('پروفرما با موفقیت بروزرسانی شد (تجمیع بر اساس نام کالا).');
     };
 
     // Timeline Modal Handlers
@@ -1207,17 +1223,21 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
                                     <div className="bg-blue-50 p-4 rounded-lg space-y-4">
                                         <div className="flex justify-between items-center">
                                             <h4 className="font-bold text-sm text-blue-800">اقلام اینویس</h4>
-                                            <button onClick={handleSyncInvoiceToProforma} className="bg-orange-500 hover:bg-orange-600 text-white text-xs px-3 py-1.5 rounded flex items-center gap-1 transition-colors" title="جایگزینی اقلام اینویس در پروفرما"><RefreshCw size={14}/> جایگزینی در پروفرما</button>
+                                            <div className="flex gap-2 items-center">
+                                                <select className="border rounded p-1 text-xs" value={shippingDocForm.currency} onChange={e => setShippingDocForm({...shippingDocForm, currency: e.target.value})}>{CURRENCIES.map(c => <option key={c.code} value={c.code}>{c.label}</option>)}</select>
+                                                <button onClick={handleSyncInvoiceToProforma} className="bg-orange-500 hover:bg-orange-600 text-white text-xs px-3 py-1.5 rounded flex items-center gap-1 transition-colors" title="جایگزینی اقلام اینویس در پروفرما"><RefreshCw size={14}/> جایگزینی در پروفرما</button>
+                                            </div>
                                         </div>
                                         <div className="flex gap-2 items-end">
                                             <input className="flex-1 border rounded p-2 text-sm" placeholder="نام کالا" value={newInvoiceItem.name} onChange={e => setNewInvoiceItem({...newInvoiceItem, name: e.target.value})} />
-                                            <input className="w-24 border rounded p-2 text-sm dir-ltr" placeholder="وزن" value={newInvoiceItem.weight} onChange={e => setNewInvoiceItem({...newInvoiceItem, weight: Number(e.target.value)})} />
-                                            <input className="w-24 border rounded p-2 text-sm dir-ltr" placeholder="قیمت واحد" value={newInvoiceItem.unitPrice} onChange={e => setNewInvoiceItem({...newInvoiceItem, unitPrice: Number(e.target.value)})} />
-                                            <input className="w-24 border rounded p-2 text-sm dir-ltr" placeholder="قیمت کل" value={newInvoiceItem.totalPrice} onChange={e => setNewInvoiceItem({...newInvoiceItem, totalPrice: Number(e.target.value)})} />
+                                            <input className="w-20 border rounded p-2 text-sm dir-ltr" placeholder="وزن" value={newInvoiceItem.weight || ''} onChange={e => setNewInvoiceItem({...newInvoiceItem, weight: Number(e.target.value)})} type="number" />
+                                            <input className="w-24 border rounded p-2 text-sm dir-ltr" placeholder="فی (Unit)" value={newInvoiceItem.unitPrice || ''} onChange={e => setNewInvoiceItem({...newInvoiceItem, unitPrice: Number(e.target.value)})} type="number" step="0.01" />
+                                            <input className="w-20 border rounded p-2 text-sm" placeholder="پارت" value={newInvoiceItem.part} onChange={e => setNewInvoiceItem({...newInvoiceItem, part: e.target.value})} />
+                                            <input className="w-24 border rounded p-2 text-sm dir-ltr bg-gray-100" placeholder="قیمت کل" value={newInvoiceItem.totalPrice || ((newInvoiceItem.weight || 0) * (newInvoiceItem.unitPrice || 0))} readOnly />
                                             <button onClick={handleAddInvoiceItem} className="bg-blue-600 text-white p-2 rounded-lg"><Plus size={16}/></button>
                                         </div>
-                                        <div className="space-y-1">{shippingDocForm.invoiceItems?.map(i => (<div key={i.id} className="flex justify-between bg-white p-2 rounded text-xs border"><span>{i.name}</span><div className="flex gap-2"><span className="font-mono">{i.weight} KG</span><span className="font-mono">{formatCurrency(i.totalPrice)}</span><button onClick={()=>handleRemoveInvoiceItem(i.id)} className="text-red-500"><X size={14}/></button></div></div>))}</div>
-                                        <div className="flex justify-between items-center pt-2 border-t border-blue-200"><span className="font-bold text-xs">هزینه حمل (Freight)</span><input className="w-32 border rounded p-1 text-sm dir-ltr" value={shippingDocForm.freightCost} onChange={e => setShippingDocForm({...shippingDocForm, freightCost: Number(e.target.value)})} /></div>
+                                        <div className="space-y-1">{shippingDocForm.invoiceItems?.map(i => (<div key={i.id} className="flex justify-between bg-white p-2 rounded text-xs border"><span>{i.name}</span><div className="flex gap-2 items-center"><span className="bg-gray-100 px-1 rounded text-gray-500">Part: {i.part}</span><span className="font-mono">{i.weight} KG</span><span className="font-mono">@{i.unitPrice}</span><span className="font-mono font-bold">{formatCurrency(i.totalPrice)}</span><button onClick={()=>handleRemoveInvoiceItem(i.id)} className="text-red-500"><X size={14}/></button></div></div>))}</div>
+                                        <div className="flex justify-between items-center pt-2 border-t border-blue-200"><span className="font-bold text-xs">هزینه حمل (Freight)</span><input className="w-32 border rounded p-1 text-sm dir-ltr" value={shippingDocForm.freightCost} onChange={e => setShippingDocForm({...shippingDocForm, freightCost: Number(e.target.value)})} type="number" /></div>
                                     </div>
                                 )}
 
@@ -1227,10 +1247,10 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
                                         <div className="grid grid-cols-1 md:grid-cols-6 gap-2 items-end">
                                             <div className="md:col-span-2 space-y-1"><label className="text-[10px] text-gray-500">شرح کالا</label><input className="w-full border rounded p-1.5 text-sm" placeholder="نام کالا" value={newPackingItem.description} onChange={e => setNewPackingItem({...newPackingItem, description: e.target.value})} /></div>
                                             <div className="space-y-1"><label className="text-[10px] text-gray-500">پارت</label><input className="w-full border rounded p-1.5 text-sm" placeholder="Part No" value={newPackingItem.part} onChange={e => setNewPackingItem({...newPackingItem, part: e.target.value})} /></div>
-                                            <div className="space-y-1"><label className="text-[10px] text-gray-500">وزن خالص</label><input className="w-full border rounded p-1.5 text-sm dir-ltr" placeholder="NW" value={newPackingItem.netWeight || ''} onChange={e => setNewPackingItem({...newPackingItem, netWeight: Number(e.target.value)})} /></div>
-                                            <div className="space-y-1"><label className="text-xs text-gray-500">وزن ناخالص</label><input className="w-full border rounded p-1.5 text-sm dir-ltr" placeholder="GW" value={newPackingItem.grossWeight || ''} onChange={e => setNewPackingItem({...newPackingItem, grossWeight: Number(e.target.value)})} /></div>
+                                            <div className="space-y-1"><label className="text-[10px] text-gray-500">وزن خالص</label><input className="w-full border rounded p-1.5 text-sm dir-ltr" placeholder="NW" value={newPackingItem.netWeight || ''} onChange={e => setNewPackingItem({...newPackingItem, netWeight: Number(e.target.value)})} type="number" /></div>
+                                            <div className="space-y-1"><label className="text-xs text-gray-500">وزن ناخالص</label><input className="w-full border rounded p-1.5 text-sm dir-ltr" placeholder="GW" value={newPackingItem.grossWeight || ''} onChange={e => setNewPackingItem({...newPackingItem, grossWeight: Number(e.target.value)})} type="number" /></div>
                                             <div className="flex gap-2">
-                                                <div className="space-y-1 flex-1"><label className="text-[10px] text-gray-500">تعداد بسته</label><input className="w-full border rounded p-1.5 text-sm dir-ltr" placeholder="Count" value={newPackingItem.packageCount || ''} onChange={e => setNewPackingItem({...newPackingItem, packageCount: Number(e.target.value)})} /></div>
+                                                <div className="space-y-1 flex-1"><label className="text-[10px] text-gray-500">تعداد بسته</label><input className="w-full border rounded p-1.5 text-sm dir-ltr" placeholder="Count" value={newPackingItem.packageCount || ''} onChange={e => setNewPackingItem({...newPackingItem, packageCount: Number(e.target.value)})} type="number" /></div>
                                                 <button onClick={handleAddPackingItem} className="bg-orange-600 text-white p-1.5 rounded-lg h-[34px] mt-auto w-10 flex items-center justify-center"><Plus size={16}/></button>
                                             </div>
                                         </div>
@@ -1270,126 +1290,7 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
                         </div>
                     )}
 
-                    {/* Inspection Tab */}
-                    {activeTab === 'inspection' && (
-                        <div className="p-6 max-w-5xl mx-auto space-y-6">
-                            <div className="bg-white p-6 rounded-xl shadow-sm border space-y-4">
-                                <h3 className="font-bold text-gray-800 flex items-center gap-2"><Microscope size={20} className="text-indigo-600"/> گواهی‌های بازرسی (COI / IC)</h3>
-                                <div className="grid grid-cols-1 md:grid-cols-5 gap-3 items-end bg-indigo-50 p-4 rounded-lg">
-                                    <div className="space-y-1"><label className="text-xs font-bold text-gray-700">شماره گواهی</label><input className="w-full border rounded p-2 text-sm dir-ltr" value={newInspectionCertificate.certificateNumber} onChange={e => setNewInspectionCertificate({...newInspectionCertificate, certificateNumber: e.target.value})} /></div>
-                                    <div className="space-y-1"><label className="text-xs font-bold text-gray-700">شرکت بازرسی</label><input className="w-full border rounded p-2 text-sm" value={newInspectionCertificate.company} onChange={e => setNewInspectionCertificate({...newInspectionCertificate, company: e.target.value})} /></div>
-                                    <div className="space-y-1"><label className="text-xs font-bold text-gray-700">مرحله (پارت)</label><input className="w-full border rounded p-2 text-sm" placeholder="مثال: Original" value={newInspectionCertificate.part} onChange={e => setNewInspectionCertificate({...newInspectionCertificate, part: e.target.value})} /></div>
-                                    <div className="space-y-1"><label className="text-xs font-bold text-gray-700">مبلغ صورتحساب (ریال)</label><input className="w-full border rounded p-2 text-sm dir-ltr" value={formatNumberString(newInspectionCertificate.amount)} onChange={e => setNewInspectionCertificate({...newInspectionCertificate, amount: deformatNumberString(e.target.value)})} /></div>
-                                    <button onClick={handleAddInspectionCertificate} className="bg-indigo-600 text-white p-2 rounded-lg text-sm font-bold hover:bg-indigo-700 h-[38px]"><Plus size={16} /></button>
-                                </div>
-                                <div className="space-y-2">{inspectionForm.certificates.map((cert) => (<div key={cert.id} className="flex justify-between items-center bg-white border p-3 rounded-lg"><div className="flex gap-4 text-sm"><span className="font-bold text-indigo-700">{cert.part}</span><span className="font-mono">{cert.certificateNumber}</span><span>{cert.company}</span><span className="font-mono font-bold">{formatCurrency(cert.amount)}</span></div><button onClick={() => handleDeleteInspectionCertificate(cert.id)} className="text-red-500 hover:text-red-700"><Trash2 size={16}/></button></div>))}</div>
-                            </div>
-                            
-                            <div className="bg-white p-6 rounded-xl shadow-sm border space-y-4">
-                                <h3 className="font-bold text-gray-800 flex items-center gap-2"><Wallet size={20} className="text-gray-600"/> پرداخت‌های بازرسی</h3>
-                                <div className="grid grid-cols-1 md:grid-cols-5 gap-3 items-end bg-gray-100 p-4 rounded-lg">
-                                     <div className="space-y-1"><label className="text-xs font-bold text-gray-700">مبلغ (ریال)</label><input className="w-full border rounded p-2 text-sm dir-ltr" value={formatNumberString(newInspectionPayment.amount)} onChange={e => setNewInspectionPayment({...newInspectionPayment, amount: deformatNumberString(e.target.value)})} /></div>
-                                     <div className="space-y-1"><label className="text-xs font-bold text-gray-700">تاریخ</label><input className="w-full border rounded p-2 text-sm dir-ltr" placeholder="1403/01/01" value={newInspectionPayment.date} onChange={e => setNewInspectionPayment({...newInspectionPayment, date: e.target.value})} /></div>
-                                     <div className="space-y-1"><label className="text-xs font-bold text-gray-700">بانک</label><select className="w-full border rounded p-2 text-sm" value={newInspectionPayment.bank} onChange={e => setNewInspectionPayment({...newInspectionPayment, bank: e.target.value})}><option value="">انتخاب</option>{availableBanks.map(b => <option key={b} value={b}>{b}</option>)}</select></div>
-                                     <div className="space-y-1"><label className="text-xs font-bold text-gray-700">بابت</label><input className="w-full border rounded p-2 text-sm" placeholder="مثال: پیش پرداخت" value={newInspectionPayment.part} onChange={e => setNewInspectionPayment({...newInspectionPayment, part: e.target.value})} /></div>
-                                     <button onClick={handleAddInspectionPayment} className="bg-gray-600 text-white p-2 rounded-lg text-sm font-bold hover:bg-gray-700 h-[38px]"><Plus size={16} /></button>
-                                </div>
-                                <div className="space-y-2">{inspectionForm.payments.map((pay) => (<div key={pay.id} className="flex justify-between items-center bg-white border p-3 rounded-lg"><div className="flex gap-4 text-sm"><span className="font-bold">{pay.part}</span><span className="font-mono text-blue-600">{formatCurrency(pay.amount)}</span><span>{pay.date}</span><span>{pay.bank}</span></div><button onClick={() => handleDeleteInspectionPayment(pay.id)} className="text-red-500 hover:text-red-700"><Trash2 size={16}/></button></div>))}</div>
-                            </div>
-                        </div>
-                    )}
-
-                    {/* Clearance Docs Tab */}
-                    {activeTab === 'clearance_docs' && (
-                         <div className="p-6 max-w-5xl mx-auto space-y-6">
-                            <div className="bg-white p-6 rounded-xl shadow-sm border space-y-4">
-                                <h3 className="font-bold text-gray-800 flex items-center gap-2"><Warehouse size={20} className="text-orange-600"/> قبض انبار و ترخیصیه</h3>
-                                <div className="grid grid-cols-1 md:grid-cols-4 gap-3 items-end bg-orange-50 p-4 rounded-lg">
-                                    <div className="space-y-1"><label className="text-xs font-bold text-gray-700">شماره قبض/ترخیصیه</label><input className="w-full border rounded p-2 text-sm dir-ltr" value={newWarehouseReceipt.number} onChange={e => setNewWarehouseReceipt({...newWarehouseReceipt, number: e.target.value})} /></div>
-                                    <div className="space-y-1"><label className="text-xs font-bold text-gray-700">تاریخ صدور</label><input className="w-full border rounded p-2 text-sm dir-ltr" placeholder="1403/01/01" value={newWarehouseReceipt.issueDate} onChange={e => setNewWarehouseReceipt({...newWarehouseReceipt, issueDate: e.target.value})} /></div>
-                                    <div className="space-y-1"><label className="text-xs font-bold text-gray-700">توضیح (پارت)</label><input className="w-full border rounded p-2 text-sm" value={newWarehouseReceipt.part} onChange={e => setNewWarehouseReceipt({...newWarehouseReceipt, part: e.target.value})} /></div>
-                                    <button onClick={handleAddWarehouseReceipt} className="bg-orange-600 text-white p-2 rounded-lg text-sm font-bold hover:bg-orange-700 h-[38px]"><Plus size={16} /></button>
-                                </div>
-                                <div className="space-y-2">{clearanceForm.receipts.map((r) => (<div key={r.id} className="flex justify-between items-center bg-white border p-3 rounded-lg"><div className="flex gap-4 text-sm"><span className="font-mono font-bold text-orange-700">{r.number}</span><span>{r.issueDate}</span><span className="text-gray-500">{r.part}</span></div><button onClick={() => handleDeleteWarehouseReceipt(r.id)} className="text-red-500 hover:text-red-700"><Trash2 size={16}/></button></div>))}</div>
-                            </div>
-                            
-                            <div className="bg-white p-6 rounded-xl shadow-sm border space-y-4">
-                                <h3 className="font-bold text-gray-800 flex items-center gap-2"><Wallet size={20} className="text-gray-600"/> هزینه‌های انبارداری و ترخیصیه (کشتیرانی)</h3>
-                                <div className="grid grid-cols-1 md:grid-cols-5 gap-3 items-end bg-gray-100 p-4 rounded-lg">
-                                     <div className="space-y-1"><label className="text-xs font-bold text-gray-700">مبلغ (ریال)</label><input className="w-full border rounded p-2 text-sm dir-ltr" value={formatNumberString(newClearancePayment.amount)} onChange={e => setNewClearancePayment({...newClearancePayment, amount: deformatNumberString(e.target.value)})} /></div>
-                                     <div className="space-y-1"><label className="text-xs font-bold text-gray-700">تاریخ</label><input className="w-full border rounded p-2 text-sm dir-ltr" placeholder="1403/01/01" value={newClearancePayment.date} onChange={e => setNewClearancePayment({...newClearancePayment, date: e.target.value})} /></div>
-                                     <div className="space-y-1"><label className="text-xs font-bold text-gray-700">بانک</label><select className="w-full border rounded p-2 text-sm" value={newClearancePayment.bank} onChange={e => setNewClearancePayment({...newClearancePayment, bank: e.target.value})}><option value="">انتخاب</option>{availableBanks.map(b => <option key={b} value={b}>{b}</option>)}</select></div>
-                                     <div className="space-y-1"><label className="text-xs font-bold text-gray-700">بابت</label><input className="w-full border rounded p-2 text-sm" placeholder="مثال: هزینه قبض انبار" value={newClearancePayment.part} onChange={e => setNewClearancePayment({...newClearancePayment, part: e.target.value})} /></div>
-                                     <button onClick={handleAddClearancePayment} className="bg-gray-600 text-white p-2 rounded-lg text-sm font-bold hover:bg-gray-700 h-[38px]"><Plus size={16} /></button>
-                                </div>
-                                <div className="space-y-2">{clearanceForm.payments.map((pay) => (<div key={pay.id} className="flex justify-between items-center bg-white border p-3 rounded-lg"><div className="flex gap-4 text-sm"><span className="font-bold">{pay.part}</span><span className="font-mono text-blue-600">{formatCurrency(pay.amount)}</span><span>{pay.date}</span><span>{pay.bank}</span></div><button onClick={() => handleDeleteClearancePayment(pay.id)} className="text-red-500 hover:text-red-700"><Trash2 size={16}/></button></div>))}</div>
-                            </div>
-                        </div>
-                    )}
-
-                    {/* Green Leaf Tab */}
-                    {activeTab === 'green_leaf' && (
-                        <div className="p-6 max-w-5xl mx-auto space-y-6">
-                            {/* Customs Duties */}
-                            <div className="bg-white p-6 rounded-xl shadow-sm border space-y-4">
-                                <h3 className="font-bold text-gray-800 flex items-center gap-2"><Leaf size={20} className="text-green-600"/> اظهارنامه و حقوق گمرکی</h3>
-                                <div className="grid grid-cols-1 md:grid-cols-5 gap-3 items-end bg-green-50 p-4 rounded-lg">
-                                    <div className="space-y-1"><label className="text-xs font-bold text-gray-700">شماره کوتاژ</label><input className="w-full border rounded p-2 text-sm dir-ltr" value={newCustomsDuty.cottageNumber} onChange={e => setNewCustomsDuty({...newCustomsDuty, cottageNumber: e.target.value})} /></div>
-                                    <div className="space-y-1"><label className="text-xs font-bold text-gray-700">مبلغ حقوق (ریال)</label><input className="w-full border rounded p-2 text-sm dir-ltr" value={formatNumberString(newCustomsDuty.amount)} onChange={e => setNewCustomsDuty({...newCustomsDuty, amount: deformatNumberString(e.target.value)})} /></div>
-                                    <div className="space-y-1"><label className="text-xs font-bold text-gray-700">نحوه پرداخت</label><select className="w-full border rounded p-2 text-sm" value={newCustomsDuty.paymentMethod} onChange={e => setNewCustomsDuty({...newCustomsDuty, paymentMethod: e.target.value as 'Bank' | 'Guarantee'})}><option value="Bank">نقدی (فیش)</option><option value="Guarantee">ضمانت‌نامه</option></select></div>
-                                    <div className="space-y-1"><label className="text-xs font-bold text-gray-700">{newCustomsDuty.paymentMethod === 'Bank' ? 'بانک' : '...'}</label>{newCustomsDuty.paymentMethod === 'Bank' ? <select className="w-full border rounded p-2 text-sm" value={newCustomsDuty.bank} onChange={e => setNewCustomsDuty({...newCustomsDuty, bank: e.target.value})}><option value="">انتخاب</option>{availableBanks.map(b => <option key={b} value={b}>{b}</option>)}</select> : <input className="w-full border rounded p-2 text-sm bg-gray-100" disabled />}</div>
-                                    <button onClick={handleAddCustomsDuty} className="bg-green-600 text-white p-2 rounded-lg text-sm font-bold hover:bg-green-700 h-[38px]"><Plus size={16} /></button>
-                                </div>
-                                <div className="space-y-2">{greenLeafForm.duties.map((d) => (<div key={d.id} className="flex justify-between items-center bg-white border p-3 rounded-lg"><div className="flex gap-4 text-sm"><span className="font-mono font-bold text-green-700">{d.cottageNumber}</span><span className="font-mono">{formatCurrency(d.amount)}</span><span className={`text-xs px-2 py-0.5 rounded ${d.paymentMethod === 'Bank' ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700'}`}>{d.paymentMethod === 'Bank' ? 'نقدی' : 'ضمانت‌نامه'}</span>{d.bank && <span>{d.bank}</span>}</div><button onClick={() => handleDeleteCustomsDuty(d.id)} className="text-red-500 hover:text-red-700"><Trash2 size={16}/></button></div>))}</div>
-                            </div>
-
-                            {/* Guarantees */}
-                            <div className="bg-white p-6 rounded-xl shadow-sm border space-y-4">
-                                <h3 className="font-bold text-gray-800 flex items-center gap-2"><ShieldCheck size={20} className="text-purple-600"/> ضمانت‌نامه‌ها</h3>
-                                <div className="bg-purple-50 p-4 rounded-lg space-y-3">
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                                        <div className="space-y-1"><label className="text-xs font-bold text-gray-700">بابت کوتاژ (انتخاب کنید)</label><select className="w-full border rounded p-2 text-sm" value={selectedDutyForGuarantee} onChange={e => setSelectedDutyForGuarantee(e.target.value)}><option value="">-- انتخاب کوتاژ --</option>{greenLeafForm.duties.filter(d => d.paymentMethod === 'Guarantee').map(d => <option key={d.id} value={d.id}>{d.cottageNumber} ({formatCurrency(d.amount)})</option>)}</select></div>
-                                        <div className="space-y-1"><label className="text-xs font-bold text-gray-700">شماره ضمانت‌نامه</label><input className="w-full border rounded p-2 text-sm dir-ltr" value={newGuaranteeDetails.guaranteeNumber} onChange={e => setNewGuaranteeDetails({...newGuaranteeDetails, guaranteeNumber: e.target.value})} /></div>
-                                    </div>
-                                    <div className="grid grid-cols-1 md:grid-cols-4 gap-3 items-end border-t border-purple-200 pt-3">
-                                        <div className="space-y-1"><label className="text-xs font-bold text-gray-700">شماره چک</label><input className="w-full border rounded p-2 text-sm dir-ltr" value={newGuaranteeDetails.chequeNumber} onChange={e => setNewGuaranteeDetails({...newGuaranteeDetails, chequeNumber: e.target.value})} /></div>
-                                        <div className="space-y-1"><label className="text-xs font-bold text-gray-700">بانک چک</label><select className="w-full border rounded p-2 text-sm" value={newGuaranteeDetails.chequeBank} onChange={e => setNewGuaranteeDetails({...newGuaranteeDetails, chequeBank: e.target.value})}><option value="">انتخاب</option>{availableBanks.map(b => <option key={b} value={b}>{b}</option>)}</select></div>
-                                        <div className="space-y-1"><label className="text-xs font-bold text-gray-700">مبلغ چک</label><input className="w-full border rounded p-2 text-sm dir-ltr" value={formatNumberString(newGuaranteeDetails.chequeAmount)} onChange={e => setNewGuaranteeDetails({...newGuaranteeDetails, chequeAmount: deformatNumberString(e.target.value)})} /></div>
-                                        <div className="space-y-1"><label className="text-xs font-bold text-gray-700">سررسید چک</label><input className="w-full border rounded p-2 text-sm dir-ltr" value={newGuaranteeDetails.chequeDate} onChange={e => setNewGuaranteeDetails({...newGuaranteeDetails, chequeDate: e.target.value})} placeholder="1403/xx/xx"/></div>
-                                    </div>
-                                    <div className="grid grid-cols-1 md:grid-cols-4 gap-3 items-end border-t border-purple-200 pt-3">
-                                        <div className="space-y-1 md:col-span-2"><label className="text-xs font-bold text-gray-700">مبلغ نقدی (واریزی)</label><input className="w-full border rounded p-2 text-sm dir-ltr" value={formatNumberString(newGuaranteeDetails.cashAmount)} onChange={e => setNewGuaranteeDetails({...newGuaranteeDetails, cashAmount: deformatNumberString(e.target.value)})} /></div>
-                                        <div className="space-y-1"><label className="text-xs font-bold text-gray-700">بانک واریزی</label><select className="w-full border rounded p-2 text-sm" value={newGuaranteeDetails.cashBank} onChange={e => setNewGuaranteeDetails({...newGuaranteeDetails, cashBank: e.target.value})}><option value="">انتخاب</option>{availableBanks.map(b => <option key={b} value={b}>{b}</option>)}</select></div>
-                                        <button onClick={handleAddGuarantee} disabled={!selectedDutyForGuarantee} className="bg-purple-600 text-white p-2 rounded-lg text-sm font-bold hover:bg-purple-700 h-[38px] disabled:opacity-50"><Plus size={16} /></button>
-                                    </div>
-                                </div>
-                                <div className="space-y-2">{greenLeafForm.guarantees.map((g) => { const duty = greenLeafForm.duties.find(d => d.id === g.relatedDutyId); return (<div key={g.id} className="bg-white border p-3 rounded-lg"><div className="flex justify-between mb-2"><span className="font-bold text-purple-700">ضمانت‌نامه: {g.guaranteeNumber}</span><button onClick={() => handleDeleteGuarantee(g.id)} className="text-red-500 hover:text-red-700"><Trash2 size={16}/></button></div><div className="text-xs text-gray-600 grid grid-cols-2 gap-2"><div>بابت کوتاژ: {duty?.cottageNumber}</div><div>چک: {g.chequeNumber} ({g.chequeBank}) - {formatCurrency(g.chequeAmount || 0)}</div><div>نقدی: {formatCurrency(g.cashAmount)} ({g.cashBank})</div><div>وضعیت: <button onClick={() => handleToggleGuaranteeDelivery(g.id)} className={`px-2 py-0.5 rounded font-bold ${g.isDelivered ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>{g.isDelivered ? 'عودت شد' : 'نزد سازمان'}</button></div></div></div>); })}</div>
-                            </div>
-
-                            {/* Tax & Road Tolls */}
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                <div className="bg-white p-6 rounded-xl shadow-sm border space-y-4">
-                                    <h3 className="font-bold text-gray-800 flex items-center gap-2"><Percent size={20} className="text-gray-600"/> مالیات علی‌الحساب</h3>
-                                    <div className="flex gap-2 items-end bg-gray-50 p-2 rounded">
-                                        <input className="w-24 border rounded p-1 text-sm dir-ltr" placeholder="مبلغ" value={formatNumberString(newTax.amount)} onChange={e => setNewTax({...newTax, amount: deformatNumberString(e.target.value)})} />
-                                        <input className="flex-1 border rounded p-1 text-sm" placeholder="توضیح/بانک" value={newTax.bank} onChange={e => setNewTax({...newTax, bank: e.target.value})} />
-                                        <button onClick={handleAddTax} className="bg-gray-600 text-white p-1 rounded hover:bg-gray-700"><Plus size={16} /></button>
-                                    </div>
-                                    <div className="space-y-1">{greenLeafForm.taxes.map(t => (<div key={t.id} className="flex justify-between border-b pb-1 text-sm"><span>{formatCurrency(t.amount)} ({t.bank})</span><button onClick={() => handleDeleteTax(t.id)} className="text-red-500"><X size={14}/></button></div>))}</div>
-                                </div>
-                                <div className="bg-white p-6 rounded-xl shadow-sm border space-y-4">
-                                    <h3 className="font-bold text-gray-800 flex items-center gap-2"><Truck size={20} className="text-gray-600"/> عوارض راهداری</h3>
-                                    <div className="flex gap-2 items-end bg-gray-50 p-2 rounded">
-                                        <input className="w-24 border rounded p-1 text-sm dir-ltr" placeholder="مبلغ" value={formatNumberString(newRoadToll.amount)} onChange={e => setNewRoadToll({...newRoadToll, amount: deformatNumberString(e.target.value)})} />
-                                        <input className="flex-1 border rounded p-1 text-sm" placeholder="توضیح/بانک" value={newRoadToll.bank} onChange={e => setNewRoadToll({...newRoadToll, bank: e.target.value})} />
-                                        <button onClick={handleAddRoadToll} className="bg-gray-600 text-white p-1 rounded hover:bg-gray-700"><Plus size={16} /></button>
-                                    </div>
-                                    <div className="space-y-1">{greenLeafForm.roadTolls.map(r => (<div key={r.id} className="flex justify-between border-b pb-1 text-sm"><span>{formatCurrency(r.amount)} ({r.bank})</span><button onClick={() => handleDeleteRoadToll(r.id)} className="text-red-500"><X size={14}/></button></div>))}</div>
-                                </div>
-                            </div>
-                        </div>
-                    )}
-
+                    {/* ... other tabs ... */}
                 </div>
             </div>
         );

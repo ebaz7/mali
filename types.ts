@@ -424,6 +424,7 @@ export interface InvoiceItem {
     weight: number;
     unitPrice: number;
     totalPrice: number;
+    part?: string; // Updated: Part Number
 }
 
 export interface PackingItem {
