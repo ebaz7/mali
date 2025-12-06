@@ -707,7 +707,96 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
             case 'currency':
                 return (<div className="overflow-x-auto"><table className="w-full text-sm text-right"><thead className="bg-gray-100 text-gray-700"><tr><th className="p-3">شماره پرونده</th><th className="p-3">ارز</th><th className="p-3">خریداری شده</th><th className="p-3">تحویل شده</th><th className="p-3">باقیمانده</th></tr></thead><tbody>{filteredRecords.map(r => { const d = r.currencyPurchaseData; if (!d) return null; const purchased = d.purchasedAmount || 0; const delivered = d.deliveredAmount || 0; return (<tr key={r.id} className="border-b hover:bg-gray-50"><td className="p-3 font-mono">{r.fileNumber}</td><td className="p-3">{r.mainCurrency}</td><td className="p-3 font-bold text-blue-600">{formatCurrency(purchased)}</td><td className="p-3 font-bold text-green-600">{formatCurrency(delivered)}</td><td className="p-3 font-bold text-red-600">{formatCurrency(purchased - delivered)}</td></tr>); })}</tbody></table></div>);
             case 'allocation_queue':
-                return (<div className="overflow-x-auto"><table className="w-full text-sm text-right"><thead className="bg-gray-100 text-gray-700"><tr><th className="p-3">شماره پرونده</th><th className="p-3">کالا</th><th className="p-3">تاریخ ورود به صف</th><th className="p-3">مدت انتظار</th><th className="p-3">وضعیت</th></tr></thead><tbody>{filteredRecords.filter(r => r.stages[TradeStage.ALLOCATION_QUEUE]?.isCompleted && !r.stages[TradeStage.ALLOCATION_APPROVED]?.isCompleted).map(r => { const queueDate = r.stages[TradeStage.ALLOCATION_QUEUE].queueDate; const days = queueDate ? calculateDaysDiff(queueDate) : '-'; return (<tr key={r.id} className="border-b hover:bg-gray-50"><td className="p-3 font-mono">{r.fileNumber}</td><td className="p-3">{r.goodsName}</td><td className="p-3">{queueDate || '-'}</td><td className="p-3"><span className="bg-amber-100 text-amber-700 px-2 py-1 rounded text-xs font-bold">{days} روز</span></td><td className="p-3 text-amber-600">در صف</td></tr>); })}</tbody></table></div>);
+                const queueRecords = filteredRecords.filter(r => 
+                    r.stages[TradeStage.ALLOCATION_QUEUE]?.isCompleted && 
+                    !r.stages[TradeStage.ALLOCATION_APPROVED]?.isCompleted
+                );
+
+                // Init Totals
+                let totalRialSum = 0;
+                let totalEurSum = 0;
+                let totalUsdSum = 0;
+                let totalAedSum = 0;
+                let totalCnySum = 0;
+
+                return (
+                    <div className="overflow-auto max-h-[calc(100vh-220px)] border rounded-xl shadow-sm">
+                        <table className="min-w-max text-[11px] text-center border-collapse">
+                            <thead className="bg-gray-100 text-gray-700 font-bold sticky top-0 z-10 shadow-sm">
+                                <tr>
+                                    <th className="p-2 border border-gray-300">ردیف</th>
+                                    <th className="p-2 border border-gray-300">نوع ارز</th>
+                                    <th className="p-2 border border-gray-300">تاییدیه</th>
+                                    <th className="p-2 border border-gray-300">مدت انتظار (روز)</th>
+                                    <th className="p-2 border border-gray-300">حالت ثبت سفارش</th>
+                                    <th className="p-2 border border-gray-300">نام شرکت</th>
+                                    <th className="p-2 border border-gray-300">نام بانک عامل</th>
+                                    <th className="p-2 border border-gray-300">وضعیت تخصیص</th>
+                                    <th className="p-2 border border-gray-300">مهلت تخصیص</th>
+                                    <th className="p-2 border border-gray-300">زمان ثبت در سامانه</th>
+                                    <th className="p-2 border border-gray-300">شماره ثبت سفارش</th>
+                                    <th className="p-2 border border-gray-300 bg-blue-50">معادل ریالی</th>
+                                    <th className="p-2 border border-gray-300">دلار (USD)</th>
+                                    <th className="p-2 border border-gray-300">یورو (EUR)</th>
+                                    <th className="p-2 border border-gray-300">درهم (AED)</th>
+                                    <th className="p-2 border border-gray-300">یوان (CNY)</th>
+                                    <th className="p-2 border border-gray-300">شماره پرونده/پروفرما</th>
+                                    <th className="p-2 border border-gray-300">نوع کالا</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {queueRecords.map((r, idx) => {
+                                    const queueDate = r.stages[TradeStage.ALLOCATION_QUEUE].queueDate;
+                                    const days = queueDate ? calculateDaysDiff(queueDate) : 0;
+                                    const totalAmount = r.items.reduce((sum, i) => sum + i.totalPrice, 0) + (r.freightCost || 0);
+                                    const rialEquiv = totalAmount * (r.exchangeRate || 0);
+                                    const currency = r.mainCurrency || 'EUR';
+                                    
+                                    // Accumulate Totals
+                                    totalRialSum += rialEquiv;
+                                    if (currency === 'EUR') totalEurSum += totalAmount;
+                                    if (currency === 'USD') totalUsdSum += totalAmount;
+                                    if (currency === 'AED') totalAedSum += totalAmount;
+                                    if (currency === 'CNY') totalCnySum += totalAmount;
+
+                                    return (
+                                        <tr key={r.id} className={`hover:bg-blue-50 border-b border-gray-200 transition-colors ${idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}`}>
+                                            <td className="p-2 border border-gray-200">{idx + 1}</td>
+                                            <td className="p-2 border border-gray-200 bg-orange-100">{r.currencyAllocationType || 'نیمایی'}</td>
+                                            <td className="p-2 border border-gray-200"><input type="checkbox" readOnly checked className="accent-blue-600"/></td>
+                                            <td className={`p-2 border border-gray-200 font-bold ${days > 30 ? 'text-red-600 bg-red-50' : 'text-gray-700'}`}>{days}</td>
+                                            <td className="p-2 border border-gray-200 bg-yellow-50 text-xs">نیاز تولید خود</td>
+                                            <td className="p-2 border border-gray-200 font-bold">{r.company}</td>
+                                            <td className="p-2 border border-gray-200 bg-gray-100">صنعت و معدن</td>
+                                            <td className="p-2 border border-gray-200 bg-yellow-100 text-yellow-800 font-bold">در صف</td>
+                                            <td className="p-2 border border-gray-200 dir-ltr font-mono text-[10px]">{r.registrationExpiry || '-'}</td>
+                                            <td className="p-2 border border-gray-200 dir-ltr font-mono text-[10px]">{r.registrationDate || '-'}</td>
+                                            <td className="p-2 border border-gray-200 font-mono font-bold">{r.registrationNumber}</td>
+                                            <td className="p-2 border border-gray-200 bg-blue-50 font-mono font-bold text-blue-800 dir-ltr">{formatCurrency(rialEquiv)}</td>
+                                            <td className="p-2 border border-gray-200 font-mono dir-ltr">{currency === 'USD' ? formatNumberString(totalAmount) : '-'}</td>
+                                            <td className="p-2 border border-gray-200 font-mono dir-ltr">{currency === 'EUR' ? formatNumberString(totalAmount) : '-'}</td>
+                                            <td className="p-2 border border-gray-200 font-mono dir-ltr">{currency === 'AED' ? formatNumberString(totalAmount) : '-'}</td>
+                                            <td className="p-2 border border-gray-200 font-mono dir-ltr">{currency === 'CNY' ? formatNumberString(totalAmount) : '-'}</td>
+                                            <td className="p-2 border border-gray-200 font-mono">{r.fileNumber}</td>
+                                            <td className="p-2 border border-gray-200 text-xs truncate max-w-[100px]">{r.goodsName}</td>
+                                        </tr>
+                                    );
+                                })}
+                            </tbody>
+                            <tfoot className="bg-gray-200 font-bold sticky bottom-0 z-10 border-t-2 border-gray-400">
+                                <tr>
+                                    <td colSpan={11} className="p-3 text-left">جمع کل</td>
+                                    <td className="p-2 border border-gray-300 font-mono dir-ltr text-blue-900">{formatCurrency(totalRialSum)}</td>
+                                    <td className="p-2 border border-gray-300 font-mono dir-ltr">{formatNumberString(totalUsdSum)}</td>
+                                    <td className="p-2 border border-gray-300 font-mono dir-ltr">{formatNumberString(totalEurSum)}</td>
+                                    <td className="p-2 border border-gray-300 font-mono dir-ltr">{formatNumberString(totalAedSum)}</td>
+                                    <td className="p-2 border border-gray-300 font-mono dir-ltr">{formatNumberString(totalCnySum)}</td>
+                                    <td colSpan={2}></td>
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </div>
+                );
             case 'clearance':
                 return (<div className="overflow-x-auto"><table className="w-full text-sm text-right"><thead className="bg-gray-100 text-gray-700"><tr><th className="p-3">شماره پرونده</th><th className="p-3">قبض انبار(ها)</th><th className="p-3">هزینه ترخیصیه</th><th className="p-3">تعداد پارت</th></tr></thead><tbody>{filteredRecords.filter(r => r.clearanceData?.receipts.length).map(r => { return (<tr key={r.id} className="border-b hover:bg-gray-50"><td className="p-3 font-mono">{r.fileNumber}</td><td className="p-3">{r.clearanceData?.receipts.map(rc => rc.number).join(', ')}</td><td className="p-3">{formatCurrency(r.clearanceData?.payments.reduce((acc,p)=>acc+p.amount,0) || 0)}</td><td className="p-3">{r.clearanceData?.receipts.length}</td></tr>); })}</tbody></table></div>);
             case 'green_leaf':
