@@ -477,6 +477,7 @@ export interface TradeRecord {
     registrationNumber?: string; // شماره ثبت سفارش
     registrationDate?: string; // تاریخ صدور ثبت سفارش
     registrationExpiry?: string; // مهلت ثبت سفارش
+    currencyAllocationType?: string; // New: نوع ارز تخصیصی
     
     commodityGroup?: string; // گروه کالایی
     sellerName: string; // فروشنده
