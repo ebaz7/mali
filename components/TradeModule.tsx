@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { User, TradeRecord, TradeStage, TradeItem, SystemSettings, InsuranceEndorsement, CurrencyPurchaseData, TradeTransaction, CurrencyTranche, TradeStageData, ShippingDocument, ShippingDocType, DocStatus, InvoiceItem, InspectionData, InspectionPayment, InspectionCertificate, ClearanceData, WarehouseReceipt, ClearancePayment, GreenLeafData, GreenLeafCustomsDuty, GreenLeafGuarantee, GreenLeafTax, GreenLeafRoadToll, InternalShippingData, ShippingPayment, AgentData, AgentPayment } from '../types';
 import { getTradeRecords, saveTradeRecord, updateTradeRecord, deleteTradeRecord, getSettings, uploadFile } from '../services/storageService';
@@ -147,9 +146,18 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
 
             setAgentForm(selectedRecord.agentData || { payments: [] });
 
-            const curData = selectedRecord.currencyPurchaseData || { payments: [], purchasedAmount: 0, purchasedCurrencyType: selectedRecord.mainCurrency || 'EUR', tranches: [], isDelivered: false, deliveredAmount: 0 };
+            const curData = (selectedRecord.currencyPurchaseData || { 
+                payments: [], 
+                purchasedAmount: 0, 
+                purchasedCurrencyType: selectedRecord.mainCurrency || 'EUR', 
+                tranches: [], 
+                isDelivered: false, 
+                deliveredAmount: 0,
+                remittedAmount: 0
+            }) as CurrencyPurchaseData;
+
             if (!curData.tranches) curData.tranches = [];
-            setCurrencyForm(curData as CurrencyPurchaseData);
+            setCurrencyForm(curData);
             if (curData.guaranteeCheque) {
                 setCurrencyGuarantee({
                     amount: formatNumberString(curData.guaranteeCheque.amount),
@@ -221,7 +229,7 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
             fileNumber: newFileNumber, 
             orderNumber: newFileNumber, 
             goodsName: newGoodsName, // Used as Title on Dashboard
-            registrationNumber: newGoodsName, // Used as NTSW Number
+            registrationNumber: '', 
             sellerName: newSellerName, 
             commodityGroup: newCommodityGroup, 
             mainCurrency: newMainCurrency, 
@@ -912,14 +920,6 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
                                         <tbody className="divide-y divide-gray-100">
                                             {selectedRecord.items.map((item, idx) => {
                                                 const allocatedCost = item.weight * costPerKg;
-                                                // Assuming unitPrice is in currency. 
-                                                // Base Cost in Rial = (item.totalPrice * exchangeRate)
-                                                // But usually "Cost Price" means (Purchase Price + Allocated Expenses).
-                                                // Since grandTotalRial already INCLUDES the purchase price (if converted), 
-                                                // we can just use allocatedCost if grandTotalRial includes the base goods cost.
-                                                // Let's assume grandTotalRial includes EVERYTHING (Base + Expenses).
-                                                // So allocatedCost IS the final cost.
-                                                
                                                 return (
                                                     <tr key={item.id} className="hover:bg-gray-50">
                                                         <td className="p-3 text-center">{idx + 1}</td>
@@ -977,6 +977,44 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
                     {/* Proforma Tab */}
                     {activeTab === 'proforma' && (
                         <div className="p-6 max-w-5xl mx-auto space-y-6">
+                            
+                            {/* NEW: Registration Info */}
+                            <div className="bg-white p-6 rounded-xl shadow-sm border space-y-4">
+                                <h3 className="font-bold text-gray-800 flex items-center gap-2">
+                                    <FileText size={20} className="text-blue-600"/> 
+                                    اطلاعات ثبت سفارش
+                                </h3>
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                    <div className="space-y-1">
+                                        <label className="text-xs font-bold text-gray-700">شماره ثبت سفارش</label>
+                                        <input 
+                                            className="w-full border rounded p-2 text-sm dir-ltr font-mono" 
+                                            value={selectedRecord.registrationNumber || ''} 
+                                            onChange={(e) => handleUpdateProforma('registrationNumber', e.target.value)} 
+                                            placeholder="8-digit code"
+                                        />
+                                    </div>
+                                    <div className="space-y-1">
+                                        <label className="text-xs font-bold text-gray-700">تاریخ صدور</label>
+                                        <input 
+                                            className="w-full border rounded p-2 text-sm dir-ltr" 
+                                            value={selectedRecord.registrationDate || ''} 
+                                            onChange={(e) => handleUpdateProforma('registrationDate', e.target.value)} 
+                                            placeholder="1403/01/01"
+                                        />
+                                    </div>
+                                    <div className="space-y-1">
+                                        <label className="text-xs font-bold text-gray-700">مهلت اعتبار</label>
+                                        <input 
+                                            className="w-full border rounded p-2 text-sm dir-ltr" 
+                                            value={selectedRecord.registrationExpiry || ''} 
+                                            onChange={(e) => handleUpdateProforma('registrationExpiry', e.target.value)} 
+                                            placeholder="1403/06/01"
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+
                             {/* License Transactions Section */}
                             <div className="bg-white p-6 rounded-xl shadow-sm border space-y-4">
                                 <h3 className="font-bold text-gray-800 flex items-center gap-2"><History size={20} className="text-orange-600"/> سوابق پرداخت هزینه‌های مجوز/ثبت سفارش</h3>
@@ -998,6 +1036,7 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
                                 </div>
                             </div>
 
+                            {/* Items Section with Freight Cost */}
                             <div className="bg-white p-6 rounded-xl shadow-sm border space-y-4">
                                 <h3 className="font-bold text-gray-800 flex items-center gap-2"><Package size={20} className="text-blue-600"/> اقلام پروفرما</h3>
                                 <div className="grid grid-cols-1 md:grid-cols-5 gap-4 items-end bg-blue-50 p-4 rounded-lg">
@@ -1008,6 +1047,24 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
                                     <button onClick={handleAddItem} className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-blue-700 h-[38px]"><Plus size={16} /></button>
                                 </div>
                                 <div className="overflow-x-auto"><table className="w-full text-sm text-right"><thead className="bg-gray-100 text-gray-700"><tr><th className="p-3">ردیف</th><th className="p-3">شرح کالا</th><th className="p-3">وزن</th><th className="p-3">فی</th><th className="p-3">کل</th><th className="p-3">عملیات</th></tr></thead><tbody>{selectedRecord.items.map((item, idx) => (<tr key={item.id} className="border-b hover:bg-gray-50"><td className="p-3">{idx + 1}</td><td className="p-3 font-bold">{item.name}</td><td className="p-3 font-mono">{formatNumberString(item.weight)}</td><td className="p-3 font-mono">{formatNumberString(item.unitPrice)}</td><td className="p-3 font-mono font-bold text-blue-600">{formatNumberString(item.totalPrice)}</td><td className="p-3"><button onClick={() => handleRemoveItem(item.id)} className="text-red-500 hover:text-red-700"><Trash2 size={16}/></button></td></tr>))}</tbody></table></div>
+                                
+                                {/* NEW: Freight Cost & Total */}
+                                <div className="flex flex-col md:flex-row justify-between items-center pt-4 border-t mt-4 bg-gray-50 p-4 rounded-lg gap-4">
+                                     <div className="flex gap-4 items-center">
+                                         <label className="font-bold text-gray-700 text-sm">هزینه حمل کل (Freight Cost):</label>
+                                         <div className="flex gap-2 items-center">
+                                             <input
+                                                className="border rounded p-2 text-sm dir-ltr font-mono font-bold w-32"
+                                                value={formatNumberString(selectedRecord.freightCost)}
+                                                onChange={(e) => handleUpdateProforma('freightCost', deformatNumberString(e.target.value))}
+                                             />
+                                             <span className="text-xs text-gray-500 font-bold">{selectedRecord.mainCurrency}</span>
+                                         </div>
+                                     </div>
+                                     <div className="text-sm font-bold text-blue-800 bg-blue-100 px-4 py-2 rounded-lg">
+                                         جمع کل پروفرما: {formatCurrency(selectedRecord.items.reduce((s, i) => s + i.totalPrice, 0) + (selectedRecord.freightCost || 0))} {selectedRecord.mainCurrency}
+                                     </div>
+                                </div>
                             </div>
                         </div>
                     )}
