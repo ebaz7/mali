@@ -1,9 +1,9 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { User, TradeRecord, TradeStage, TradeItem, SystemSettings, InsuranceEndorsement, CurrencyPurchaseData, TradeTransaction, CurrencyTranche, TradeStageData, ShippingDocument, ShippingDocType, DocStatus, InvoiceItem, InspectionData, InspectionPayment, InspectionCertificate, ClearanceData, WarehouseReceipt, ClearancePayment, GreenLeafData, GreenLeafCustomsDuty, GreenLeafGuarantee, GreenLeafTax, GreenLeafRoadToll, InternalShippingData, ShippingPayment, AgentData, AgentPayment, PackingItem } from '../types';
 import { getTradeRecords, saveTradeRecord, updateTradeRecord, deleteTradeRecord, getSettings, uploadFile } from '../services/storageService';
 import { generateUUID, formatCurrency, formatNumberString, deformatNumberString, parsePersianDate, formatDate, calculateDaysDiff, getStatusLabel } from '../constants';
 import { Container, Plus, Search, CheckCircle2, Save, Trash2, X, Package, ArrowRight, History, Banknote, Coins, Wallet, FileSpreadsheet, Shield, LayoutDashboard, Printer, FileDown, Paperclip, Building2, FolderOpen, Home, Calculator, FileText, Microscope, ListFilter, Warehouse, Calendar as CalendarIcon, PieChart, BarChart, Clock, Leaf, Scale, ShieldCheck, Percent, Truck, CheckSquare, Square, ToggleLeft, ToggleRight, DollarSign, UserCheck, Check, Archive, AlertCircle, RefreshCw, Box, Loader2, Share2, ChevronLeft, ChevronRight, ExternalLink, CalendarDays, Info } from 'lucide-react';
+import { apiCall } from '../services/apiService';
 
 interface TradeModuleProps {
     currentUser: User;
@@ -45,6 +45,7 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
     const [reportUsdRialRate, setReportUsdRialRate] = useState<string>('500000'); // Default Rial Rate
     const [reportEurUsdRate, setReportEurUsdRate] = useState<string>('1.08'); // Default EUR to USD Rate
     const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
+    const [sendingReport, setSendingReport] = useState(false);
 
     // Modal & Form States
     const [showNewModal, setShowNewModal] = useState(false);
@@ -258,7 +259,7 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
     const handleStageClick = (stage: TradeStage) => { const data = getStageData(selectedRecord, stage); setEditingStage(stage); setStageFormData(data); };
     const handleStageFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => { const file = e.target.files?.[0]; if (!file) return; setUploadingStageFile(true); const reader = new FileReader(); reader.onload = async (ev) => { const base64 = ev.target?.result as string; try { const result = await uploadFile(file.name, base64); setStageFormData(prev => ({ ...prev, attachments: [...(prev.attachments || []), { fileName: result.fileName, url: result.url }] })); } catch (error) { alert('خطا در آپلود'); } finally { setUploadingStageFile(false); } }; reader.readAsDataURL(file); e.target.value = ''; };
     const handleSaveStage = async () => { if (!selectedRecord || !editingStage) return; const updatedRecord = { ...selectedRecord }; updatedRecord.stages[editingStage] = { ...getStageData(selectedRecord, editingStage), ...stageFormData, updatedAt: Date.now(), updatedBy: currentUser.fullName }; if (editingStage === TradeStage.ALLOCATION_QUEUE && stageFormData.queueDate) { updatedRecord.stages[TradeStage.ALLOCATION_QUEUE].queueDate = stageFormData.queueDate; } if (editingStage === TradeStage.ALLOCATION_APPROVED) { updatedRecord.stages[TradeStage.ALLOCATION_APPROVED].allocationDate = stageFormData.allocationDate; updatedRecord.stages[TradeStage.ALLOCATION_APPROVED].allocationCode = stageFormData.allocationCode; updatedRecord.stages[TradeStage.ALLOCATION_APPROVED].allocationExpiry = stageFormData.allocationExpiry; } await updateTradeRecord(updatedRecord); setSelectedRecord(updatedRecord); setEditingStage(null); };
-    const toggleCommitment = async () => { if (!selectedRecord) return; const updatedRecord = { ...selectedRecord, isCommitmentFulfilled: !selectedRecord.isCommitmentFulfilled }; await updateTradeRecord(updatedRecord); setSelectedRecord(updatedRecord); };
+    const toggleCommitment = async () => { if (!selectedRecord) return; const updatedRecord = { ...selectedRecord, isCommitmentFulfilled: !selectedRecord.isCommitmentFulfilled }; await updateTradeRecord(updatedRecord); setSelectedRecord(updatedRecord); setSelectedRecord(updatedRecord); };
     const handleArchiveRecord = async () => { if (!selectedRecord) return; if (!confirm('آیا از انتقال این پرونده به بایگانی (ترخیص شده) اطمینان دارید؟')) return; const updatedRecord = { ...selectedRecord, isArchived: true, status: 'Completed' as const }; await updateTradeRecord(updatedRecord); setSelectedRecord(updatedRecord); alert('پرونده با موفقیت بایگانی شد.'); setViewMode('dashboard'); loadRecords(); };
     const handleUpdateCalcRate = async (rate: number) => { setCalcExchangeRate(rate); if (selectedRecord) { const updated = { ...selectedRecord, exchangeRate: rate }; await updateTradeRecord(updated); setSelectedRecord(updated); } };
     const getAllGuarantees = () => { const list = []; if (selectedRecord && selectedRecord.currencyPurchaseData?.guaranteeCheque) { list.push({ id: 'currency_g', type: 'ارزی', number: selectedRecord.currencyPurchaseData.guaranteeCheque.chequeNumber, bank: selectedRecord.currencyPurchaseData.guaranteeCheque.bank, amount: selectedRecord.currencyPurchaseData.guaranteeCheque.amount, isDelivered: selectedRecord.currencyPurchaseData.guaranteeCheque.isDelivered, toggleFunc: handleToggleCurrencyGuaranteeDelivery }); } if (selectedRecord && selectedRecord.greenLeafData?.guarantees) { selectedRecord.greenLeafData.guarantees.forEach(g => { list.push({ id: g.id, type: 'گمرکی', number: g.guaranteeNumber + (g.chequeNumber ? ` / چک: ${g.chequeNumber}` : ''), bank: g.chequeBank, amount: g.chequeAmount, isDelivered: g.isDelivered, toggleFunc: () => handleToggleGuaranteeDelivery(g.id) }); }); } return list; };
@@ -366,7 +367,7 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
 
     const handleDownloadFinalCalculationPDF = () => handleDownloadReportPDF('print-trade-final', `Final_Calculation_${selectedRecord?.fileNumber}`);
 
-    const handleWhatsAppShare = () => {
+    const handleWhatsAppShare = async () => {
         // Construct a text report from current filter
         let filteredRecords = records;
         if (reportFilterCompany) filteredRecords = records.filter(r => r.company === reportFilterCompany);
@@ -391,12 +392,27 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
         text += `💵 *مجموع کل:* ${formatNumberString(totalUSD)} ${queueRecords[0]?.mainCurrency || 'ارز پایه'}\n`;
 
         // Updated WhatsApp Share Logic (using setting)
-        const targetNumber = settings?.whatsappNumber || '';
-        const url = targetNumber 
-            ? `https://wa.me/${targetNumber}?text=${encodeURIComponent(text)}`
-            : `https://wa.me/?text=${encodeURIComponent(text)}`;
+        if (!settings?.whatsappNumber) {
+            alert('لطفا ابتدا شماره واتساپ را در بخش تنظیمات وارد کنید.');
+            return;
+        }
 
-        window.open(url, '_blank');
+        if (window.confirm("آیا می‌خواهید گزارش به صورت خودکار توسط سرور (ربات واتساپ) ارسال شود؟\n\n(در صورت انتخاب Cancel، لینک واتساپ معمولی باز می‌شود)")) {
+            setSendingReport(true);
+            try {
+                await apiCall('/send-whatsapp', 'POST', { number: settings.whatsappNumber, message: text });
+                alert('پیام با موفقیت در صف ارسال سرور قرار گرفت.');
+            } catch (e: any) {
+                alert(`خطا در ارسال خودکار: ${e.message || 'سرور پاسخگو نیست'}. روش دستی باز می‌شود.`);
+                const url = `https://wa.me/${settings.whatsappNumber}?text=${encodeURIComponent(text)}`;
+                window.open(url, '_blank');
+            } finally {
+                setSendingReport(false);
+            }
+        } else {
+            const url = `https://wa.me/${settings.whatsappNumber}?text=${encodeURIComponent(text)}`;
+            window.open(url, '_blank');
+        }
     };
 
     // Update Record for Table Interaction
@@ -502,7 +518,7 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
                                     value={reportSearchTerm}
                                     onChange={(e) => setReportSearchTerm(e.target.value)}
                                 />
-                                <button onClick={handleWhatsAppShare} className="bg-green-100 text-green-700 p-2 rounded hover:bg-green-200" title="ارسال به واتساپ"><Share2 size={18}/></button>
+                                <button onClick={handleWhatsAppShare} disabled={sendingReport} className="bg-green-100 text-green-700 p-2 rounded hover:bg-green-200 disabled:opacity-70" title="ارسال به واتساپ">{sendingReport ? <Loader2 size={18} className="animate-spin"/> : <Share2 size={18}/>}</button>
                                 <button onClick={handlePrintReport} className="bg-gray-100 p-2 rounded hover:bg-gray-200" title="چاپ"><Printer size={18}/></button>
                                 <button onClick={() => handleDownloadReportPDF('allocation-report-table-print-area', 'Allocation_Report')} disabled={isGeneratingPdf} className="bg-gray-100 p-2 rounded hover:bg-gray-200" title="PDF">{isGeneratingPdf ? <Loader2 size={18} className="animate-spin"/> : <FileDown size={18}/>}</button>
                             </div>

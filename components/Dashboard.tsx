@@ -3,7 +3,8 @@ import React, { useState, useMemo } from 'react';
 import { PaymentOrder, OrderStatus, PaymentMethod, SystemSettings } from '../types';
 import { formatCurrency, parsePersianDate, formatNumberString } from '../constants';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts';
-import { TrendingUp, Clock, CheckCircle, Archive, Activity, Building2, X, XCircle, AlertCircle, Banknote, Calendar as CalendarIcon, ExternalLink, Share2, Plus, CalendarDays } from 'lucide-react';
+import { TrendingUp, Clock, CheckCircle, Archive, Activity, Building2, X, XCircle, AlertCircle, Banknote, Calendar as CalendarIcon, ExternalLink, Share2, Plus, CalendarDays, Loader2 } from 'lucide-react';
+import { apiCall } from '../services/apiService';
 
 interface DashboardProps {
   orders: PaymentOrder[];
@@ -17,6 +18,7 @@ const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8', '#82ca9d'
 const Dashboard: React.FC<DashboardProps> = ({ orders, settings, onViewArchive, onFilterByStatus }) => {
   const [showBankReport, setShowBankReport] = useState(false);
   const [showCalendar, setShowCalendar] = useState(false);
+  const [sendingReport, setSendingReport] = useState(false);
   
   // Calendar Internal Logic (If no Google ID)
   const [calendarMonth, setCalendarMonth] = useState(new Date());
@@ -76,9 +78,9 @@ const Dashboard: React.FC<DashboardProps> = ({ orders, settings, onViewArchive, 
       return allCheques.sort((a, b) => a.daysLeft - b.daysLeft);
   }, [orders]);
 
-  const handleWhatsAppShare = () => {
+  const handleWhatsAppShare = async () => {
       if (!settings?.whatsappNumber) {
-          alert('لطفا ابتدا شماره واتساپ را در تنظیمات وارد کنید.');
+          alert('لطفا ابتدا شماره واتساپ را در بخش تنظیمات وارد کنید.');
           return;
       }
       
@@ -95,8 +97,22 @@ const Dashboard: React.FC<DashboardProps> = ({ orders, settings, onViewArchive, 
           if (upcoming > 0) text += `⚠️ *هشدار چک:* ${upcoming} چک در ۳ روز آینده سررسید می‌شوند.\n`;
       }
 
-      const url = `https://wa.me/${settings.whatsappNumber}?text=${encodeURIComponent(text)}`;
-      window.open(url, '_blank');
+      if (window.confirm("آیا می‌خواهید گزارش به صورت خودکار توسط سرور (ربات واتساپ) ارسال شود؟\n\n(در صورت انتخاب Cancel، لینک واتساپ معمولی باز می‌شود)")) {
+          setSendingReport(true);
+          try {
+              await apiCall('/send-whatsapp', 'POST', { number: settings.whatsappNumber, message: text });
+              alert('پیام با موفقیت در صف ارسال سرور قرار گرفت.');
+          } catch (e: any) {
+              alert(`خطا در ارسال خودکار: ${e.message || 'سرور پاسخگو نیست'}. روش دستی باز می‌شود.`);
+              const url = `https://wa.me/${settings.whatsappNumber}?text=${encodeURIComponent(text)}`;
+              window.open(url, '_blank');
+          } finally {
+              setSendingReport(false);
+          }
+      } else {
+          const url = `https://wa.me/${settings.whatsappNumber}?text=${encodeURIComponent(text)}`;
+          window.open(url, '_blank');
+      }
   };
 
   // Internal Calendar Renderer
@@ -157,8 +173,8 @@ const Dashboard: React.FC<DashboardProps> = ({ orders, settings, onViewArchive, 
               <button onClick={() => setShowCalendar(!showCalendar)} className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-colors ${showCalendar ? 'bg-indigo-100 text-indigo-700' : 'bg-white border text-gray-600 hover:bg-gray-50'}`}>
                   <CalendarIcon size={18}/> {showCalendar ? 'مخفی کردن تقویم' : 'مشاهده تقویم'}
               </button>
-              <button onClick={handleWhatsAppShare} className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm font-bold transition-colors shadow-sm">
-                  <Share2 size={18}/> ارسال گزارش به واتساپ
+              <button onClick={handleWhatsAppShare} disabled={sendingReport} className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm font-bold transition-colors shadow-sm disabled:opacity-70">
+                  {sendingReport ? <Loader2 size={18} className="animate-spin"/> : <Share2 size={18}/>} ارسال گزارش به واتساپ
               </button>
           </div>
       </div>
