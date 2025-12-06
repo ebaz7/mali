@@ -114,7 +114,7 @@ export const apiCall = async <T>(endpoint: string, method: string = 'GET', body?
         
         // --- SETTINGS ---
         if (endpoint === '/settings') {
-            if (method === 'GET') return getLocalData<SystemSettings>(LS_KEYS.SETTINGS, { currentTrackingNumber: 1000, companyNames: [], defaultCompany: '', bankNames: [], commodityGroups: [], rolePermissions: {} }) as unknown as T;
+            if (method === 'GET') return getLocalData<SystemSettings>(LS_KEYS.SETTINGS, { currentTrackingNumber: 1000, companyNames: [], companies: [], defaultCompany: '', bankNames: [], commodityGroups: [], rolePermissions: {} }) as unknown as T;
             if (method === 'POST') { setLocalData(LS_KEYS.SETTINGS, body); return body as unknown as T; }
         }
 

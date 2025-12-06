@@ -1,3 +1,4 @@
+
 export enum UserRole {
   USER = 'user',
   ADMIN = 'admin',
@@ -139,6 +140,21 @@ export interface GroupTask {
 
 // Trade Types
 
+export enum TradeStage {
+    PROFORMA = 'پیش‌فاکتور (Proforma)',
+    LICENSES = 'مجوزها / ثبت سفارش',
+    ALLOCATION_QUEUE = 'صف تخصیص ارز',
+    ALLOCATION_APPROVED = 'تایید تخصیص',
+    CURRENCY_PURCHASE = 'خرید ارز',
+    INSURANCE = 'بیمه باربری',
+    SHIPPING_DOCS = 'اسناد حمل',
+    INSPECTION = 'بازرسی',
+    CLEARANCE_DOCS = 'ترخیصیه و قبض انبار',
+    GREEN_LEAF = 'اظهار و برگ سبز',
+    INTERNAL_SHIPPING = 'حمل داخلی',
+    AGENT_FEES = 'کارمزد ترخیص'
+}
+
 export interface TradeItem {
     id: string;
     name: string;
@@ -159,60 +175,262 @@ export interface InsuranceEndorsement {
     id: string;
     date: string;
     description: string;
-    cost: number;
+    amount: number;
+}
+
+export interface InspectionCertificate {
+    id: string;
+    part: string;
+    company: string;
+    certificateNumber: string;
+    amount: number;
+    description?: string;
+}
+
+export interface InspectionPayment {
+    id: string;
+    part: string;
+    amount: number;
+    date: string;
+    bank: string;
+    description?: string;
 }
 
 export interface InspectionData {
-    company: string;
-    cost: number;
-    result: string;
+    certificates: InspectionCertificate[];
+    payments: InspectionPayment[];
+    // Legacy/Init
+    company?: string;
+    cost?: number;
+    result?: string;
+    date?: string;
+    certificateNumber?: string;
+    inspectionCompany?: string;
+    totalInvoiceAmount?: number;
+}
+
+export interface WarehouseReceipt {
+    id: string;
+    number: string;
+    part: string;
+    issueDate: string;
+}
+
+export interface ClearancePayment {
+    id: string;
+    amount: number;
+    part: string;
+    bank: string;
     date: string;
+    payingBank?: string;
 }
 
 export interface ClearanceData {
-    customsName: string; // نام گمرک
-    declarationNumber: string; // شماره کوتاژ
-    greenPath: boolean;
-    cost: number; // هزینه ترخیص
+    receipts: WarehouseReceipt[];
+    payments: ClearancePayment[];
+    // Legacy
+    customsName?: string; 
+    declarationNumber?: string; 
+    greenPath?: boolean;
+    cost?: number; 
+    date?: string;
+}
+
+export interface GreenLeafCustomsDuty {
+    id: string;
+    cottageNumber: string;
+    part: string;
+    amount: number;
+    paymentMethod: string;
+    bank?: string;
+    date?: string;
+}
+
+export interface GreenLeafGuarantee {
+    id: string;
+    relatedDutyId?: string;
+    guaranteeNumber: string;
+    chequeNumber?: string;
+    chequeBank?: string;
+    chequeDate?: string;
+    chequeAmount?: number;
+    isDelivered: boolean;
+    cashAmount?: number;
+    cashBank?: string;
+    cashDate?: string;
+    part?: string;
+}
+
+export interface GreenLeafTax {
+    id: string;
+    amount: number;
+    part: string;
+    bank: string;
+    date: string;
+}
+
+export interface GreenLeafRoadToll {
+    id: string;
+    amount: number;
+    part: string;
+    bank: string;
     date: string;
 }
 
 export interface GreenLeafData {
-    number: string;
-    date: string;
+    duties: GreenLeafCustomsDuty[];
+    guarantees: GreenLeafGuarantee[];
+    taxes: GreenLeafTax[];
+    roadTolls: GreenLeafRoadToll[];
+    // Legacy
+    number?: string;
+    date?: string;
     fileUrl?: string;
 }
 
+export interface ShippingPayment {
+    id: string;
+    part: string;
+    amount: number;
+    date: string;
+    bank: string;
+    description: string;
+}
+
 export interface InternalShippingData {
-    driverName: string;
-    plateNumber: string;
-    cost: number;
-    destination: string;
+    payments: ShippingPayment[];
+    // Legacy
+    driverName?: string;
+    plateNumber?: string;
+    cost?: number;
+    destination?: string;
     arrivalDate?: string;
 }
 
+export interface AgentPayment {
+    id: string;
+    agentName: string;
+    amount: number;
+    bank: string;
+    date: string;
+    part: string;
+    description: string;
+}
+
 export interface AgentData {
-    name: string;
-    phone: string;
-    cost: number;
+    payments: AgentPayment[];
+    // Legacy
+    name?: string;
+    phone?: string;
+    cost?: number;
+}
+
+export interface CurrencyTranche {
+    id: string;
+    date: string;
+    amount: number;
+    currencyType: string;
+    brokerName?: string;
+    exchangeName?: string;
+    rate?: number;
+    isDelivered?: boolean;
+    deliveryDate?: string;
 }
 
 export interface CurrencyPurchaseData {
-    amount: number;
-    rate: number;
-    date: string;
-    exchangeName: string; // نام صرافی
+    payments: any[]; 
+    purchasedAmount: number;
+    purchasedCurrencyType: string;
+    purchaseDate?: string;
+    brokerName?: string;
+    exchangeName?: string;
+    deliveredAmount: number;
+    deliveredCurrencyType?: string;
+    deliveryDate?: string;
+    recipientName?: string;
+    remittedAmount: number;
+    isDelivered: boolean;
+    tranches: CurrencyTranche[];
+    guaranteeCheque?: {
+        amount: string | number;
+        bank: string;
+        chequeNumber: string;
+        dueDate: string;
+        isDelivered?: boolean;
+    };
+    // Legacy
+    amount?: number;
+    rate?: number;
+    date?: string;
 }
+
+export interface InvoiceItem {
+    id: string;
+    name: string;
+    weight: number;
+    unitPrice: number;
+    totalPrice: number;
+    part: string;
+}
+
+export interface PackingItem {
+    id: string;
+    description: string;
+    netWeight: number;
+    grossWeight: number;
+    packageCount: number;
+    part: string;
+}
+
+export type ShippingDocType = 'Commercial Invoice' | 'Packing List' | 'Bill of Lading' | 'Certificate of Origin' | 'Insurance Policy' | 'Other';
+export type DocStatus = 'Draft' | 'Final';
 
 export interface ShippingDocument {
     id: string;
-    title: string;
-    fileUrl: string;
-    type: 'BL' | 'Invoice' | 'PackingList' | 'CertificateOrigin' | 'Other';
+    type: ShippingDocType;
+    status: DocStatus;
+    documentNumber: string;
+    documentDate: string;
+    createdAt: number;
+    createdBy: string;
+    attachments: { fileName: string, url: string }[];
+    
+    invoiceItems?: InvoiceItem[];
+    freightCost?: number;
+    currency?: string;
+
+    packingItems?: PackingItem[];
+    netWeight?: number;
+    grossWeight?: number;
+    packagesCount?: number;
+
+    vesselName?: string;
+    portOfLoading?: string;
+    portOfDischarge?: string;
+    description?: string;
+    
+    // Legacy
+    title?: string;
+    fileUrl?: string;
 }
 
 export interface TradeStageData {
+    stage: TradeStage;
     isCompleted: boolean;
+    description: string;
+    costRial: number;
+    costCurrency: number;
+    currencyType: string;
+    attachments: { fileName: string, url: string }[];
+    updatedAt: number;
+    updatedBy: string;
+    
+    queueDate?: string;
+    allocationDate?: string;
+    allocationCode?: string;
+    allocationExpiry?: string;
+    
+    // Legacy
     completedAt?: number;
     completedBy?: string;
     notes?: string;
@@ -220,75 +438,58 @@ export interface TradeStageData {
 
 export interface TradeRecord {
     id: string;
-    company?: string; // Company owning this record
-    fileNumber: string; // شماره پرونده (داخلی)
-    registrationNumber?: string; // شماره ثبت سفارش
-    registrationDate?: string; // تاریخ صدور ثبت سفارش
-    registrationExpiry?: string; // مهلت ثبت سفارش
+    company?: string; 
+    fileNumber: string; 
+    registrationNumber?: string; 
+    registrationDate?: string; 
+    registrationExpiry?: string; 
     
-    commodityGroup?: string; // گروه کالایی
-    sellerName: string; // فروشنده
-    mainCurrency?: string; // ارز پایه (USD, EUR, etc.)
-    currencyAllocationType?: string; // نوع ارز (منشا: مبادله ای، صادرات، ...)
+    commodityGroup?: string; 
+    sellerName: string; 
+    mainCurrency?: string; 
+    currencyAllocationType?: string; 
 
-    // Items
     items: TradeItem[];
-    freightCost: number; // هزینه حمل
-    exchangeRate?: number; // نرخ ارز محاسباتی
-    operatingBank?: string; // بانک عامل
+    freightCost: number; 
+    exchangeRate?: number; 
+    operatingBank?: string; 
 
-    // License/Proforma Costs - Now supports history
     licenseData?: {
-        transactions: TradeTransaction[]; // List of payments (Renewal, registration, etc.)
-        // Legacy fields
+        transactions: TradeTransaction[]; 
+        // Legacy
         registrationCost?: number;
         bankName?: string;
         paymentDate?: string;
     };
 
-    // Insurance Details
     insuranceData?: {
         policyNumber: string;
         company: string;
-        cost: number; // Initial cost
+        cost: number; 
         bank: string;
-        endorsements?: InsuranceEndorsement[]; // الحاقیه ها
+        endorsements?: InsuranceEndorsement[]; 
     };
     
-    // Inspection Details (New)
     inspectionData?: InspectionData;
-    
-    // Clearance Data (New)
     clearanceData?: ClearanceData;
-
-    // Green Leaf Data (New)
     greenLeafData?: GreenLeafData;
-    
-    // Internal Shipping Data (New)
     internalShippingData?: InternalShippingData;
-
-    // Agent / Clearance Fees Data (New)
     agentData?: AgentData;
-    
-    // Currency Purchase Details
     currencyPurchaseData?: CurrencyPurchaseData;
-
-    // Shipping Documents (New)
     shippingDocuments?: ShippingDocument[];
 
-    startDate: string; // ISO Date
+    startDate: string; 
     status: 'Active' | 'Completed' | 'Cancelled';
     
-    // Finalization Flags
-    isCommitmentFulfilled?: boolean; // رفع تعهد
-    isArchived?: boolean; // بایگانی شده (ترخیص شده)
+    isCommitmentFulfilled?: boolean; 
+    isArchived?: boolean; 
 
-    stages: Record<string, TradeStageData>; // Map of Stage Enum to Data
+    stages: Record<string, TradeStageData>; 
 
     createdAt: number;
     createdBy: string;
     
-    // Legacy support for migration
+    // Legacy support
     goodsName?: string; 
     orderNumber?: string;
 }
