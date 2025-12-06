@@ -1048,7 +1048,7 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
                                     <FileText size={20} className="text-blue-600"/> 
                                     اطلاعات ثبت سفارش
                                 </h3>
-                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                                     <div className="space-y-1">
                                         <label className="text-xs font-bold text-gray-700">شماره ثبت سفارش</label>
                                         <input 
@@ -1075,19 +1075,6 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
                                             onChange={(e) => handleUpdateProforma('registrationExpiry', e.target.value)} 
                                             placeholder="1403/06/01"
                                         />
-                                    </div>
-                                    <div className="space-y-1">
-                                        <label className="text-xs font-bold text-gray-700">نوع ارز (منشا)</label>
-                                        <select 
-                                            className="w-full border rounded p-2 text-sm bg-white" 
-                                            value={selectedRecord.currencyAllocationType || ''} 
-                                            onChange={(e) => handleUpdateProforma('currencyAllocationType', e.target.value)}
-                                        >
-                                            <option value="">-- انتخاب کنید --</option>
-                                            <option value="ارز مبادله ای">ارز مبادله ای</option>
-                                            <option value="ارز حاصل از صادرات دیگران">ارز حاصل از صادرات دیگران</option>
-                                            <option value="ارز حاصل از صادرات خود">ارز حاصل از صادرات خود</option>
-                                        </select>
                                     </div>
                                 </div>
                             </div>
