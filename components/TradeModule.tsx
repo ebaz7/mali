@@ -739,9 +739,8 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
             case 'currency':
                 return (<div className="overflow-x-auto"><table className="w-full text-sm text-right"><thead className="bg-gray-100 text-gray-700"><tr><th className="p-3">شماره پرونده</th><th className="p-3">ارز</th><th className="p-3">خریداری شده</th><th className="p-3">تحویل شده</th><th className="p-3">باقیمانده</th></tr></thead><tbody>{filteredRecords.map(r => { const d = r.currencyPurchaseData; if (!d) return null; const purchased = d.purchasedAmount || 0; const delivered = d.deliveredAmount || 0; return (<tr key={r.id} className="border-b hover:bg-gray-50"><td className="p-3 font-mono">{r.fileNumber}</td><td className="p-3">{r.mainCurrency}</td><td className="p-3 font-bold text-blue-600">{formatCurrency(purchased)}</td><td className="p-3 font-bold text-green-600">{formatCurrency(delivered)}</td><td className="p-3 font-bold text-red-600">{formatCurrency(purchased - delivered)}</td></tr>); })}</tbody></table></div>);
             case 'allocation_queue':
-                // Filter: Records that are in Queue OR Approved but not finalized (or all if user wants history)
-                // Logic: Show all active records that have reached allocation queue stage
-                const queueRecords = filteredRecords.filter(r => r.stages[TradeStage.ALLOCATION_QUEUE]?.isCompleted);
+                // Filter: Records that have a Queue Date set (meaning they entered the queue process)
+                const queueRecords = filteredRecords.filter(r => r.stages[TradeStage.ALLOCATION_QUEUE]?.queueDate);
 
                 // Calculations
                 const rialRate = deformatNumberString(reportUsdRialRate) || 0;
