@@ -1264,7 +1264,7 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
                             </thead>
                             <tbody className="divide-y divide-gray-100">
                                 {records
-                                    .filter(r => (showArchived ? true : !r.isArchived) && (navLevel === 'GROUP' ? r.commodityGroup === selectedGroup && r.company === selectedCompany : true))
+                                    .filter(r => (showArchived ? true : !r.isArchived) && (navLevel === 'GROUP' ? (r.commodityGroup || 'سایر') === selectedGroup && (r.company || 'بدون شرکت') === selectedCompany : true))
                                     .filter(r => r.fileNumber.includes(searchTerm) || r.goodsName.includes(searchTerm) || r.sellerName.includes(searchTerm))
                                     .map(record => (
                                         <tr key={record.id} className="hover:bg-gray-50 transition-colors">
