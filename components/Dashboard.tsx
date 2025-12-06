@@ -3,7 +3,7 @@ import React, { useState, useMemo } from 'react';
 import { PaymentOrder, OrderStatus, PaymentMethod, SystemSettings } from '../types';
 import { formatCurrency, parsePersianDate, formatNumberString } from '../constants';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts';
-import { TrendingUp, Clock, CheckCircle, Archive, Activity, Building2, X, XCircle, AlertCircle, Banknote, Calendar as CalendarIcon, ExternalLink, Share2, Plus, CalendarDays, Loader2 } from 'lucide-react';
+import { TrendingUp, Clock, CheckCircle, Archive, Activity, Building2, X, XCircle, AlertCircle, Banknote, Calendar as CalendarIcon, ExternalLink, Share2, Plus, CalendarDays, Loader2, Send } from 'lucide-react';
 import { apiCall } from '../services/apiService';
 
 interface DashboardProps {
@@ -18,6 +18,11 @@ const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8', '#82ca9d'
 const Dashboard: React.FC<DashboardProps> = ({ orders, settings, onViewArchive, onFilterByStatus }) => {
   const [showBankReport, setShowBankReport] = useState(false);
   const [showCalendar, setShowCalendar] = useState(false);
+  
+  // WhatsApp Modal State
+  const [showWhatsAppModal, setShowWhatsAppModal] = useState(false);
+  const [whatsAppTarget, setWhatsAppTarget] = useState('');
+  const [whatsAppMessage, setWhatsAppMessage] = useState('');
   const [sendingReport, setSendingReport] = useState(false);
   
   // Calendar Internal Logic (If no Google ID)
@@ -78,12 +83,7 @@ const Dashboard: React.FC<DashboardProps> = ({ orders, settings, onViewArchive, 
       return allCheques.sort((a, b) => a.daysLeft - b.daysLeft);
   }, [orders]);
 
-  const handleWhatsAppShare = async () => {
-      if (!settings?.whatsappNumber) {
-          alert('لطفا ابتدا شماره واتساپ را در بخش تنظیمات وارد کنید.');
-          return;
-      }
-      
+  const handleOpenWhatsAppModal = () => {
       let text = `📊 *گزارش وضعیت مالی* 📊\n`;
       text += `📅 تاریخ: ${new Date().toLocaleDateString('fa-IR')}\n`;
       text += `----------------------\n`;
@@ -97,21 +97,26 @@ const Dashboard: React.FC<DashboardProps> = ({ orders, settings, onViewArchive, 
           if (upcoming > 0) text += `⚠️ *هشدار چک:* ${upcoming} چک در ۳ روز آینده سررسید می‌شوند.\n`;
       }
 
-      if (window.confirm("آیا می‌خواهید گزارش به صورت خودکار توسط سرور (ربات واتساپ) ارسال شود؟\n\n(در صورت انتخاب Cancel، لینک واتساپ معمولی باز می‌شود)")) {
-          setSendingReport(true);
-          try {
-              await apiCall('/send-whatsapp', 'POST', { number: settings.whatsappNumber, message: text });
-              alert('پیام با موفقیت در صف ارسال سرور قرار گرفت.');
-          } catch (e: any) {
-              alert(`خطا در ارسال خودکار: ${e.message || 'سرور پاسخگو نیست'}. روش دستی باز می‌شود.`);
-              const url = `https://wa.me/${settings.whatsappNumber}?text=${encodeURIComponent(text)}`;
-              window.open(url, '_blank');
-          } finally {
-              setSendingReport(false);
-          }
-      } else {
-          const url = `https://wa.me/${settings.whatsappNumber}?text=${encodeURIComponent(text)}`;
-          window.open(url, '_blank');
+      setWhatsAppMessage(text);
+      setWhatsAppTarget(settings?.whatsappNumber || '');
+      setShowWhatsAppModal(true);
+  };
+
+  const handleSendWhatsApp = async () => {
+      if (!whatsAppTarget.trim()) {
+          alert("لطفا شماره گیرنده یا آیدی گروه را وارد کنید.");
+          return;
+      }
+
+      setSendingReport(true);
+      try {
+          await apiCall('/send-whatsapp', 'POST', { number: whatsAppTarget, message: whatsAppMessage });
+          alert('پیام با موفقیت در صف ارسال سرور قرار گرفت.');
+          setShowWhatsAppModal(false);
+      } catch (e: any) {
+          alert(`خطا در ارسال خودکار: ${e.message || 'سرور پاسخگو نیست'}.`);
+      } finally {
+          setSendingReport(false);
       }
   };
 
@@ -166,15 +171,63 @@ const Dashboard: React.FC<DashboardProps> = ({ orders, settings, onViewArchive, 
   };
 
   return (
-    <div className="space-y-6 animate-fade-in min-w-0">
+    <div className="space-y-6 animate-fade-in min-w-0 relative">
+      
+      {/* WhatsApp Modal */}
+      {showWhatsAppModal && (
+          <div className="fixed inset-0 bg-black/60 z-[100] flex items-center justify-center p-4">
+              <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6">
+                  <div className="flex justify-between items-center mb-4 border-b pb-2">
+                      <h3 className="font-bold text-lg flex items-center gap-2"><Share2 size={20} className="text-green-600"/> ارسال گزارش به واتساپ</h3>
+                      <button onClick={() => setShowWhatsAppModal(false)} className="text-gray-400 hover:text-red-500"><X size={20}/></button>
+                  </div>
+                  
+                  <div className="space-y-4">
+                      <div>
+                          <label className="text-sm font-bold text-gray-700 block mb-1">شماره گیرنده / آیدی گروه</label>
+                          <input 
+                            type="text" 
+                            className="w-full border border-green-200 rounded-lg p-2 text-sm dir-ltr font-mono bg-green-50" 
+                            placeholder="98912xxxxxxx or 1234@g.us"
+                            value={whatsAppTarget}
+                            onChange={(e) => setWhatsAppTarget(e.target.value)}
+                          />
+                          <p className="text-[10px] text-gray-500 mt-1">شماره را بدون + یا 00 وارد کنید (مثال: 98912...). برای گروه از ID استفاده کنید.</p>
+                      </div>
+
+                      <div>
+                          <label className="text-sm font-bold text-gray-700 block mb-1">متن گزارش (قابل ویرایش)</label>
+                          <textarea 
+                            rows={10} 
+                            className="w-full border rounded-lg p-2 text-xs leading-relaxed resize-none" 
+                            value={whatsAppMessage}
+                            onChange={(e) => setWhatsAppMessage(e.target.value)}
+                          />
+                      </div>
+
+                      <div className="flex justify-end gap-2 pt-2">
+                          <button onClick={() => setShowWhatsAppModal(false)} className="px-4 py-2 rounded-lg border text-gray-600 text-sm hover:bg-gray-50">انصراف</button>
+                          <button 
+                            onClick={handleSendWhatsApp} 
+                            disabled={sendingReport || !whatsAppTarget} 
+                            className="px-4 py-2 rounded-lg bg-green-600 text-white text-sm font-bold hover:bg-green-700 disabled:opacity-50 flex items-center gap-2"
+                          >
+                              {sendingReport ? <Loader2 size={16} className="animate-spin"/> : <Send size={16}/>} ارسال پیام
+                          </button>
+                      </div>
+                  </div>
+              </div>
+          </div>
+      )}
+
       <div className="flex flex-col md:flex-row justify-between items-center gap-4 mb-6">
           <h2 className="text-2xl font-bold text-gray-800">داشبورد وضعیت مالی</h2>
           <div className="flex gap-2">
               <button onClick={() => setShowCalendar(!showCalendar)} className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-colors ${showCalendar ? 'bg-indigo-100 text-indigo-700' : 'bg-white border text-gray-600 hover:bg-gray-50'}`}>
                   <CalendarIcon size={18}/> {showCalendar ? 'مخفی کردن تقویم' : 'مشاهده تقویم'}
               </button>
-              <button onClick={handleWhatsAppShare} disabled={sendingReport} className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm font-bold transition-colors shadow-sm disabled:opacity-70">
-                  {sendingReport ? <Loader2 size={18} className="animate-spin"/> : <Share2 size={18}/>} ارسال گزارش به واتساپ
+              <button onClick={handleOpenWhatsAppModal} className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm font-bold transition-colors shadow-sm">
+                  <Share2 size={18}/> ارسال گزارش
               </button>
           </div>
       </div>

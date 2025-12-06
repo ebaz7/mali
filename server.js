@@ -81,8 +81,10 @@ const saveDb = (data) => {
 // --- WHATSAPP CLIENT SETUP (Dynamic Import) ---
 let whatsappClient = null;
 let isWhatsAppReady = false;
+let currentQR = null; // Store QR to send to frontend
+let whatsappUser = null; // Store connected user info
 
-(async () => {
+const initWhatsApp = async () => {
     try {
         console.log('Attempting to load WhatsApp modules...');
         const wwebjs = await import('whatsapp-web.js');
@@ -136,7 +138,7 @@ let isWhatsAppReady = false;
             authStrategy: new LocalAuth({ dataPath: WAUTH_DIR }),
             puppeteer: {
                 headless: true,
-                executablePath: executablePath, // Explicitly tell puppeteer where Chrome is
+                executablePath: executablePath,
                 args: ['--no-sandbox', '--disable-setuid-sandbox'] 
             }
         });
@@ -145,21 +147,29 @@ let isWhatsAppReady = false;
             console.log('\n=============================================================');
             console.log('>>> لطفاً کد QR زیر را با واتساپ گوشی خود اسکن کنید <<<');
             console.log('=============================================================\n');
+            currentQR = qr; // Store for frontend
+            isWhatsAppReady = false;
             qrcode.generate(qr, { small: true });
         });
 
         whatsappClient.on('ready', () => {
             console.log('\n>>> WhatsApp Client is READY! <<<\n');
             isWhatsAppReady = true;
+            currentQR = null;
+            whatsappUser = whatsappClient.info?.wid?.user;
         });
 
         whatsappClient.on('auth_failure', msg => {
             console.error('WhatsApp Authentication Failure:', msg);
+            isWhatsAppReady = false;
         });
 
         whatsappClient.on('disconnected', (reason) => {
             console.log('WhatsApp Client was disconnected:', reason);
             isWhatsAppReady = false;
+            whatsappUser = null;
+            // Re-initialize to allow re-scanning
+            whatsappClient.initialize();
         });
 
         // Use catch to prevent server crash if browser fails to launch
@@ -179,7 +189,9 @@ let isWhatsAppReady = false;
         console.warn('راه حل: دستور "npm run install-offline" را اجرا کنید.');
         console.warn('********************************************************************************\n');
     }
-})();
+};
+
+initWhatsApp();
 
 // --- HELPER FUNCTIONS ---
 const toShamsi = (isoDate) => {
@@ -204,6 +216,31 @@ const findNextAvailableTrackingNumber = (db) => {
 
 // --- API ROUTES ---
 
+// WhatsApp Session Management
+app.get('/api/whatsapp/status', (req, res) => {
+    res.json({ 
+        ready: isWhatsAppReady, 
+        qr: currentQR,
+        user: whatsappUser
+    });
+});
+
+app.post('/api/whatsapp/logout', async (req, res) => {
+    if (whatsappClient) {
+        try {
+            await whatsappClient.logout();
+            isWhatsAppReady = false;
+            whatsappUser = null;
+            res.json({ success: true, message: 'Logged out successfully' });
+            // Re-init happens automatically on disconnect, or we can force it
+        } catch (e) {
+            res.status(500).json({ success: false, message: e.message });
+        }
+    } else {
+        res.status(400).json({ success: false, message: 'Client not initialized' });
+    }
+});
+
 app.post('/api/send-whatsapp', async (req, res) => {
     if (!whatsappClient || !isWhatsAppReady) {
         return res.status(503).json({ success: false, message: 'ربات واتساپ سرور فعال نیست. لطفا لاگ سرور را بررسی کنید.' });
@@ -213,16 +250,20 @@ app.post('/api/send-whatsapp', async (req, res) => {
     if (!number || !message) return res.status(400).json({ error: 'Missing number or message' });
 
     try {
-        // Normalize Number
-        let cleanNumber = number.toString().replace(/\D/g, ''); 
-        
-        if (cleanNumber.startsWith('09')) {
-            cleanNumber = '98' + cleanNumber.substring(1);
-        } else if (cleanNumber.startsWith('9') && cleanNumber.length === 10) {
-            cleanNumber = '98' + cleanNumber;
+        let chatId;
+        // Check if it's a Group ID (usually contains '-')
+        if (number.includes('-') || number.includes('@g.us')) {
+             chatId = number.endsWith('@g.us') ? number : `${number}@g.us`;
+        } else {
+            // Normalize Phone Number
+            let cleanNumber = number.toString().replace(/\D/g, ''); 
+            if (cleanNumber.startsWith('09')) {
+                cleanNumber = '98' + cleanNumber.substring(1);
+            } else if (cleanNumber.startsWith('9') && cleanNumber.length === 10) {
+                cleanNumber = '98' + cleanNumber;
+            }
+            chatId = `${cleanNumber}@c.us`;
         }
-        
-        const chatId = `${cleanNumber}@c.us`;
         
         await whatsappClient.sendMessage(chatId, message);
         res.json({ success: true });
