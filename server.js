@@ -90,12 +90,53 @@ let isWhatsAppReady = false;
         const qrcodeModule = await import('qrcode-terminal');
         const qrcode = qrcodeModule.default || qrcodeModule;
 
+        // Function to find Chrome or Edge on Windows
+        const getBrowserPath = () => {
+            const platform = process.platform;
+            let paths = [];
+
+            if (platform === 'win32') {
+                paths = [
+                    'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+                    'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+                    'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe',
+                    'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
+                    path.join(process.env.LOCALAPPDATA || '', 'Google\\Chrome\\Application\\chrome.exe')
+                ];
+            } else if (platform === 'linux') {
+                paths = [
+                    '/usr/bin/google-chrome',
+                    '/usr/bin/google-chrome-stable',
+                    '/usr/bin/chromium',
+                    '/usr/bin/chromium-browser'
+                ];
+            } else if (platform === 'darwin') {
+                paths = [
+                    '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
+                ];
+            }
+
+            for (const p of paths) {
+                if (fs.existsSync(p)) {
+                    return p;
+                }
+            }
+            return null;
+        };
+
+        const executablePath = getBrowserPath();
+        if (executablePath) {
+            console.log(`\n>>> Browser found at: ${executablePath} <<<\n`);
+        } else {
+            console.warn('\n>>> WARNING: Could not find Chrome/Edge. Puppeteer might fail if bundled Chromium is missing. <<<\n');
+        }
+
         console.log('Initializing WhatsApp Client...');
         whatsappClient = new Client({
             authStrategy: new LocalAuth({ dataPath: WAUTH_DIR }),
             puppeteer: {
                 headless: true,
-                // Skip bundle download check if using system chrome, or strict sandbox args
+                executablePath: executablePath, // Explicitly tell puppeteer where Chrome is
                 args: ['--no-sandbox', '--disable-setuid-sandbox'] 
             }
         });
@@ -121,7 +162,14 @@ let isWhatsAppReady = false;
             isWhatsAppReady = false;
         });
 
-        whatsappClient.initialize();
+        // Use catch to prevent server crash if browser fails to launch
+        whatsappClient.initialize().catch(err => {
+            console.error("\n!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+            console.error("CRITICAL WHATSAPP ERROR: Failed to launch browser.");
+            console.error("Message:", err.message);
+            console.error("Suggestion: Please install Google Chrome on the server.");
+            console.error("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n");
+        });
 
     } catch (e) {
         console.warn('\n********************************************************************************');
