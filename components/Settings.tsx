@@ -2,14 +2,14 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { getSettings, saveSettings, restoreSystemData, uploadFile } from '../services/storageService';
 import { SystemSettings, UserRole, RolePermissions, Company } from '../types';
-import { Settings as SettingsIcon, Save, Loader2, Download, Database, Bell, Plus, Trash2, Building, ShieldCheck, Landmark, Package, AppWindow, BellRing, BellOff, Send, Crown, Image as ImageIcon, Pencil, X, Check, MessageSquare, Calendar } from 'lucide-react';
+import { Settings as SettingsIcon, Save, Loader2, Download, Database, Bell, Plus, Trash2, Building, ShieldCheck, Landmark, Package, AppWindow, BellRing, BellOff, Send, Crown, Image as ImageIcon, Pencil, X, Check, MessageSquare, Calendar, Phone } from 'lucide-react';
 import { apiCall } from '../services/apiService';
 import { requestNotificationPermission, setNotificationPreference, isNotificationEnabledInApp } from '../services/notificationService';
 import { generateUUID } from '../constants';
 
 const Settings: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'general' | 'permissions'>('general');
-  const [settings, setSettings] = useState<SystemSettings>({ currentTrackingNumber: 1000, companyNames: [], companies: [], defaultCompany: '', bankNames: [], commodityGroups: [], rolePermissions: {} as any, pwaIcon: '', telegramBotToken: '', telegramAdminId: '', smsApiKey: '', smsSenderNumber: '', googleCalendarId: '' });
+  const [settings, setSettings] = useState<SystemSettings>({ currentTrackingNumber: 1000, companyNames: [], companies: [], defaultCompany: '', bankNames: [], commodityGroups: [], rolePermissions: {} as any, pwaIcon: '', telegramBotToken: '', telegramAdminId: '', smsApiKey: '', smsSenderNumber: '', googleCalendarId: '', whatsappNumber: '' });
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
   
@@ -46,7 +46,8 @@ const Settings: React.FC = () => {
               telegramAdminId: data.telegramAdminId || '',
               smsApiKey: data.smsApiKey || '',
               smsSenderNumber: data.smsSenderNumber || '',
-              googleCalendarId: data.googleCalendarId || ''
+              googleCalendarId: data.googleCalendarId || '',
+              whatsappNumber: data.whatsappNumber || ''
           }; 
           
           // Migrate old string companies to object structure if empty
@@ -217,11 +218,28 @@ const Settings: React.FC = () => {
                     </div>
                 </div>
                 
-                {/* TELEGRAM BOT SECTION */}
+                {/* WHATSAPP & TELEGRAM SECTION */}
                 <div className="space-y-4 border-t pt-6">
-                    <div className="flex items-center gap-2 mb-2"><Send className="text-blue-500" size={20} /><h3 className="font-bold text-gray-800">ربات تلگرام (اعلان‌های کارتابل)</h3></div>
+                    <div className="flex items-center gap-2 mb-2"><Send className="text-blue-500" size={20} /><h3 className="font-bold text-gray-800">پیام‌رسان‌ها (واتساپ و تلگرام)</h3></div>
                     <div className="bg-blue-50 p-4 rounded-xl border border-blue-100 grid grid-cols-1 md:grid-cols-2 gap-4">
+                        
+                        {/* WhatsApp */}
                         <div className="md:col-span-2">
+                            <label className="text-xs font-bold text-gray-700 flex items-center gap-1 mb-2"><Phone size={14} className="text-green-600"/> شماره واتساپ (جهت ارسال گزارش)</label>
+                            <input 
+                                type="text" 
+                                className="w-full border border-green-200 rounded-lg p-2 text-sm dir-ltr font-mono" 
+                                placeholder="98912xxxxxxx"
+                                value={settings.whatsappNumber}
+                                onChange={(e) => setSettings({...settings, whatsappNumber: e.target.value})}
+                            />
+                            <p className="text-[10px] text-gray-500 mt-1">
+                                شماره مدیر یا گروهی که گزارشات به آن ارسال می‌شود (با کد کشور، بدون + یا 00). مثال: 989121234567
+                            </p>
+                        </div>
+
+                        {/* Telegram */}
+                        <div className="md:col-span-2 border-t border-blue-200 pt-3">
                             <label className="text-xs font-bold text-gray-700 block mb-2">توکن ربات تلگرام (Bot Token)</label>
                             <input 
                             type="text" 
@@ -231,12 +249,10 @@ const Settings: React.FC = () => {
                             onChange={(e) => setSettings({...settings, telegramBotToken: e.target.value})}
                             />
                             <p className="text-xs text-gray-500 mt-2">
-                                برای دریافت توکن، به ربات <a href="https://t.me/BotFather" target="_blank" className="text-blue-600 underline font-bold">BotFather@</a> در تلگرام پیام دهید و یک ربات جدید بسازید.
-                                <br/>
-                                توجه: کاربران باید Chat ID خود را در پروفایلشان وارد کنند تا پیام دریافت کنند.
+                                برای دریافت توکن، به ربات <a href="https://t.me/BotFather" target="_blank" className="text-blue-600 underline font-bold">BotFather@</a> در تلگرام پیام دهید.
                             </p>
                         </div>
-                        <div className="md:col-span-2 border-t border-blue-200 pt-3">
+                        <div className="md:col-span-2 pt-1">
                              <label className="text-xs font-bold text-gray-700 flex items-center gap-1 mb-2"><Crown size={14}/> شناسه چت ادمین اصلی (جهت بک‌آپ)</label>
                              <input 
                                 type="text" 
@@ -245,7 +261,6 @@ const Settings: React.FC = () => {
                                 value={settings.telegramAdminId}
                                 onChange={(e) => setSettings({...settings, telegramAdminId: e.target.value})}
                              />
-                             <p className="text-[10px] text-gray-500 mt-1">فایل‌های بک‌آپ خودکار (هر ۸ ساعت) به این آیدی ارسال می‌شود. خودتان به ربات پیام دهید و /id را بزنید.</p>
                         </div>
                     </div>
                 </div>
@@ -263,7 +278,7 @@ const Settings: React.FC = () => {
                             onChange={(e) => setSettings({...settings, googleCalendarId: e.target.value})}
                         />
                         <p className="text-xs text-gray-600 mt-2">
-                            برای نمایش تقویم گوگل در بخش بازرگانی، شناسه تقویم خود را وارد کنید. 
+                            برای نمایش تقویم گوگل در داشبورد، شناسه تقویم خود را وارد کنید. 
                             <br/>
                             (توجه: تقویم باید Public باشد یا مرورگر شما در گوگل لاگین باشد).
                         </p>
@@ -293,9 +308,6 @@ const Settings: React.FC = () => {
                                 value={settings.smsSenderNumber}
                                 onChange={(e) => setSettings({...settings, smsSenderNumber: e.target.value})}
                             />
-                        </div>
-                        <div className="md:col-span-2">
-                            <p className="text-xs text-gray-500">در حال حاضر این تنظیمات جهت اتصال آینده به سامانه پیامکی ذخیره می‌شوند.</p>
                         </div>
                     </div>
                 </div>

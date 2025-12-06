@@ -109,6 +109,7 @@ export interface SystemSettings {
   smsApiKey?: string; // API Key for SMS Panel
   smsSenderNumber?: string; // Sender Number for SMS
   googleCalendarId?: string; // New: Google Calendar ID for embedding
+  whatsappNumber?: string; // New: Default WhatsApp number for reports
 }
 
 export interface DashboardStats {

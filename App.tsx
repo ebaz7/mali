@@ -219,7 +219,7 @@ function App() {
     <Layout activeTab={activeTab} setActiveTab={setActiveTab} currentUser={currentUser} onLogout={handleLogout} notifications={notifications} clearNotifications={() => setNotifications([])}>
       {loading && orders.length === 0 ? ( <div className="flex h-[50vh] items-center justify-center text-blue-600"><Loader2 size={48} className="animate-spin" /></div> ) : (
         <>
-            {activeTab === 'dashboard' && <Dashboard orders={orders} onViewArchive={handleViewArchive} onFilterByStatus={handleDashboardFilter} />}
+            {activeTab === 'dashboard' && <Dashboard orders={orders} settings={settings} onViewArchive={handleViewArchive} onFilterByStatus={handleDashboardFilter} />}
             {activeTab === 'create' && <CreateOrder onSuccess={handleOrderCreated} currentUser={currentUser} />}
             {activeTab === 'manage' && <ManageOrders orders={orders} refreshData={() => loadData(true)} currentUser={currentUser} initialTab={manageOrdersInitialTab} settings={settings} statusFilter={dashboardStatusFilter} />}
             {activeTab === 'trade' && <TradeModule currentUser={currentUser} />}

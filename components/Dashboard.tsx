@@ -1,20 +1,26 @@
 
 import React, { useState, useMemo } from 'react';
-import { PaymentOrder, OrderStatus, PaymentMethod } from '../types';
-import { formatCurrency, parsePersianDate } from '../constants';
+import { PaymentOrder, OrderStatus, PaymentMethod, SystemSettings } from '../types';
+import { formatCurrency, parsePersianDate, formatNumberString } from '../constants';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts';
-import { TrendingUp, Clock, CheckCircle, Archive, Activity, Building2, X, XCircle, AlertCircle, Banknote } from 'lucide-react';
+import { TrendingUp, Clock, CheckCircle, Archive, Activity, Building2, X, XCircle, AlertCircle, Banknote, Calendar as CalendarIcon, ExternalLink, Share2, Plus, CalendarDays } from 'lucide-react';
 
 interface DashboardProps {
   orders: PaymentOrder[];
+  settings?: SystemSettings;
   onViewArchive?: () => void;
   onFilterByStatus?: (status: OrderStatus | 'pending_all') => void;
 }
 
 const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8', '#82ca9d'];
 
-const Dashboard: React.FC<DashboardProps> = ({ orders, onViewArchive, onFilterByStatus }) => {
+const Dashboard: React.FC<DashboardProps> = ({ orders, settings, onViewArchive, onFilterByStatus }) => {
   const [showBankReport, setShowBankReport] = useState(false);
+  const [showCalendar, setShowCalendar] = useState(false);
+  
+  // Calendar Internal Logic (If no Google ID)
+  const [calendarMonth, setCalendarMonth] = useState(new Date());
+
   const pendingOrders = orders.filter(o => o.status !== OrderStatus.APPROVED_CEO && o.status !== OrderStatus.REJECTED);
   const completedOrders = orders.filter(o => o.status === OrderStatus.APPROVED_CEO);
   const totalAmount = completedOrders.reduce((sum, order) => sum + order.totalAmount, 0);
@@ -67,13 +73,113 @@ const Dashboard: React.FC<DashboardProps> = ({ orders, onViewArchive, onFilterBy
               }
           });
       });
-      // Sort by Due Date (Ascending)
       return allCheques.sort((a, b) => a.daysLeft - b.daysLeft);
   }, [orders]);
 
+  const handleWhatsAppShare = () => {
+      if (!settings?.whatsappNumber) {
+          alert('لطفا ابتدا شماره واتساپ را در تنظیمات وارد کنید.');
+          return;
+      }
+      
+      let text = `📊 *گزارش وضعیت مالی* 📊\n`;
+      text += `📅 تاریخ: ${new Date().toLocaleDateString('fa-IR')}\n`;
+      text += `----------------------\n`;
+      text += `🟡 در انتظار: ${pendingOrders.length} مورد\n`;
+      text += `✅ تایید شده: ${completedOrders.length} مورد\n`;
+      text += `💰 مجموع پرداختی: ${formatNumberString(totalAmount)} ریال\n`;
+      text += `----------------------\n`;
+      
+      if (chequeData.length > 0) {
+          const upcoming = chequeData.filter(c => c.daysLeft <= 3 && !c.isPassed).length;
+          if (upcoming > 0) text += `⚠️ *هشدار چک:* ${upcoming} چک در ۳ روز آینده سررسید می‌شوند.\n`;
+      }
+
+      const url = `https://wa.me/${settings.whatsappNumber}?text=${encodeURIComponent(text)}`;
+      window.open(url, '_blank');
+  };
+
+  // Internal Calendar Renderer
+  const renderInternalCalendar = () => {
+        const year = calendarMonth.getFullYear(); 
+        const month = calendarMonth.getMonth();
+        const firstDay = new Date(year, month, 1);
+        const lastDay = new Date(year, month + 1, 0);
+        const daysInMonth = lastDay.getDate();
+        const startingDay = firstDay.getDay(); 
+        const shamsiTitle = new Intl.DateTimeFormat('fa-IR', { year: 'numeric', month: 'long' }).format(calendarMonth);
+
+        // Map events to dates (simplified matching)
+        const events = chequeData.map(c => ({
+            date: c.date, 
+            title: `چک: ${c.payee} (${formatNumberString(c.amount)})`,
+            type: 'cheque'
+        }));
+
+        const days = [];
+        for (let i = 0; i < startingDay; i++) { days.push(<div key={`empty-${i}`} className="h-20 bg-gray-50 border-r border-b"></div>); }
+        for (let d = 1; d <= daysInMonth; d++) {
+            const shamsiDateStr = new Date(year, month, d).toLocaleDateString('fa-IR-u-nu-latn').replace(/\//g, '/');
+            const parts = shamsiDateStr.split('/');
+            const shamsiFormatted = `${parts[0]}/${parts[1].padStart(2,'0')}/${parts[2].padStart(2,'0')}`;
+            const dayEvents = events.filter(e => e.date === shamsiFormatted || e.date === shamsiDateStr);
+
+            days.push(
+                <div key={d} className="h-20 border-r border-b p-1 relative hover:bg-blue-50 transition-colors group">
+                    <div className="font-bold text-xs text-gray-700">{d}</div>
+                    <div className="mt-1 space-y-1 overflow-y-auto max-h-14">
+                        {dayEvents.map((ev, idx) => (
+                            <div key={idx} className="text-[9px] bg-red-100 text-red-700 p-1 rounded truncate" title={ev.title}>{ev.title}</div>
+                        ))}
+                    </div>
+                </div>
+            );
+        }
+
+        return (
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 mt-6">
+                <div className="flex justify-between items-center p-3 border-b">
+                    <button onClick={() => setCalendarMonth(new Date(year, month - 1, 1))} className="p-1 hover:bg-gray-100 rounded">قبل</button>
+                    <h3 className="font-bold">{shamsiTitle}</h3>
+                    <button onClick={() => setCalendarMonth(new Date(year, month + 1, 1))} className="p-1 hover:bg-gray-100 rounded">بعد</button>
+                </div>
+                <div className="grid grid-cols-7 text-center text-xs font-bold bg-gray-50 border-b"><div className="p-2">1ش</div><div className="p-2">2ش</div><div className="p-2">3ش</div><div className="p-2">4ش</div><div className="p-2">5ش</div><div className="p-2">جمعه</div><div className="p-2">شنبه</div></div>
+                <div className="grid grid-cols-7 dir-ltr">{days}</div>
+            </div>
+        );
+  };
+
   return (
     <div className="space-y-6 animate-fade-in min-w-0">
-      <h2 className="text-2xl font-bold text-gray-800 mb-6">داشبورد وضعیت مالی</h2>
+      <div className="flex flex-col md:flex-row justify-between items-center gap-4 mb-6">
+          <h2 className="text-2xl font-bold text-gray-800">داشبورد وضعیت مالی</h2>
+          <div className="flex gap-2">
+              <button onClick={() => setShowCalendar(!showCalendar)} className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-colors ${showCalendar ? 'bg-indigo-100 text-indigo-700' : 'bg-white border text-gray-600 hover:bg-gray-50'}`}>
+                  <CalendarIcon size={18}/> {showCalendar ? 'مخفی کردن تقویم' : 'مشاهده تقویم'}
+              </button>
+              <button onClick={handleWhatsAppShare} className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm font-bold transition-colors shadow-sm">
+                  <Share2 size={18}/> ارسال گزارش به واتساپ
+              </button>
+          </div>
+      </div>
+
+      {/* Calendar Section */}
+      {showCalendar && (
+          <div className="animate-fade-in mb-8">
+              {settings?.googleCalendarId ? (
+                  <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-200">
+                      <div className="flex justify-between items-center mb-4">
+                          <h3 className="font-bold text-gray-800 flex items-center gap-2"><CalendarIcon className="text-blue-600"/> تقویم گوگل</h3>
+                          <a href="https://calendar.google.com" target="_blank" className="text-xs text-blue-600 flex items-center gap-1 hover:underline"><ExternalLink size={12}/> باز کردن در گوگل</a>
+                      </div>
+                      <iframe src={`https://calendar.google.com/calendar/embed?src=${encodeURIComponent(settings.googleCalendarId)}&ctz=Asia%2FTehran`} style={{border: 0}} width="100%" height="600" frameBorder="0" scrolling="no" className="rounded-lg"></iframe>
+                  </div>
+              ) : (
+                  renderInternalCalendar()
+              )}
+          </div>
+      )}
+
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
          <div onClick={() => onFilterByStatus && onFilterByStatus(OrderStatus.PENDING)} className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex items-center justify-between cursor-pointer hover:shadow-md hover:border-yellow-300 transition-all"><div><p className="text-xs text-gray-500 mb-1">در انتظار مالی</p><p className="text-xl font-bold text-yellow-600">{countPending}</p></div><div className="bg-yellow-50 p-2 rounded-lg text-yellow-500"><Clock size={20}/></div></div>
          <div onClick={() => onFilterByStatus && onFilterByStatus(OrderStatus.APPROVED_FINANCE)} className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex items-center justify-between cursor-pointer hover:shadow-md hover:border-orange-300 transition-all"><div><p className="text-xs text-gray-500 mb-1">در انتظار مدیریت</p><p className="text-xl font-bold text-orange-600">{countFin}</p></div><div className="bg-orange-50 p-2 rounded-lg text-orange-500"><Activity size={20}/></div></div>
