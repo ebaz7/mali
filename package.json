@@ -8,7 +8,8 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "start": "node server.js"
+    "start": "node server.js",
+    "install-offline": "set PUPPETEER_SKIP_DOWNLOAD=true && npm install"
   },
   "dependencies": {
     "cors": "^2.8.5",

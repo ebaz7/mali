@@ -4,9 +4,8 @@ import cors from 'cors';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import pkg from 'whatsapp-web.js';
-const { Client, LocalAuth } = pkg;
-import qrcode from 'qrcode-terminal';
+
+// NOTE: Dynamic imports for WhatsApp are handled inside initWhatsApp() to prevent crashes if not installed.
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -79,46 +78,60 @@ const saveDb = (data) => {
     fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2));
 };
 
-// --- WHATSAPP CLIENT SETUP (SERVER SIDE) ---
-console.log('Initializing WhatsApp Client...');
-const whatsappClient = new Client({
-    authStrategy: new LocalAuth({ dataPath: WAUTH_DIR }),
-    puppeteer: {
-        headless: true,
-        args: ['--no-sandbox', '--disable-setuid-sandbox'] // Required for some VPS environments
-    }
-});
-
+// --- WHATSAPP CLIENT SETUP (Dynamic Import) ---
+let whatsappClient = null;
 let isWhatsAppReady = false;
 
-whatsappClient.on('qr', (qr) => {
-    console.log('\n=============================================================');
-    console.log('>>> لطفاً کد QR زیر را با واتساپ گوشی خود اسکن کنید <<<');
-    console.log('=============================================================\n');
-    qrcode.generate(qr, { small: true });
-});
+(async () => {
+    try {
+        console.log('Attempting to load WhatsApp modules...');
+        const wwebjs = await import('whatsapp-web.js');
+        const { Client, LocalAuth } = wwebjs.default || wwebjs;
+        const qrcodeModule = await import('qrcode-terminal');
+        const qrcode = qrcodeModule.default || qrcodeModule;
 
-whatsappClient.on('ready', () => {
-    console.log('\n>>> WhatsApp Client is READY! <<<\n');
-    isWhatsAppReady = true;
-});
+        console.log('Initializing WhatsApp Client...');
+        whatsappClient = new Client({
+            authStrategy: new LocalAuth({ dataPath: WAUTH_DIR }),
+            puppeteer: {
+                headless: true,
+                // Skip bundle download check if using system chrome, or strict sandbox args
+                args: ['--no-sandbox', '--disable-setuid-sandbox'] 
+            }
+        });
 
-whatsappClient.on('auth_failure', msg => {
-    console.error('WhatsApp Authentication Failure:', msg);
-});
+        whatsappClient.on('qr', (qr) => {
+            console.log('\n=============================================================');
+            console.log('>>> لطفاً کد QR زیر را با واتساپ گوشی خود اسکن کنید <<<');
+            console.log('=============================================================\n');
+            qrcode.generate(qr, { small: true });
+        });
 
-whatsappClient.on('disconnected', (reason) => {
-    console.log('WhatsApp Client was disconnected:', reason);
-    isWhatsAppReady = false;
-    // Optional: whatsappClient.initialize();
-});
+        whatsappClient.on('ready', () => {
+            console.log('\n>>> WhatsApp Client is READY! <<<\n');
+            isWhatsAppReady = true;
+        });
 
-// Initialize WhatsApp (Non-blocking)
-try {
-    whatsappClient.initialize();
-} catch (e) {
-    console.error("Failed to initialize WhatsApp:", e);
-}
+        whatsappClient.on('auth_failure', msg => {
+            console.error('WhatsApp Authentication Failure:', msg);
+        });
+
+        whatsappClient.on('disconnected', (reason) => {
+            console.log('WhatsApp Client was disconnected:', reason);
+            isWhatsAppReady = false;
+        });
+
+        whatsappClient.initialize();
+
+    } catch (e) {
+        console.warn('\n********************************************************************************');
+        console.warn('هشدار: ماژول واتساپ (whatsapp-web.js) بارگذاری نشد.');
+        console.warn('سرور بدون قابلیت ارسال خودکار واتساپ اجرا می‌شود.');
+        console.warn('دلیل: ', e.code === 'ERR_MODULE_NOT_FOUND' ? 'پکیج نصب نیست' : e.message);
+        console.warn('راه حل: دستور "npm run install-offline" را اجرا کنید.');
+        console.warn('********************************************************************************\n');
+    }
+})();
 
 // --- HELPER FUNCTIONS ---
 const toShamsi = (isoDate) => {
@@ -141,38 +154,26 @@ const findNextAvailableTrackingNumber = (db) => {
     return nextNum;
 };
 
-// --- DATE HELPERS FOR CRON ---
-const parsePersianDate = (dateStr) => {
-    if (!dateStr) return null;
-    const parts = dateStr.includes('/') ? dateStr.split('/') : dateStr.split('-');
-    const [y, m, d] = parts.map(Number);
-    if (!y || !m || !d) return null;
-    // Simple conversion not needed for just comparison, but keeping structure
-    return new Date(y, m - 1, d); // Treat as Gregorian for simple diff calc if input is consistent
-};
-
 // --- API ROUTES ---
 
 app.post('/api/send-whatsapp', async (req, res) => {
-    if (!isWhatsAppReady) {
-        return res.status(503).json({ success: false, message: 'ربات واتساپ سرور هنوز آماده نیست یا اسکن نشده است. لطفا کنسول سرور را چک کنید.' });
+    if (!whatsappClient || !isWhatsAppReady) {
+        return res.status(503).json({ success: false, message: 'ربات واتساپ سرور فعال نیست. لطفا لاگ سرور را بررسی کنید.' });
     }
     
     const { number, message } = req.body;
     if (!number || !message) return res.status(400).json({ error: 'Missing number or message' });
 
     try {
-        // Normalize Number: remove + and 00, ensure it starts with country code (98 for Iran)
-        let cleanNumber = number.toString().replace(/\D/g, ''); // Remove non-digits
+        // Normalize Number
+        let cleanNumber = number.toString().replace(/\D/g, ''); 
         
-        // Simple heuristic for Iranian numbers (e.g. 0912... -> 98912...)
         if (cleanNumber.startsWith('09')) {
             cleanNumber = '98' + cleanNumber.substring(1);
         } else if (cleanNumber.startsWith('9') && cleanNumber.length === 10) {
             cleanNumber = '98' + cleanNumber;
         }
         
-        // Append WhatsApp suffix
         const chatId = `${cleanNumber}@c.us`;
         
         await whatsappClient.sendMessage(chatId, message);
