@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { User, TradeRecord, TradeStage, TradeItem, SystemSettings, InsuranceEndorsement, CurrencyPurchaseData, TradeTransaction, CurrencyTranche, TradeStageData, ShippingDocument, ShippingDocType, DocStatus, InvoiceItem, InspectionData, InspectionPayment, InspectionCertificate, ClearanceData, WarehouseReceipt, ClearancePayment, GreenLeafData, GreenLeafCustomsDuty, GreenLeafGuarantee, GreenLeafTax, GreenLeafRoadToll, InternalShippingData, ShippingPayment, AgentData, AgentPayment, PackingItem } from '../types';
 import { getTradeRecords, saveTradeRecord, updateTradeRecord, deleteTradeRecord, getSettings, uploadFile } from '../services/storageService';
 import { generateUUID, formatCurrency, formatNumberString, deformatNumberString, parsePersianDate, formatDate, calculateDaysDiff } from '../constants';
-import { Container, Plus, Search, CheckCircle2, Save, Trash2, X, Package, ArrowRight, History, Banknote, Coins, Wallet, FileSpreadsheet, Shield, LayoutDashboard, Printer, FileDown, Paperclip, Building2, FolderOpen, Home, Calculator, FileText, Microscope, ListFilter, Warehouse, Calendar, PieChart, BarChart, Clock, Leaf, Scale, ShieldCheck, Percent, Truck, CheckSquare, Square, ToggleLeft, ToggleRight, DollarSign, UserCheck, Check, Archive, AlertCircle, RefreshCw, Box } from 'lucide-react';
+import { Container, Plus, Search, CheckCircle2, Save, Trash2, X, Package, ArrowRight, History, Banknote, Coins, Wallet, FileSpreadsheet, Shield, LayoutDashboard, Printer, FileDown, Paperclip, Building2, FolderOpen, Home, Calculator, FileText, Microscope, ListFilter, Warehouse, Calendar, PieChart, BarChart, Clock, Leaf, Scale, ShieldCheck, Percent, Truck, CheckSquare, Square, ToggleLeft, ToggleRight, DollarSign, UserCheck, Check, Archive, AlertCircle, RefreshCw, Box, Loader2 } from 'lucide-react';
 
 interface TradeModuleProps {
     currentUser: User;
@@ -119,6 +119,7 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
 
     // Final Calculation State
     const [calcExchangeRate, setCalcExchangeRate] = useState<number>(0);
+    const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
 
     useEffect(() => {
         loadRecords();
@@ -203,10 +204,8 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
     const goGroup = (group: string) => { setSelectedGroup(group); setNavLevel('GROUP'); setSearchTerm(''); };
 
     const getGroupedData = () => {
-        let currentRecords = records;
-        if (!showArchived) {
-            currentRecords = records.filter(r => !r.isArchived);
-        }
+        // STRICT SEPARATION: If archive mode is on, ONLY show archived. If off, ONLY active.
+        const currentRecords = records.filter(r => showArchived ? r.isArchived : !r.isArchived);
 
         if (navLevel === 'ROOT') {
             const companies: Record<string, number> = {};
@@ -654,6 +653,48 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
     const handleArchiveRecord = async () => { if (!selectedRecord) return; if (!confirm('آیا از انتقال این پرونده به بایگانی (ترخیص شده) اطمینان دارید؟')) return; const updatedRecord = { ...selectedRecord, isArchived: true, status: 'Completed' as const }; await updateTradeRecord(updatedRecord); setSelectedRecord(updatedRecord); alert('پرونده با موفقیت بایگانی شد.'); setViewMode('dashboard'); loadRecords(); };
     const handleUpdateCalcRate = async (rate: number) => { setCalcExchangeRate(rate); if (selectedRecord) { const updated = { ...selectedRecord, exchangeRate: rate }; await updateTradeRecord(updated); setSelectedRecord(updated); } };
     const getAllGuarantees = () => { const list = []; if (selectedRecord && selectedRecord.currencyPurchaseData?.guaranteeCheque) { list.push({ id: 'currency_g', type: 'ارزی', number: selectedRecord.currencyPurchaseData.guaranteeCheque.chequeNumber, bank: selectedRecord.currencyPurchaseData.guaranteeCheque.bank, amount: selectedRecord.currencyPurchaseData.guaranteeCheque.amount, isDelivered: selectedRecord.currencyPurchaseData.guaranteeCheque.isDelivered, toggleFunc: handleToggleCurrencyGuaranteeDelivery }); } if (selectedRecord && selectedRecord.greenLeafData?.guarantees) { selectedRecord.greenLeafData.guarantees.forEach(g => { list.push({ id: g.id, type: 'گمرکی', number: g.guaranteeNumber + (g.chequeNumber ? ` / چک: ${g.chequeNumber}` : ''), bank: g.chequeBank, amount: g.chequeAmount, isDelivered: g.isDelivered, toggleFunc: () => handleToggleGuaranteeDelivery(g.id) }); }); } return list; };
+
+    // Print & PDF Logic
+    const handlePrintTrade = () => {
+        window.print();
+    };
+
+    const handleDownloadFinalCalculationPDF = async () => {
+        setIsGeneratingPdf(true);
+        const element = document.getElementById('print-trade-final');
+        if (!element) { setIsGeneratingPdf(false); return; }
+        
+        try {
+            // @ts-ignore
+            const canvas = await window.html2canvas(element, { 
+                scale: 2, 
+                backgroundColor: '#ffffff',
+                useCORS: true,
+                onclone: (doc) => {
+                    const el = doc.getElementById('print-trade-final');
+                    if(el) {
+                        el.style.display = 'block';
+                        el.style.position = 'static';
+                        el.style.visibility = 'visible';
+                    }
+                }
+            });
+            
+            const imgData = canvas.toDataURL('image/png');
+            // @ts-ignore
+            const { jsPDF } = window.jspdf;
+            const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+            const pdfWidth = 210;
+            const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+            
+            pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
+            pdf.save(`Final_Calculation_${selectedRecord?.fileNumber}.pdf`);
+        } catch (e) {
+            alert("خطا در ایجاد PDF");
+        } finally {
+            setIsGeneratingPdf(false);
+        }
+    };
 
     // Render Logic
     const renderReportContent = () => {
@@ -1128,16 +1169,113 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
                         <div className="p-6 max-w-6xl mx-auto space-y-8">
                             <div className="bg-white p-6 rounded-xl shadow-sm border flex flex-col md:flex-row justify-between items-center gap-4">
                                 <div><h3 className="font-bold text-gray-800 text-lg mb-1">وضعیت نهایی پرونده</h3><p className="text-xs text-gray-500">مدیریت تعهدات و بایگانی پرونده</p></div>
-                                <div className="flex gap-4">
+                                <div className="flex gap-2 flex-wrap justify-end">
                                     <button onClick={toggleCommitment} className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 border transition-colors ${selectedRecord.isCommitmentFulfilled ? 'bg-green-100 text-green-700 border-green-300' : 'bg-gray-100 text-gray-600 border-gray-300 hover:bg-green-50'}`}>{selectedRecord.isCommitmentFulfilled ? <CheckCircle2 size={18}/> : <AlertCircle size={18}/>}{selectedRecord.isCommitmentFulfilled ? 'رفع تعهد شده' : 'رفع تعهد نشده'}</button>
                                     <button onClick={handleArchiveRecord} disabled={selectedRecord.isArchived} className={`px-6 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-colors ${selectedRecord.isArchived ? 'bg-gray-200 text-gray-400 cursor-not-allowed' : 'bg-blue-600 text-white hover:bg-blue-700 shadow-md'}`}><Archive size={18}/> {selectedRecord.isArchived ? 'بایگانی شده (ترخیص شد)' : 'ترخیص شد (بایگانی)'}</button>
                                 </div>
                             </div>
+                            
+                            <div className="flex justify-end gap-2">
+                                <button onClick={handlePrintTrade} className="bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-gray-50 text-sm"><Printer size={16}/> چاپ گزارش</button>
+                                <button onClick={handleDownloadFinalCalculationPDF} disabled={isGeneratingPdf} className="bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-gray-50 text-sm">{isGeneratingPdf ? <Loader2 size={16} className="animate-spin"/> : <FileDown size={16}/>} دانلود PDF</button>
+                            </div>
+
                             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                                 <div className="bg-white p-6 rounded-xl shadow-sm border h-fit"><h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2"><Calculator size={20} className="text-rose-600"/> صورت کلی هزینه‌ها</h3><div className="overflow-hidden rounded-lg border"><table className="w-full text-sm text-right"><thead className="bg-gray-100 text-gray-700"><tr><th className="p-3">شرح هزینه</th><th className="p-3">مبلغ ارزی</th><th className="p-3">مبلغ ریالی</th></tr></thead><tbody className="divide-y divide-gray-100">{STAGES.map(stage => { const data = selectedRecord.stages[stage]; if (!data || (data.costRial === 0 && data.costCurrency === 0)) return null; return (<tr key={stage}><td className="p-3 text-gray-600">{stage}</td><td className="p-3 font-mono">{data.costCurrency > 0 ? formatCurrency(data.costCurrency) : '-'}</td><td className="p-3 font-mono">{formatCurrency(data.costRial)}</td></tr>); })}<tr className="bg-rose-50 font-bold border-t-2 border-rose-200"><td className="p-3">جمع کل</td><td className="p-3 font-mono dir-ltr">{formatCurrency(totalCurrency)} {selectedRecord.mainCurrency}</td><td className="p-3 font-mono dir-ltr">{formatCurrency(totalRial)} IRR</td></tr></tbody></table></div><div className="mt-4 bg-gray-50 p-4 rounded-lg border border-gray-200"><label className="text-xs font-bold text-gray-600 block mb-2">نرخ ارز محاسباتی</label><div className="flex gap-2"><input className="flex-1 border rounded p-2 text-sm dir-ltr font-mono font-bold" value={formatNumberString(calcExchangeRate)} onChange={e => handleUpdateCalcRate(deformatNumberString(e.target.value))} placeholder="نرخ تبدیل..." /><div className="bg-gray-200 px-3 py-2 rounded text-sm font-bold flex items-center">ریال</div></div><div className="mt-3 pt-3 border-t border-gray-300 flex justify-between items-center"><span className="text-sm font-bold text-gray-700">قیمت نهایی کل (ریالی):</span><span className="text-lg font-black text-rose-700 dir-ltr">{formatCurrency(grandTotalRial)}</span></div><div className="mt-1 flex justify-between items-center"><span className="text-xs text-gray-500">میانگین قیمت هر کیلو:</span><span className="text-sm font-bold text-gray-700 dir-ltr">{formatCurrency(costPerKg)}</span></div></div></div>
                                 <div className="bg-white p-6 rounded-xl shadow-sm border h-fit"><h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2"><ShieldCheck size={20} className="text-blue-600"/> لیست چک‌های ضمانت</h3><div className="overflow-x-auto"><table className="w-full text-sm text-right"><thead className="bg-gray-100 text-gray-700"><tr><th className="p-3">نوع</th><th className="p-3">شماره / بانک</th><th className="p-3">مبلغ</th><th className="p-3">وضعیت</th></tr></thead><tbody className="divide-y divide-gray-100">{getAllGuarantees().map((g) => (<tr key={g.id}><td className="p-3"><span className={`text-[10px] px-2 py-0.5 rounded ${g.type === 'ارزی' ? 'bg-purple-100 text-purple-700' : 'bg-orange-100 text-orange-700'}`}>{g.type}</span></td><td className="p-3"><div className="font-mono text-xs">{g.number}</div><div className="text-[10px] text-gray-500">{g.bank}</div></td><td className="p-3 font-mono">{formatCurrency(Number(g.amount))}</td><td className="p-3 text-center"><button onClick={g.toggleFunc} className={`text-xs px-2 py-1 rounded font-bold transition-colors ${g.isDelivered ? 'bg-green-100 text-green-700 hover:bg-green-200' : 'bg-red-100 text-red-700 hover:bg-red-200'}`}>{g.isDelivered ? 'عودت شد' : 'نزد سازمان'}</button></td></tr>))}{getAllGuarantees().length === 0 && (<tr><td colSpan={4} className="p-4 text-center text-gray-400">هیچ ضمانت‌نامه‌ای ثبت نشده است</td></tr>)}</tbody></table></div></div>
                             </div>
                             <div className="bg-white p-6 rounded-xl shadow-sm border"><h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2"><Scale size={20} className="text-emerald-600"/> قیمت تمام شده کالاها (به تفکیک)</h3><div className="overflow-x-auto"><table className="w-full text-sm text-right"><thead className="bg-emerald-50 text-emerald-800"><tr><th className="p-3 rounded-r-lg">ردیف</th><th className="p-3">شرح کالا</th><th className="p-3">وزن (KG)</th><th className="p-3">قیمت خرید (ارزی)</th><th className="p-3">سهم از هزینه‌ها (ریال)</th><th className="p-3">قیمت تمام شده نهایی (ریال)</th><th className="p-3 rounded-l-lg">قیمت تمام شده هر کیلو</th></tr></thead><tbody className="divide-y divide-gray-100">{selectedRecord.items.map((item, idx) => { const totalPurchasePriceCurrency = selectedRecord.items.reduce((acc, i) => acc + i.totalPrice, 0); const totalPurchasePriceRial = totalPurchasePriceCurrency * exchangeRate; const totalOverheadRial = grandTotalRial - totalPurchasePriceRial; const weightShare = totalWeight > 0 ? item.weight / totalWeight : 0; const allocatedOverhead = totalOverheadRial * weightShare; const itemPurchasePriceRial = item.totalPrice * exchangeRate; const finalItemCost = itemPurchasePriceRial + allocatedOverhead; const finalItemCostPerKg = item.weight > 0 ? finalItemCost / item.weight : 0; return (<tr key={item.id} className="hover:bg-gray-50"><td className="p-3 text-center">{idx + 1}</td><td className="p-3 font-bold">{item.name}</td><td className="p-3 font-mono">{formatNumberString(item.weight)}</td><td className="p-3 font-mono">{formatCurrency(item.totalPrice)} {selectedRecord.mainCurrency}</td><td className="p-3 text-gray-500 font-mono text-xs">{formatCurrency(allocatedOverhead)}</td><td className="p-3 font-mono font-bold text-emerald-700">{formatCurrency(finalItemCost)}</td><td className="p-3 font-mono font-bold text-blue-700 bg-blue-50">{formatCurrency(finalItemCostPerKg)}</td></tr>); })}<tr className="bg-gray-100 font-bold border-t-2 border-gray-300"><td colSpan={2} className="p-3 text-center">جمع کل</td><td className="p-3 font-mono">{formatNumberString(totalWeight)}</td><td className="p-3 font-mono">{formatCurrency(selectedRecord.items.reduce((s, i) => s + i.totalPrice, 0))}</td><td className="p-3"></td><td className="p-3 font-mono">{formatCurrency(grandTotalRial)}</td><td className="p-3"></td></tr></tbody></table></div></div>
+                            
+                            {/* Hidden Print/PDF Area */}
+                            <div id="print-trade-final" className="hidden print:block bg-white p-8" style={{ direction: 'rtl', fontFamily: 'Vazirmatn' }}>
+                                <div className="border-b-2 border-gray-800 pb-4 mb-6 flex justify-between items-center">
+                                    <div>
+                                        <h1 className="text-2xl font-bold mb-1">{selectedRecord.company}</h1>
+                                        <p className="text-gray-500 text-sm">گزارش قیمت تمام شده واردات</p>
+                                    </div>
+                                    <div className="text-left">
+                                        <div className="font-bold text-lg">{selectedRecord.fileNumber}</div>
+                                        <div className="text-sm text-gray-500">{new Date().toLocaleDateString('fa-IR')}</div>
+                                    </div>
+                                </div>
+                                <div className="grid grid-cols-3 gap-4 mb-6 bg-gray-50 p-4 rounded border">
+                                    <div><span className="text-gray-500 text-sm block">کالا:</span> <b>{selectedRecord.goodsName}</b></div>
+                                    <div><span className="text-gray-500 text-sm block">فروشنده:</span> <b>{selectedRecord.sellerName}</b></div>
+                                    <div><span className="text-gray-500 text-sm block">ارز پایه:</span> <b>{selectedRecord.mainCurrency}</b></div>
+                                </div>
+                                <h3 className="font-bold text-lg mb-3 border-b pb-1">خلاصه هزینه‌ها</h3>
+                                <table className="w-full text-sm text-right mb-6 border-collapse">
+                                    <thead>
+                                        <tr className="bg-gray-100">
+                                            <th className="border p-2">شرح هزینه</th>
+                                            <th className="border p-2">مبلغ ارزی</th>
+                                            <th className="border p-2">مبلغ ریالی</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {STAGES.map(stage => {
+                                            const data = selectedRecord.stages[stage];
+                                            if (!data || (data.costRial === 0 && data.costCurrency === 0)) return null;
+                                            return (
+                                                <tr key={stage}>
+                                                    <td className="border p-2">{stage}</td>
+                                                    <td className="border p-2 font-mono dir-ltr">{data.costCurrency > 0 ? formatCurrency(data.costCurrency) : '-'}</td>
+                                                    <td className="border p-2 font-mono dir-ltr">{formatCurrency(data.costRial)}</td>
+                                                </tr>
+                                            );
+                                        })}
+                                        <tr className="bg-gray-100 font-bold">
+                                            <td className="border p-2">جمع کل</td>
+                                            <td className="border p-2 font-mono dir-ltr">{formatCurrency(totalCurrency)}</td>
+                                            <td className="border p-2 font-mono dir-ltr">{formatCurrency(totalRial)}</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                                <div className="flex justify-between items-center bg-gray-100 p-4 rounded border mb-6">
+                                    <div><span className="text-gray-600">نرخ ارز محاسباتی:</span> <b className="font-mono mx-2">{formatCurrency(exchangeRate)}</b></div>
+                                    <div><span className="text-gray-600">قیمت تمام شده کل:</span> <b className="font-mono text-lg mx-2">{formatCurrency(grandTotalRial)}</b></div>
+                                </div>
+                                <h3 className="font-bold text-lg mb-3 border-b pb-1">قیمت تمام شده به تفکیک کالا</h3>
+                                <table className="w-full text-sm text-right mb-8 border-collapse">
+                                    <thead>
+                                        <tr className="bg-gray-100">
+                                            <th className="border p-2">کالا</th>
+                                            <th className="border p-2">وزن (KG)</th>
+                                            <th className="border p-2">قیمت خرید</th>
+                                            <th className="border p-2">سهم هزینه</th>
+                                            <th className="border p-2">قیمت نهایی</th>
+                                            <th className="border p-2">قیمت هر کیلو</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {selectedRecord.items.map((item) => {
+                                            const totalPurchasePriceCurrency = selectedRecord.items.reduce((acc, i) => acc + i.totalPrice, 0);
+                                            const totalPurchasePriceRial = totalPurchasePriceCurrency * exchangeRate;
+                                            const totalOverheadRial = grandTotalRial - totalPurchasePriceRial;
+                                            const weightShare = totalWeight > 0 ? item.weight / totalWeight : 0;
+                                            const allocatedOverhead = totalOverheadRial * weightShare;
+                                            const itemPurchasePriceRial = item.totalPrice * exchangeRate;
+                                            const finalItemCost = itemPurchasePriceRial + allocatedOverhead;
+                                            const finalItemCostPerKg = item.weight > 0 ? finalItemCost / item.weight : 0;
+                                            return (
+                                                <tr key={item.id}>
+                                                    <td className="border p-2 font-bold">{item.name}</td>
+                                                    <td className="border p-2 font-mono">{formatNumberString(item.weight)}</td>
+                                                    <td className="border p-2 font-mono">{formatCurrency(item.totalPrice)}</td>
+                                                    <td className="border p-2 font-mono">{formatCurrency(allocatedOverhead)}</td>
+                                                    <td className="border p-2 font-mono font-bold">{formatCurrency(finalItemCost)}</td>
+                                                    <td className="border p-2 font-mono font-bold bg-gray-50">{formatCurrency(finalItemCostPerKg)}</td>
+                                                </tr>
+                                            );
+                                        })}
+                                    </tbody>
+                                </table>
+                                <div className="grid grid-cols-3 gap-8 mt-12 pt-8 border-t">
+                                    <div className="text-center"><div className="mb-8 font-bold text-sm">تهیه کننده</div><div className="border-t w-1/2 mx-auto"></div></div>
+                                    <div className="text-center"><div className="mb-8 font-bold text-sm">مدیر بازرگانی</div><div className="border-t w-1/2 mx-auto"></div></div>
+                                    <div className="text-center"><div className="mb-8 font-bold text-sm">مدیر عامل</div><div className="border-t w-1/2 mx-auto"></div></div>
+                                </div>
+                            </div>
                         </div>
                     )}
 
@@ -1250,7 +1388,7 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
                     {getGroupedData().length === 0 && (
                         <div className="col-span-full text-center py-12 text-gray-400 bg-white rounded-2xl border border-dashed">
                             <FolderOpen size={48} className="mx-auto mb-4 opacity-20"/>
-                            <p>هیچ موردی یافت نشد. یک پرونده جدید ایجاد کنید.</p>
+                            <p>هیچ موردی یافت نشد. {showArchived ? 'آرشیو خالی است.' : 'یک پرونده جدید ایجاد کنید.'}</p>
                         </div>
                     )}
                 </div>
@@ -1264,7 +1402,7 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
                             </thead>
                             <tbody className="divide-y divide-gray-100">
                                 {records
-                                    .filter(r => (showArchived ? true : !r.isArchived) && (navLevel === 'GROUP' ? (r.commodityGroup || 'سایر') === selectedGroup && (r.company || 'بدون شرکت') === selectedCompany : true))
+                                    .filter(r => (showArchived ? r.isArchived : !r.isArchived) && (navLevel === 'GROUP' ? (r.commodityGroup || 'سایر') === selectedGroup && (r.company || 'بدون شرکت') === selectedCompany : true))
                                     .filter(r => r.fileNumber.includes(searchTerm) || r.goodsName.includes(searchTerm) || r.sellerName.includes(searchTerm))
                                     .map(record => (
                                         <tr key={record.id} className="hover:bg-gray-50 transition-colors">
@@ -1291,7 +1429,7 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
                                             </td>
                                         </tr>
                                     ))}
-                                {records.filter(r => (showArchived ? true : !r.isArchived) && (navLevel === 'GROUP' ? r.commodityGroup === selectedGroup : true)).length === 0 && (
+                                {records.filter(r => (showArchived ? r.isArchived : !r.isArchived) && (navLevel === 'GROUP' ? r.commodityGroup === selectedGroup : true)).length === 0 && (
                                     <tr><td colSpan={7} className="p-8 text-center text-gray-400">هیچ پرونده‌ای در این گروه یافت نشد.</td></tr>
                                 )}
                             </tbody>
