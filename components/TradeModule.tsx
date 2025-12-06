@@ -691,8 +691,8 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
                 @media print {
                     @page { size: A4 landscape; margin: 5mm; }
                     body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-                    table { width: 100%; border-collapse: collapse; font-size: 9pt; }
-                    th, td { border: 1px solid #000; padding: 4px; text-align: center; }
+                    table { width: 100%; border-collapse: collapse; font-size: 8pt; }
+                    th, td { border: 1px solid #000; padding: 2px; text-align: center; }
                     th { background-color: #f3f4f6 !important; color: #000 !important; font-weight: bold; }
                     /* Explicitly show everything */
                     .no-print { display: table-cell !important; } 
@@ -705,7 +705,8 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
                 ${content.innerHTML}
               </div>
               <script>
-                window.onload = function() { setTimeout(function() { window.print(); }, 500); };
+                // Increased timeout to ensure styles are loaded and layout is stabilized
+                window.onload = function() { setTimeout(function() { window.focus(); window.print(); }, 1000); };
               </script>
             </body>
           </html>
@@ -726,9 +727,24 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
         try {
             // @ts-ignore
             const canvas = await window.html2canvas(element, { 
-                scale: 2, 
+                scale: 2, // Moderate scale for performance
                 backgroundColor: '#ffffff',
-                useCORS: true
+                useCORS: true,
+                onclone: (doc) => {
+                    const el = doc.getElementById(elementId);
+                    if (el) {
+                        // Force full width to ensure all columns render (no scroll)
+                        // Using a fixed large width to guarantee fit, then scaling down
+                        el.style.width = '1400px'; 
+                        el.style.maxWidth = 'none';
+                        el.style.overflow = 'visible';
+                        const table = el.querySelector('table');
+                        if (table) {
+                            table.style.width = '100%';
+                            table.style.fontSize = '10px'; // Ensure font is legible
+                        }
+                    }
+                }
             });
             
             const imgData = canvas.toDataURL('image/png');
@@ -741,13 +757,16 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
             const pdfHeight = 210;
             
             // Calculate image dimensions to fit within A4 landscape width (with margins)
-            const margin = 10;
+            const margin = 5;
             const contentWidth = pdfWidth - (2 * margin);
+            // Maintain aspect ratio
             const contentHeight = (canvas.height * contentWidth) / canvas.width;
             
+            // If height exceeds page, it will be handled (for now assuming single page fit or split manually if needed)
             pdf.addImage(imgData, 'PNG', margin, margin, contentWidth, contentHeight);
             pdf.save(`${filename}.pdf`);
         } catch (e) {
+            console.error(e);
             alert("خطا در ایجاد PDF");
         } finally {
             setIsGeneratingPdf(false);
@@ -867,24 +886,24 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
                         </div>
                         
                         <div className="overflow-auto max-h-[calc(100vh-280px)] border rounded-xl shadow-sm bg-white">
-                            <div id="allocation-report-table-print-area">
-                                <table className="min-w-max text-[11px] text-center border-collapse w-full">
+                            <div id="allocation-report-table-print-area" className="w-full">
+                                <table className="w-full text-[10px] text-center border-collapse">
                                     <thead className="bg-gray-800 text-white font-bold sticky top-0 z-10 shadow-sm">
                                         <tr>
-                                            <th className="p-2 border border-gray-600 w-10">ردیف</th>
-                                            <th className="p-2 border border-gray-600">مشخصات پروفرما</th>
-                                            <th className="p-2 border border-gray-600">شماره ثبت سفارش</th>
-                                            <th className="p-2 border border-gray-600">شرکت</th>
-                                            <th className="p-2 border border-gray-600">مبلغ ثبت سفارش</th>
-                                            <th className="p-2 border border-gray-600 bg-gray-700">تبدیل به دلار</th>
-                                            <th className="p-2 border border-gray-600 bg-blue-900">معادل ریالی</th>
-                                            <th className="p-2 border border-gray-600">زمان در صف</th>
-                                            <th className="p-2 border border-gray-600">زمان تخصیص</th>
-                                            <th className="p-2 border border-gray-600">مانده مهلت (روز)</th>
-                                            <th className="p-2 border border-gray-600">وضعیت تخصیص</th>
-                                            <th className="p-2 border border-gray-600">بانک عامل</th>
-                                            <th className="p-2 border border-gray-600 w-10">اولویت</th>
-                                            <th className="p-2 border border-gray-600">نوع ارز</th>
+                                            <th className="p-1 border border-gray-600 w-8">ردیف</th>
+                                            <th className="p-1 border border-gray-600">مشخصات پروفرما</th>
+                                            <th className="p-1 border border-gray-600">شماره ثبت سفارش</th>
+                                            <th className="p-1 border border-gray-600">شرکت</th>
+                                            <th className="p-1 border border-gray-600">مبلغ ثبت سفارش</th>
+                                            <th className="p-1 border border-gray-600 bg-gray-700">تبدیل به دلار</th>
+                                            <th className="p-1 border border-gray-600 bg-blue-900">معادل ریالی</th>
+                                            <th className="p-1 border border-gray-600">زمان در صف</th>
+                                            <th className="p-1 border border-gray-600">زمان تخصیص</th>
+                                            <th className="p-1 border border-gray-600">مانده مهلت (روز)</th>
+                                            <th className="p-1 border border-gray-600">وضعیت تخصیص</th>
+                                            <th className="p-1 border border-gray-600">بانک عامل</th>
+                                            <th className="p-1 border border-gray-600 w-8">اولویت</th>
+                                            <th className="p-1 border border-gray-600">نوع ارز</th>
                                         </tr>
                                     </thead>
                                     <tbody>
@@ -939,28 +958,28 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
 
                                             return (
                                                 <tr key={r.id} className={`hover:bg-blue-50 border-b border-gray-200 transition-colors ${idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}`}>
-                                                    <td className="p-2 border border-gray-200">{idx + 1}</td>
-                                                    <td className="p-2 border border-gray-200">
+                                                    <td className="p-1 border border-gray-200">{idx + 1}</td>
+                                                    <td className="p-1 border border-gray-200">
                                                         <div className="font-bold">{r.goodsName}</div>
                                                         <div className="text-[9px] text-gray-500 font-mono">{r.fileNumber}</div>
                                                     </td>
-                                                    <td className="p-2 border border-gray-200 font-mono font-bold">{r.registrationNumber || '-'}</td>
-                                                    <td className="p-2 border border-gray-200">{r.company}</td>
-                                                    <td className="p-2 border border-gray-200 font-mono dir-ltr">{formatNumberString(totalAmount)} {currency}</td>
-                                                    <td className="p-2 border border-gray-200 font-mono dir-ltr bg-gray-100 font-bold">{formatUSD(usdAmount)} $</td>
-                                                    <td className="p-2 border border-gray-200 font-mono dir-ltr bg-blue-50 text-blue-800 font-bold">{formatCurrency(rialAmount)}</td>
-                                                    <td className="p-2 border border-gray-200 font-mono text-[10px]">{queueDate || '-'}</td>
-                                                    <td className="p-2 border border-gray-200 font-mono text-[10px]">{allocDateDisplay}</td>
-                                                    <td className={`p-2 border border-gray-200 font-bold ${parseInt(daysRemaining) < 5 ? 'text-red-600' : 'text-green-600'}`}>{daysRemaining}</td>
-                                                    <td className={`p-2 border border-gray-200 font-bold ${isAllocated ? 'text-green-700 bg-green-100' : 'text-yellow-700 bg-yellow-100'}`}>{status}</td>
-                                                    <td className="p-2 border border-gray-200 text-xs">{r.operatingBank || '-'}</td>
-                                                    <td className="p-2 border border-gray-200">
+                                                    <td className="p-1 border border-gray-200 font-mono font-bold">{r.registrationNumber || '-'}</td>
+                                                    <td className="p-1 border border-gray-200">{r.company}</td>
+                                                    <td className="p-1 border border-gray-200 font-mono dir-ltr">{formatNumberString(totalAmount)} {currency}</td>
+                                                    <td className="p-1 border border-gray-200 font-mono dir-ltr bg-gray-100 font-bold">{formatUSD(usdAmount)} $</td>
+                                                    <td className="p-1 border border-gray-200 font-mono dir-ltr bg-blue-50 text-blue-800 font-bold">{formatCurrency(rialAmount)}</td>
+                                                    <td className="p-1 border border-gray-200 font-mono text-[9px]">{queueDate || '-'}</td>
+                                                    <td className="p-1 border border-gray-200 font-mono text-[9px]">{allocDateDisplay}</td>
+                                                    <td className={`p-1 border border-gray-200 font-bold ${parseInt(daysRemaining) < 5 ? 'text-red-600' : 'text-green-600'}`}>{daysRemaining}</td>
+                                                    <td className={`p-1 border border-gray-200 font-bold ${isAllocated ? 'text-green-700 bg-green-100' : 'text-yellow-700 bg-yellow-100'}`}>{status}</td>
+                                                    <td className="p-1 border border-gray-200 text-[9px]">{r.operatingBank || '-'}</td>
+                                                    <td className="p-1 border border-gray-200 no-print">
                                                         {/* @ts-ignore */}
                                                         <input type="checkbox" checked={priority} onChange={(e) => handleUpdateRecordFromTable(r, { allocationPriority: e.target.checked })} className="w-4 h-4 cursor-pointer accent-blue-600"/>
                                                     </td>
-                                                    <td className="p-2 border border-gray-200">
+                                                    <td className="p-1 border border-gray-200 no-print">
                                                         {/* @ts-ignore */}
-                                                        <select className="border rounded text-[10px] bg-transparent" value={currencyCategory} onChange={(e) => handleUpdateRecordFromTable(r, { currencyCategory: e.target.value })}>
+                                                        <select className="border rounded text-[9px] bg-transparent" value={currencyCategory} onChange={(e) => handleUpdateRecordFromTable(r, { currencyCategory: e.target.value })}>
                                                             <option value="نوع اول">نوع اول</option>
                                                             <option value="نوع دوم">نوع دوم</option>
                                                             <option value="اشخاص">اشخاص</option>
@@ -1018,7 +1037,7 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
     if (viewMode === 'reports') {
         return (
             <div className="flex h-[calc(100vh-100px)] bg-gray-50 rounded-2xl overflow-hidden border">
-                <div className="w-64 bg-white border-l p-4 flex flex-col gap-2">
+                <div className="w-64 bg-white border-l p-4 flex flex-col gap-2 flex-shrink-0">
                     <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2"><FileSpreadsheet size={20}/> گزارشات بازرگانی</h3>
                     <div className="mb-4"><label className="text-xs font-bold text-gray-500 mb-1 block">فیلتر شرکت</label><select className="w-full border rounded p-1 text-sm" value={reportFilterCompany} onChange={e => setReportFilterCompany(e.target.value)}><option value="">همه شرکت‌ها</option>{availableCompanies.map(c => <option key={c} value={c}>{c}</option>)}</select></div>
                     <button onClick={() => setActiveReport('general')} className={`p-2 rounded text-right text-sm ${activeReport === 'general' ? 'bg-blue-50 text-blue-700 font-bold' : 'hover:bg-gray-50'}`}>📄 لیست کلی پرونده‌ها</button>
@@ -1028,7 +1047,7 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
                     <button onClick={() => setActiveReport('green_leaf')} className={`p-2 rounded text-right text-sm ${activeReport === 'green_leaf' ? 'bg-blue-50 text-blue-700 font-bold' : 'hover:bg-gray-50'}`}>🍃 برگ سبز و گمرک</button>
                     <div className="mt-auto"><button onClick={() => window.print()} className="w-full flex items-center justify-center gap-2 border p-2 rounded hover:bg-gray-50 text-gray-600"><Printer size={16}/> چاپ گزارش</button><button onClick={() => setViewMode('dashboard')} className="w-full mt-2 flex items-center justify-center gap-2 bg-gray-800 text-white p-2 rounded hover:bg-gray-900">بازگشت به داشبورد</button></div>
                 </div>
-                <div className="flex-1 p-6 overflow-auto">
+                <div className="flex-1 p-6 overflow-hidden flex flex-col w-full">
                     <h2 className="text-xl font-bold mb-4">{activeReport === 'general' ? 'لیست کلی پرونده‌ها' : activeReport === 'allocation_queue' ? 'گزارش صف تخصیص' : activeReport === 'currency' ? 'گزارش ارزی' : 'گزارش'}</h2>
                     {renderReportContent()}
                 </div>
