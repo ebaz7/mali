@@ -606,14 +606,14 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
     // NEW: Sync Invoice to Proforma
     const handleSyncInvoiceToProforma = async () => {
         if (!selectedRecord) return;
-        if (!confirm('آیا مطمئن هستید؟ این عملیات اقلام و هزینه حمل پروفرما را با مقادیر این اینویس جایگزین می‌کند. اقلام هم‌نام تجمیع خواهند شد.')) return;
+        if (!confirm('آیا مطمئن هستید؟ این عملیات اقلام و هزینه حمل پروفرما را با مقادیر این اینویس جایگزین می‌کند. اقلام هم‌نام (از پارت‌های مختلف) تجمیع خواهند شد.')) return;
         
         const invoiceItems = shippingDocForm.invoiceItems || [];
         const aggregatedMap = new Map<string, { weight: number, totalPrice: number }>();
 
-        // Aggregate
+        // Aggregate by Name
         for (const item of invoiceItems) {
-            const name = item.name.trim();
+            const name = item.name.trim(); 
             const current = aggregatedMap.get(name) || { weight: 0, totalPrice: 0 };
             aggregatedMap.set(name, {
                 weight: current.weight + item.weight,
@@ -628,7 +628,7 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
                 id: generateUUID(),
                 name: name,
                 weight: val.weight,
-                unitPrice: val.weight > 0 ? val.totalPrice / val.weight : 0,
+                unitPrice: val.weight > 0 ? val.totalPrice / val.weight : 0, // Avg Unit Price
                 totalPrice: val.totalPrice
             });
         });
@@ -908,7 +908,7 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
                                             <span className="text-lg font-black text-rose-700 dir-ltr">{formatCurrency(grandTotalRial)}</span>
                                         </div>
                                         <div className="mt-1 flex justify-between items-center">
-                                            <span className="text-xs text-gray-500">قیمت تمام شده هر کیلو:</span>
+                                            <span className="text-xs text-gray-500">میانگین قیمت هر کیلو:</span>
                                             <span className="text-sm font-bold text-gray-700 dir-ltr">{formatCurrency(costPerKg)}</span>
                                         </div>
                                     </div>
@@ -949,7 +949,7 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
 
                             {/* 4. Item Cost Allocation */}
                             <div className="bg-white p-6 rounded-xl shadow-sm border">
-                                <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2"><Scale size={20} className="text-emerald-600"/> قیمت تمام شده کالاها (به تفکیک وزن)</h3>
+                                <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2"><Scale size={20} className="text-emerald-600"/> قیمت تمام شده کالاها (به تفکیک)</h3>
                                 <div className="overflow-x-auto">
                                     <table className="w-full text-sm text-right">
                                         <thead className="bg-emerald-50 text-emerald-800">
@@ -959,20 +959,38 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
                                                 <th className="p-3">وزن (KG)</th>
                                                 <th className="p-3">قیمت خرید (ارزی)</th>
                                                 <th className="p-3">سهم از هزینه‌ها (ریال)</th>
-                                                <th className="p-3 rounded-l-lg">قیمت تمام شده نهایی (ریال)</th>
+                                                <th className="p-3">قیمت تمام شده نهایی (ریال)</th>
+                                                <th className="p-3 rounded-l-lg">قیمت تمام شده هر کیلو</th>
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-gray-100">
                                             {selectedRecord.items.map((item, idx) => {
-                                                const allocatedCost = item.weight * costPerKg;
+                                                // Calculate Overhead Cost Only (Grand Total - Purchase Costs)
+                                                // Assuming items total price is in selectedRecord.mainCurrency
+                                                const totalPurchasePriceCurrency = selectedRecord.items.reduce((acc, i) => acc + i.totalPrice, 0);
+                                                const totalPurchasePriceRial = totalPurchasePriceCurrency * exchangeRate;
+                                                const totalOverheadRial = grandTotalRial - totalPurchasePriceRial;
+                                                
+                                                // Allocate Overhead by Weight
+                                                const weightShare = totalWeight > 0 ? item.weight / totalWeight : 0;
+                                                const allocatedOverhead = totalOverheadRial * weightShare;
+                                                
+                                                // Calculate Item Final Cost (Purchase Price * Rate + Overhead)
+                                                const itemPurchasePriceRial = item.totalPrice * exchangeRate;
+                                                const finalItemCost = itemPurchasePriceRial + allocatedOverhead;
+                                                
+                                                // Calculate Final Cost Per Kg for this specific item
+                                                const finalItemCostPerKg = item.weight > 0 ? finalItemCost / item.weight : 0;
+
                                                 return (
                                                     <tr key={item.id} className="hover:bg-gray-50">
                                                         <td className="p-3 text-center">{idx + 1}</td>
                                                         <td className="p-3 font-bold">{item.name}</td>
                                                         <td className="p-3 font-mono">{formatNumberString(item.weight)}</td>
                                                         <td className="p-3 font-mono">{formatCurrency(item.totalPrice)} {selectedRecord.mainCurrency}</td>
-                                                        <td className="p-3 text-gray-500 text-xs">{(item.weight / totalWeight * 100).toFixed(2)}%</td>
-                                                        <td className="p-3 font-mono font-bold text-emerald-700 text-lg bg-emerald-50/50">{formatCurrency(allocatedCost)}</td>
+                                                        <td className="p-3 text-gray-500 font-mono text-xs">{formatCurrency(allocatedOverhead)}</td>
+                                                        <td className="p-3 font-mono font-bold text-emerald-700">{formatCurrency(finalItemCost)}</td>
+                                                        <td className="p-3 font-mono font-bold text-blue-700 bg-blue-50">{formatCurrency(finalItemCostPerKg)}</td>
                                                     </tr>
                                                 );
                                             })}
@@ -982,6 +1000,7 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
                                                 <td className="p-3 font-mono">{formatCurrency(selectedRecord.items.reduce((s, i) => s + i.totalPrice, 0))}</td>
                                                 <td className="p-3"></td>
                                                 <td className="p-3 font-mono">{formatCurrency(grandTotalRial)}</td>
+                                                <td className="p-3"></td>
                                             </tr>
                                         </tbody>
                                     </table>
@@ -1231,7 +1250,7 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
                                         <div className="flex gap-2 items-end">
                                             <input className="flex-1 border rounded p-2 text-sm" placeholder="نام کالا" value={newInvoiceItem.name} onChange={e => setNewInvoiceItem({...newInvoiceItem, name: e.target.value})} />
                                             <input className="w-20 border rounded p-2 text-sm dir-ltr" placeholder="وزن" value={newInvoiceItem.weight || ''} onChange={e => setNewInvoiceItem({...newInvoiceItem, weight: Number(e.target.value)})} type="number" />
-                                            <input className="w-24 border rounded p-2 text-sm dir-ltr" placeholder="فی (Unit)" value={newInvoiceItem.unitPrice || ''} onChange={e => setNewInvoiceItem({...newInvoiceItem, unitPrice: Number(e.target.value)})} type="number" step="0.01" />
+                                            <input className="w-24 border rounded p-2 text-sm dir-ltr" placeholder="فی (Unit)" value={newInvoiceItem.unitPrice || ''} onChange={e => setNewInvoiceItem({...newInvoiceItem, unitPrice: Number(e.target.value)})} type="number" step="0.0001" />
                                             <input className="w-20 border rounded p-2 text-sm" placeholder="پارت" value={newInvoiceItem.part} onChange={e => setNewInvoiceItem({...newInvoiceItem, part: e.target.value})} />
                                             <input className="w-24 border rounded p-2 text-sm dir-ltr bg-gray-100" placeholder="قیمت کل" value={newInvoiceItem.totalPrice || ((newInvoiceItem.weight || 0) * (newInvoiceItem.unitPrice || 0))} readOnly />
                                             <button onClick={handleAddInvoiceItem} className="bg-blue-600 text-white p-2 rounded-lg"><Plus size={16}/></button>
