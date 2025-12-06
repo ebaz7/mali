@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { User, TradeRecord, TradeStage, TradeItem, SystemSettings, InsuranceEndorsement, CurrencyPurchaseData, TradeTransaction, CurrencyTranche, TradeStageData, ShippingDocument, ShippingDocType, DocStatus, InvoiceItem, InspectionData, InspectionPayment, InspectionCertificate, ClearanceData, WarehouseReceipt, ClearancePayment, GreenLeafData, GreenLeafCustomsDuty, GreenLeafGuarantee, GreenLeafTax, GreenLeafRoadToll, InternalShippingData, ShippingPayment, AgentData, AgentPayment, PackingItem } from '../types';
 import { getTradeRecords, saveTradeRecord, updateTradeRecord, deleteTradeRecord, getSettings, uploadFile } from '../services/storageService';
-import { generateUUID, formatCurrency, formatNumberString, deformatNumberString, parsePersianDate, formatDate, calculateDaysDiff } from '../constants';
+import { generateUUID, formatCurrency, formatNumberString, deformatNumberString, parsePersianDate, formatDate, calculateDaysDiff, getStatusLabel } from '../constants';
 import { Container, Plus, Search, CheckCircle2, Save, Trash2, X, Package, ArrowRight, History, Banknote, Coins, Wallet, FileSpreadsheet, Shield, LayoutDashboard, Printer, FileDown, Paperclip, Building2, FolderOpen, Home, Calculator, FileText, Microscope, ListFilter, Warehouse, Calendar, PieChart, BarChart, Clock, Leaf, Scale, ShieldCheck, Percent, Truck, CheckSquare, Square, ToggleLeft, ToggleRight, DollarSign, UserCheck, Check, Archive, AlertCircle, RefreshCw, Box, Loader2 } from 'lucide-react';
 
 interface TradeModuleProps {
@@ -17,16 +17,6 @@ const CURRENCIES = [
     { code: 'CNY', label: 'یوان (¥)' },
     { code: 'TRY', label: 'لیر (₺)' },
 ];
-
-// Simple XE-like Cross Rates to USD (Approximate)
-const CROSS_RATES: Record<string, number> = {
-    'USD': 1,
-    'EUR': 1.08,
-    'AED': 0.2722,
-    'CNY': 0.138,
-    'TRY': 0.031,
-    'GBP': 1.26
-};
 
 // Report Types
 type ReportType = 'general' | 'allocation_queue' | 'allocated' | 'currency' | 'insurance' | 'shipping' | 'inspection' | 'clearance' | 'green_leaf';
@@ -51,7 +41,8 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
     
     // Report Specific States
     const [reportSearchTerm, setReportSearchTerm] = useState('');
-    const [reportUsdRialRate, setReportUsdRialRate] = useState<string>('500000'); // Default Exchange Rate for Report
+    const [reportUsdRialRate, setReportUsdRialRate] = useState<string>('500000'); // Default Rial Rate
+    const [reportEurUsdRate, setReportEurUsdRate] = useState<string>('1.08'); // Default EUR to USD Rate
     const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
 
     // Modal & Form States
@@ -670,7 +661,56 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
 
     // Print & PDF Logic
     const handlePrintReport = () => {
-        window.print();
+        const content = document.getElementById('allocation-report-table-print-area');
+        if (!content) return;
+
+        // Create a hidden iframe
+        const iframe = document.createElement('iframe');
+        iframe.style.position = 'fixed';
+        iframe.style.right = '0';
+        iframe.style.bottom = '0';
+        iframe.style.width = '0px';
+        iframe.style.height = '0px';
+        iframe.style.border = 'none';
+        document.body.appendChild(iframe);
+
+        const doc = iframe.contentWindow?.document;
+        if (!doc) return;
+
+        // Get all style sheets
+        const styleSheets = Array.from(document.querySelectorAll('link[rel="stylesheet"], style')).map(el => el.outerHTML).join('');
+        
+        doc.open();
+        doc.write(`
+          <html dir="rtl" lang="fa">
+            <head>
+              <title>گزارش صف تخصیص</title>
+              ${styleSheets}
+              <style>
+                body { background: white !important; margin: 0 !important; padding: 0 !important; font-family: 'Vazirmatn', sans-serif !important; }
+                @media print {
+                    @page { size: A4 landscape; margin: 5mm; }
+                    body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+                    table { width: 100%; border-collapse: collapse; font-size: 9pt; }
+                    th, td { border: 1px solid #000; padding: 4px; text-align: center; }
+                    th { background-color: #f3f4f6 !important; color: #000 !important; font-weight: bold; }
+                    .no-print { display: none !important; }
+                }
+              </style>
+            </head>
+            <body>
+              <div style="width: 100%; padding: 10px;">
+                <h2 style="text-align: center; margin-bottom: 10px;">گزارش صف تخصیص ارز</h2>
+                ${content.innerHTML}
+              </div>
+              <script>
+                window.onload = function() { setTimeout(function() { window.print(); }, 500); };
+              </script>
+            </body>
+          </html>
+        `);
+        doc.close();
+        setTimeout(() => { if (document.body.contains(iframe)) document.body.removeChild(iframe); }, 60000);
     };
 
     const handlePrintTrade = () => {
@@ -693,11 +733,18 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
             const imgData = canvas.toDataURL('image/png');
             // @ts-ignore
             const { jsPDF } = window.jspdf;
-            const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
-            const pdfWidth = 297;
-            const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
             
-            pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
+            // A4 Landscape: 297mm width, 210mm height
+            const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+            const pdfWidth = 297; 
+            const pdfHeight = 210;
+            
+            // Calculate image dimensions to fit within A4 landscape width (with margins)
+            const margin = 10;
+            const contentWidth = pdfWidth - (2 * margin);
+            const contentHeight = (canvas.height * contentWidth) / canvas.width;
+            
+            pdf.addImage(imgData, 'PNG', margin, margin, contentWidth, contentHeight);
             pdf.save(`${filename}.pdf`);
         } catch (e) {
             alert("خطا در ایجاد PDF");
@@ -744,17 +791,38 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
 
                 // Calculations
                 const rialRate = deformatNumberString(reportUsdRialRate) || 0;
+                const eurUsdRate = parseFloat(reportEurUsdRate) || 1.08;
+
+                // Dynamic Cross Rates based on EUR/USD input
+                const dynamicCrossRates: Record<string, number> = {
+                    'USD': 1,
+                    'EUR': eurUsdRate,
+                    'AED': 0.2722, // Approximate fixed peg
+                    'CNY': 0.138,  // Approximate
+                    'TRY': 0.031,
+                    'GBP': 1.26
+                };
 
                 return (
                     <div id="allocation-report-table" className="relative">
                         <div className="flex flex-col md:flex-row justify-between items-end md:items-center gap-4 mb-4">
-                            <div className="flex items-center gap-2 bg-blue-50 p-2 rounded-lg border border-blue-200">
-                                <label className="text-xs font-bold text-blue-800">نرخ ارز مبادله‌ای (ریال):</label>
-                                <input 
-                                    className="border rounded px-2 py-1 text-sm dir-ltr font-mono w-32" 
-                                    value={formatNumberString(reportUsdRialRate)}
-                                    onChange={e => setReportUsdRialRate(deformatNumberString(e.target.value).toString())}
-                                />
+                            <div className="flex items-center gap-4">
+                                <div className="flex items-center gap-2 bg-blue-50 p-2 rounded-lg border border-blue-200">
+                                    <label className="text-xs font-bold text-blue-800">نرخ ارز مبادله‌ای (ریال):</label>
+                                    <input 
+                                        className="border rounded px-2 py-1 text-sm dir-ltr font-mono w-28" 
+                                        value={formatNumberString(reportUsdRialRate)}
+                                        onChange={e => setReportUsdRialRate(deformatNumberString(e.target.value).toString())}
+                                    />
+                                </div>
+                                <div className="flex items-center gap-2 bg-green-50 p-2 rounded-lg border border-green-200">
+                                    <label className="text-xs font-bold text-green-800">نرخ برابری EUR به USD:</label>
+                                    <input 
+                                        className="border rounded px-2 py-1 text-sm dir-ltr font-mono w-20" 
+                                        value={reportEurUsdRate}
+                                        onChange={e => setReportEurUsdRate(e.target.value)}
+                                    />
+                                </div>
                             </div>
                             <div className="flex gap-2">
                                 <input 
@@ -765,102 +833,116 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
                                     onChange={(e) => setReportSearchTerm(e.target.value)}
                                 />
                                 <button onClick={handlePrintReport} className="bg-gray-100 p-2 rounded hover:bg-gray-200" title="چاپ"><Printer size={18}/></button>
-                                <button onClick={() => handleDownloadReportPDF('allocation-report-table', 'Allocation_Report')} disabled={isGeneratingPdf} className="bg-gray-100 p-2 rounded hover:bg-gray-200" title="PDF">{isGeneratingPdf ? <Loader2 size={18} className="animate-spin"/> : <FileDown size={18}/>}</button>
+                                <button onClick={() => handleDownloadReportPDF('allocation-report-table-print-area', 'Allocation_Report')} disabled={isGeneratingPdf} className="bg-gray-100 p-2 rounded hover:bg-gray-200" title="PDF">{isGeneratingPdf ? <Loader2 size={18} className="animate-spin"/> : <FileDown size={18}/>}</button>
                             </div>
                         </div>
                         
                         <div className="overflow-auto max-h-[calc(100vh-280px)] border rounded-xl shadow-sm bg-white">
-                            <table className="min-w-max text-[11px] text-center border-collapse">
-                                <thead className="bg-gray-800 text-white font-bold sticky top-0 z-10 shadow-sm">
-                                    <tr>
-                                        <th className="p-2 border border-gray-600 w-10">ردیف</th>
-                                        <th className="p-2 border border-gray-600">مشخصات پروفرما</th>
-                                        <th className="p-2 border border-gray-600">شماره ثبت سفارش</th>
-                                        <th className="p-2 border border-gray-600">شرکت</th>
-                                        <th className="p-2 border border-gray-600">مبلغ ثبت سفارش</th>
-                                        <th className="p-2 border border-gray-600 bg-gray-700">تبدیل به دلار</th>
-                                        <th className="p-2 border border-gray-600 bg-blue-900">معادل ریالی</th>
-                                        <th className="p-2 border border-gray-600">زمان در صف</th>
-                                        <th className="p-2 border border-gray-600">زمان تخصیص</th>
-                                        <th className="p-2 border border-gray-600">مانده مهلت (روز)</th>
-                                        <th className="p-2 border border-gray-600">وضعیت تخصیص</th>
-                                        <th className="p-2 border border-gray-600">بانک عامل</th>
-                                        <th className="p-2 border border-gray-600 w-10">اولویت</th>
-                                        <th className="p-2 border border-gray-600">نوع ارز</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {queueRecords.map((r, idx) => {
-                                        const queueDate = r.stages[TradeStage.ALLOCATION_QUEUE].queueDate;
-                                        const allocDateStr = r.stages[TradeStage.ALLOCATION_APPROVED]?.allocationDate;
-                                        
-                                        // Status Logic
-                                        const isAllocated = !!allocDateStr;
-                                        const status = isAllocated ? 'تخصیص یافته' : 'در صف';
-                                        
-                                        // Days Calculation
-                                        let daysRemaining = '-';
-                                        if (isAllocated && allocDateStr) {
-                                            const allocDate = parsePersianDate(allocDateStr);
-                                            if (allocDate) {
-                                                const expiryDate = new Date(allocDate);
-                                                expiryDate.setDate(expiryDate.getDate() + 30); // Add 30 days
-                                                const now = new Date();
-                                                const diffTime = expiryDate.getTime() - now.getTime();
-                                                const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-                                                daysRemaining = diffDays.toString();
+                            <div id="allocation-report-table-print-area">
+                                <table className="min-w-max text-[11px] text-center border-collapse w-full">
+                                    <thead className="bg-gray-800 text-white font-bold sticky top-0 z-10 shadow-sm">
+                                        <tr>
+                                            <th className="p-2 border border-gray-600 w-10">ردیف</th>
+                                            <th className="p-2 border border-gray-600">مشخصات پروفرما</th>
+                                            <th className="p-2 border border-gray-600">شماره ثبت سفارش</th>
+                                            <th className="p-2 border border-gray-600">شرکت</th>
+                                            <th className="p-2 border border-gray-600">مبلغ ثبت سفارش</th>
+                                            <th className="p-2 border border-gray-600 bg-gray-700">تبدیل به دلار</th>
+                                            <th className="p-2 border border-gray-600 bg-blue-900">معادل ریالی</th>
+                                            <th className="p-2 border border-gray-600">زمان در صف</th>
+                                            <th className="p-2 border border-gray-600">زمان تخصیص</th>
+                                            <th className="p-2 border border-gray-600">مانده مهلت (روز)</th>
+                                            <th className="p-2 border border-gray-600">وضعیت تخصیص</th>
+                                            <th className="p-2 border border-gray-600">بانک عامل</th>
+                                            <th className="p-2 border border-gray-600 w-10 no-print">اولویت</th>
+                                            <th className="p-2 border border-gray-600 no-print">نوع ارز</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {queueRecords.map((r, idx) => {
+                                            const queueDate = r.stages[TradeStage.ALLOCATION_QUEUE].queueDate;
+                                            const allocDateRaw = r.stages[TradeStage.ALLOCATION_APPROVED]?.allocationDate;
+                                            
+                                            // Handle Allocation Date Display (Convert if ISO, else show as is)
+                                            let allocDateDisplay = '-';
+                                            if (allocDateRaw) {
+                                                if (allocDateRaw.includes('-')) {
+                                                    // Assume ISO
+                                                    allocDateDisplay = formatDate(allocDateRaw);
+                                                } else {
+                                                    // Assume Persian String
+                                                    allocDateDisplay = allocDateRaw;
+                                                }
                                             }
-                                        }
+                                            
+                                            // Status Logic
+                                            const isAllocated = !!allocDateRaw;
+                                            const status = isAllocated ? 'تخصیص یافته' : 'در صف';
+                                            
+                                            // Days Calculation
+                                            let daysRemaining = '-';
+                                            if (isAllocated && allocDateRaw) {
+                                                const allocDate = parsePersianDate(allocDateRaw);
+                                                if (allocDate) {
+                                                    const expiryDate = new Date(allocDate);
+                                                    expiryDate.setDate(expiryDate.getDate() + 30); // Add 30 days
+                                                    const now = new Date();
+                                                    const diffTime = expiryDate.getTime() - now.getTime();
+                                                    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                                                    daysRemaining = diffDays.toString();
+                                                }
+                                            }
 
-                                        // Amounts
-                                        const totalAmount = r.items.reduce((sum, i) => sum + i.totalPrice, 0) + (r.freightCost || 0);
-                                        const currency = r.mainCurrency || 'EUR';
-                                        
-                                        // Conversion
-                                        const crossRate = CROSS_RATES[currency] || 1; // Default to 1 if unknown (e.g. USD)
-                                        const usdAmount = totalAmount * crossRate;
-                                        const rialAmount = usdAmount * rialRate;
+                                            // Amounts
+                                            const totalAmount = r.items.reduce((sum, i) => sum + i.totalPrice, 0) + (r.freightCost || 0);
+                                            const currency = r.mainCurrency || 'EUR';
+                                            
+                                            // Conversion
+                                            const crossRate = dynamicCrossRates[currency] || 1; 
+                                            const usdAmount = totalAmount * crossRate;
+                                            const rialAmount = usdAmount * rialRate;
 
-                                        // Dynamic Fields (Stored in record as arbitrary fields for flexibility)
-                                        // @ts-ignore
-                                        const priority = r.allocationPriority || false;
-                                        // @ts-ignore
-                                        const currencyCategory = r.currencyCategory || 'نوع اول';
+                                            // Dynamic Fields (Stored in record as arbitrary fields for flexibility)
+                                            // @ts-ignore
+                                            const priority = r.allocationPriority || false;
+                                            // @ts-ignore
+                                            const currencyCategory = r.currencyCategory || 'نوع اول';
 
-                                        return (
-                                            <tr key={r.id} className={`hover:bg-blue-50 border-b border-gray-200 transition-colors ${idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}`}>
-                                                <td className="p-2 border border-gray-200">{idx + 1}</td>
-                                                <td className="p-2 border border-gray-200">
-                                                    <div className="font-bold">{r.goodsName}</div>
-                                                    <div className="text-[9px] text-gray-500 font-mono">{r.fileNumber}</div>
-                                                </td>
-                                                <td className="p-2 border border-gray-200 font-mono font-bold">{r.registrationNumber || '-'}</td>
-                                                <td className="p-2 border border-gray-200">{r.company}</td>
-                                                <td className="p-2 border border-gray-200 font-mono dir-ltr">{formatNumberString(totalAmount)} {currency}</td>
-                                                <td className="p-2 border border-gray-200 font-mono dir-ltr bg-gray-100 font-bold">{formatNumberString(usdAmount.toFixed(2))} $</td>
-                                                <td className="p-2 border border-gray-200 font-mono dir-ltr bg-blue-50 text-blue-800 font-bold">{formatCurrency(rialAmount)}</td>
-                                                <td className="p-2 border border-gray-200 font-mono text-[10px]">{queueDate || '-'}</td>
-                                                <td className="p-2 border border-gray-200 font-mono text-[10px]">{allocDateStr || '-'}</td>
-                                                <td className={`p-2 border border-gray-200 font-bold ${parseInt(daysRemaining) < 5 ? 'text-red-600' : 'text-green-600'}`}>{daysRemaining}</td>
-                                                <td className={`p-2 border border-gray-200 font-bold ${isAllocated ? 'text-green-700 bg-green-100' : 'text-yellow-700 bg-yellow-100'}`}>{status}</td>
-                                                <td className="p-2 border border-gray-200 text-xs">{r.operatingBank || '-'}</td>
-                                                <td className="p-2 border border-gray-200">
-                                                    {/* @ts-ignore */}
-                                                    <input type="checkbox" checked={priority} onChange={(e) => handleUpdateRecordFromTable(r, { allocationPriority: e.target.checked })} className="w-4 h-4 cursor-pointer accent-blue-600"/>
-                                                </td>
-                                                <td className="p-2 border border-gray-200">
-                                                    {/* @ts-ignore */}
-                                                    <select className="border rounded text-[10px] bg-transparent" value={currencyCategory} onChange={(e) => handleUpdateRecordFromTable(r, { currencyCategory: e.target.value })}>
-                                                        <option value="نوع اول">نوع اول</option>
-                                                        <option value="نوع دوم">نوع دوم</option>
-                                                        <option value="اشخاص">اشخاص</option>
-                                                    </select>
-                                                </td>
-                                            </tr>
-                                        );
-                                    })}
-                                </tbody>
-                            </table>
+                                            return (
+                                                <tr key={r.id} className={`hover:bg-blue-50 border-b border-gray-200 transition-colors ${idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}`}>
+                                                    <td className="p-2 border border-gray-200">{idx + 1}</td>
+                                                    <td className="p-2 border border-gray-200">
+                                                        <div className="font-bold">{r.goodsName}</div>
+                                                        <div className="text-[9px] text-gray-500 font-mono">{r.fileNumber}</div>
+                                                    </td>
+                                                    <td className="p-2 border border-gray-200 font-mono font-bold">{r.registrationNumber || '-'}</td>
+                                                    <td className="p-2 border border-gray-200">{r.company}</td>
+                                                    <td className="p-2 border border-gray-200 font-mono dir-ltr">{formatNumberString(totalAmount)} {currency}</td>
+                                                    <td className="p-2 border border-gray-200 font-mono dir-ltr bg-gray-100 font-bold">{formatNumberString(usdAmount.toFixed(2))} $</td>
+                                                    <td className="p-2 border border-gray-200 font-mono dir-ltr bg-blue-50 text-blue-800 font-bold">{formatCurrency(rialAmount)}</td>
+                                                    <td className="p-2 border border-gray-200 font-mono text-[10px]">{queueDate || '-'}</td>
+                                                    <td className="p-2 border border-gray-200 font-mono text-[10px]">{allocDateDisplay}</td>
+                                                    <td className={`p-2 border border-gray-200 font-bold ${parseInt(daysRemaining) < 5 ? 'text-red-600' : 'text-green-600'}`}>{daysRemaining}</td>
+                                                    <td className={`p-2 border border-gray-200 font-bold ${isAllocated ? 'text-green-700 bg-green-100' : 'text-yellow-700 bg-yellow-100'}`}>{status}</td>
+                                                    <td className="p-2 border border-gray-200 text-xs">{r.operatingBank || '-'}</td>
+                                                    <td className="p-2 border border-gray-200 no-print">
+                                                        {/* @ts-ignore */}
+                                                        <input type="checkbox" checked={priority} onChange={(e) => handleUpdateRecordFromTable(r, { allocationPriority: e.target.checked })} className="w-4 h-4 cursor-pointer accent-blue-600"/>
+                                                    </td>
+                                                    <td className="p-2 border border-gray-200 no-print">
+                                                        {/* @ts-ignore */}
+                                                        <select className="border rounded text-[10px] bg-transparent" value={currencyCategory} onChange={(e) => handleUpdateRecordFromTable(r, { currencyCategory: e.target.value })}>
+                                                            <option value="نوع اول">نوع اول</option>
+                                                            <option value="نوع دوم">نوع دوم</option>
+                                                            <option value="اشخاص">اشخاص</option>
+                                                        </select>
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })}
+                                    </tbody>
+                                </table>
+                            </div>
                         </div>
                         {queueRecords.length === 0 && <div className="text-center py-8 text-gray-400">موردی برای نمایش یافت نشد.</div>}
                     </div>
