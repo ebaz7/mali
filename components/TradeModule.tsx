@@ -39,6 +39,10 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
     const [reportFilterCompany, setReportFilterCompany] = useState<string>('');
     const [searchTerm, setSearchTerm] = useState('');
     
+    // Report Specific States
+    const [reportSearchTerm, setReportSearchTerm] = useState('');
+    const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
+
     // Modal & Form States
     const [showNewModal, setShowNewModal] = useState(false);
     const [newFileNumber, setNewFileNumber] = useState('');
@@ -119,7 +123,6 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
 
     // Final Calculation State
     const [calcExchangeRate, setCalcExchangeRate] = useState<number>(0);
-    const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
 
     useEffect(() => {
         loadRecords();
@@ -655,13 +658,13 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
     const getAllGuarantees = () => { const list = []; if (selectedRecord && selectedRecord.currencyPurchaseData?.guaranteeCheque) { list.push({ id: 'currency_g', type: 'ارزی', number: selectedRecord.currencyPurchaseData.guaranteeCheque.chequeNumber, bank: selectedRecord.currencyPurchaseData.guaranteeCheque.bank, amount: selectedRecord.currencyPurchaseData.guaranteeCheque.amount, isDelivered: selectedRecord.currencyPurchaseData.guaranteeCheque.isDelivered, toggleFunc: handleToggleCurrencyGuaranteeDelivery }); } if (selectedRecord && selectedRecord.greenLeafData?.guarantees) { selectedRecord.greenLeafData.guarantees.forEach(g => { list.push({ id: g.id, type: 'گمرکی', number: g.guaranteeNumber + (g.chequeNumber ? ` / چک: ${g.chequeNumber}` : ''), bank: g.chequeBank, amount: g.chequeAmount, isDelivered: g.isDelivered, toggleFunc: () => handleToggleGuaranteeDelivery(g.id) }); }); } return list; };
 
     // Print & PDF Logic
-    const handlePrintTrade = () => {
+    const handlePrintReport = () => {
         window.print();
     };
 
-    const handleDownloadFinalCalculationPDF = async () => {
+    const handleDownloadReportPDF = async (elementId: string, filename: string) => {
         setIsGeneratingPdf(true);
-        const element = document.getElementById('print-trade-final');
+        const element = document.getElementById(elementId);
         if (!element) { setIsGeneratingPdf(false); return; }
         
         try {
@@ -669,26 +672,18 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
             const canvas = await window.html2canvas(element, { 
                 scale: 2, 
                 backgroundColor: '#ffffff',
-                useCORS: true,
-                onclone: (doc) => {
-                    const el = doc.getElementById('print-trade-final');
-                    if(el) {
-                        el.style.display = 'block';
-                        el.style.position = 'static';
-                        el.style.visibility = 'visible';
-                    }
-                }
+                useCORS: true
             });
             
             const imgData = canvas.toDataURL('image/png');
             // @ts-ignore
             const { jsPDF } = window.jspdf;
-            const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
-            const pdfWidth = 210;
+            const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+            const pdfWidth = 297;
             const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
             
             pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
-            pdf.save(`Final_Calculation_${selectedRecord?.fileNumber}.pdf`);
+            pdf.save(`${filename}.pdf`);
         } catch (e) {
             alert("خطا در ایجاد PDF");
         } finally {
@@ -696,10 +691,23 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
         }
     };
 
+    const handleDownloadFinalCalculationPDF = () => handleDownloadReportPDF('print-trade-final', `Final_Calculation_${selectedRecord?.fileNumber}`);
+
     // Render Logic
     const renderReportContent = () => {
         let filteredRecords = records;
         if (reportFilterCompany) filteredRecords = records.filter(r => r.company === reportFilterCompany);
+        
+        // Generic Search for all reports
+        if (reportSearchTerm) {
+            const term = reportSearchTerm.toLowerCase();
+            filteredRecords = filteredRecords.filter(r => 
+                r.fileNumber.includes(term) || 
+                r.goodsName.includes(term) || 
+                r.sellerName.includes(term) ||
+                (r.registrationNumber && r.registrationNumber.includes(term))
+            );
+        }
         
         switch (activeReport) {
             case 'general':
@@ -720,81 +728,96 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
                 let totalCnySum = 0;
 
                 return (
-                    <div className="overflow-auto max-h-[calc(100vh-220px)] border rounded-xl shadow-sm">
-                        <table className="min-w-max text-[11px] text-center border-collapse">
-                            <thead className="bg-gray-100 text-gray-700 font-bold sticky top-0 z-10 shadow-sm">
-                                <tr>
-                                    <th className="p-2 border border-gray-300">ردیف</th>
-                                    <th className="p-2 border border-gray-300">نوع ارز</th>
-                                    <th className="p-2 border border-gray-300">تاییدیه</th>
-                                    <th className="p-2 border border-gray-300">مدت انتظار (روز)</th>
-                                    <th className="p-2 border border-gray-300">حالت ثبت سفارش</th>
-                                    <th className="p-2 border border-gray-300">نام شرکت</th>
-                                    <th className="p-2 border border-gray-300">نام بانک عامل</th>
-                                    <th className="p-2 border border-gray-300">وضعیت تخصیص</th>
-                                    <th className="p-2 border border-gray-300">مهلت تخصیص</th>
-                                    <th className="p-2 border border-gray-300">زمان ثبت در سامانه</th>
-                                    <th className="p-2 border border-gray-300">شماره ثبت سفارش</th>
-                                    <th className="p-2 border border-gray-300 bg-blue-50">معادل ریالی</th>
-                                    <th className="p-2 border border-gray-300">دلار (USD)</th>
-                                    <th className="p-2 border border-gray-300">یورو (EUR)</th>
-                                    <th className="p-2 border border-gray-300">درهم (AED)</th>
-                                    <th className="p-2 border border-gray-300">یوان (CNY)</th>
-                                    <th className="p-2 border border-gray-300">شماره پرونده/پروفرما</th>
-                                    <th className="p-2 border border-gray-300">نوع کالا</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {queueRecords.map((r, idx) => {
-                                    const queueDate = r.stages[TradeStage.ALLOCATION_QUEUE].queueDate;
-                                    const days = queueDate ? calculateDaysDiff(queueDate) : 0;
-                                    const totalAmount = r.items.reduce((sum, i) => sum + i.totalPrice, 0) + (r.freightCost || 0);
-                                    const rialEquiv = totalAmount * (r.exchangeRate || 0);
-                                    const currency = r.mainCurrency || 'EUR';
-                                    
-                                    // Accumulate Totals
-                                    totalRialSum += rialEquiv;
-                                    if (currency === 'EUR') totalEurSum += totalAmount;
-                                    if (currency === 'USD') totalUsdSum += totalAmount;
-                                    if (currency === 'AED') totalAedSum += totalAmount;
-                                    if (currency === 'CNY') totalCnySum += totalAmount;
+                    <div id="allocation-report-table" className="relative">
+                        <div className="flex justify-end gap-2 mb-4">
+                            <input 
+                                type="text" 
+                                placeholder="جستجو در این گزارش..." 
+                                className="border rounded px-3 py-1 text-sm w-64"
+                                value={reportSearchTerm}
+                                onChange={(e) => setReportSearchTerm(e.target.value)}
+                            />
+                            <button onClick={handlePrintReport} className="bg-gray-100 p-2 rounded hover:bg-gray-200"><Printer size={18}/></button>
+                            <button onClick={() => handleDownloadReportPDF('allocation-report-table', 'Allocation_Report')} disabled={isGeneratingPdf} className="bg-gray-100 p-2 rounded hover:bg-gray-200">{isGeneratingPdf ? <Loader2 size={18} className="animate-spin"/> : <FileDown size={18}/>}</button>
+                        </div>
+                        
+                        <div className="overflow-auto max-h-[calc(100vh-280px)] border rounded-xl shadow-sm bg-white">
+                            <table className="min-w-max text-[11px] text-center border-collapse">
+                                <thead className="bg-gray-800 text-white font-bold sticky top-0 z-10 shadow-sm">
+                                    <tr>
+                                        <th className="p-2 border border-gray-600">ردیف</th>
+                                        <th className="p-2 border border-gray-600">نوع ارز</th>
+                                        <th className="p-2 border border-gray-600">تاییدیه</th>
+                                        <th className="p-2 border border-gray-600">مدت انتظار (روز)</th>
+                                        <th className="p-2 border border-gray-600">حالت ثبت سفارش</th>
+                                        <th className="p-2 border border-gray-600">نام شرکت</th>
+                                        <th className="p-2 border border-gray-600">نام بانک عامل</th>
+                                        <th className="p-2 border border-gray-600">وضعیت تخصیص</th>
+                                        <th className="p-2 border border-gray-600">مهلت تخصیص</th>
+                                        <th className="p-2 border border-gray-600">زمان ثبت در سامانه</th>
+                                        <th className="p-2 border border-gray-600">شماره ثبت سفارش</th>
+                                        <th className="p-2 border border-gray-600 bg-blue-900">معادل ریالی</th>
+                                        <th className="p-2 border border-gray-600">دلار (USD)</th>
+                                        <th className="p-2 border border-gray-600">یورو (EUR)</th>
+                                        <th className="p-2 border border-gray-600">درهم (AED)</th>
+                                        <th className="p-2 border border-gray-600">یوان (CNY)</th>
+                                        <th className="p-2 border border-gray-600">شماره پرونده/پروفرما</th>
+                                        <th className="p-2 border border-gray-600">نوع کالا</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {queueRecords.map((r, idx) => {
+                                        const queueDate = r.stages[TradeStage.ALLOCATION_QUEUE].queueDate;
+                                        const days = queueDate ? calculateDaysDiff(queueDate) : 0;
+                                        const totalAmount = r.items.reduce((sum, i) => sum + i.totalPrice, 0) + (r.freightCost || 0);
+                                        const rialEquiv = totalAmount * (r.exchangeRate || 0);
+                                        const currency = r.mainCurrency || 'EUR';
+                                        
+                                        // Accumulate Totals
+                                        totalRialSum += rialEquiv;
+                                        if (currency === 'EUR') totalEurSum += totalAmount;
+                                        if (currency === 'USD') totalUsdSum += totalAmount;
+                                        if (currency === 'AED') totalAedSum += totalAmount;
+                                        if (currency === 'CNY') totalCnySum += totalAmount;
 
-                                    return (
-                                        <tr key={r.id} className={`hover:bg-blue-50 border-b border-gray-200 transition-colors ${idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}`}>
-                                            <td className="p-2 border border-gray-200">{idx + 1}</td>
-                                            <td className="p-2 border border-gray-200 bg-orange-100">{r.currencyAllocationType || 'نیمایی'}</td>
-                                            <td className="p-2 border border-gray-200"><input type="checkbox" readOnly checked className="accent-blue-600"/></td>
-                                            <td className={`p-2 border border-gray-200 font-bold ${days > 30 ? 'text-red-600 bg-red-50' : 'text-gray-700'}`}>{days}</td>
-                                            <td className="p-2 border border-gray-200 bg-yellow-50 text-xs">نیاز تولید خود</td>
-                                            <td className="p-2 border border-gray-200 font-bold">{r.company}</td>
-                                            <td className="p-2 border border-gray-200 bg-gray-100">صنعت و معدن</td>
-                                            <td className="p-2 border border-gray-200 bg-yellow-100 text-yellow-800 font-bold">در صف</td>
-                                            <td className="p-2 border border-gray-200 dir-ltr font-mono text-[10px]">{r.registrationExpiry || '-'}</td>
-                                            <td className="p-2 border border-gray-200 dir-ltr font-mono text-[10px]">{r.registrationDate || '-'}</td>
-                                            <td className="p-2 border border-gray-200 font-mono font-bold">{r.registrationNumber}</td>
-                                            <td className="p-2 border border-gray-200 bg-blue-50 font-mono font-bold text-blue-800 dir-ltr">{formatCurrency(rialEquiv)}</td>
-                                            <td className="p-2 border border-gray-200 font-mono dir-ltr">{currency === 'USD' ? formatNumberString(totalAmount) : '-'}</td>
-                                            <td className="p-2 border border-gray-200 font-mono dir-ltr">{currency === 'EUR' ? formatNumberString(totalAmount) : '-'}</td>
-                                            <td className="p-2 border border-gray-200 font-mono dir-ltr">{currency === 'AED' ? formatNumberString(totalAmount) : '-'}</td>
-                                            <td className="p-2 border border-gray-200 font-mono dir-ltr">{currency === 'CNY' ? formatNumberString(totalAmount) : '-'}</td>
-                                            <td className="p-2 border border-gray-200 font-mono">{r.fileNumber}</td>
-                                            <td className="p-2 border border-gray-200 text-xs truncate max-w-[100px]">{r.goodsName}</td>
-                                        </tr>
-                                    );
-                                })}
-                            </tbody>
-                            <tfoot className="bg-gray-200 font-bold sticky bottom-0 z-10 border-t-2 border-gray-400">
-                                <tr>
-                                    <td colSpan={11} className="p-3 text-left">جمع کل</td>
-                                    <td className="p-2 border border-gray-300 font-mono dir-ltr text-blue-900">{formatCurrency(totalRialSum)}</td>
-                                    <td className="p-2 border border-gray-300 font-mono dir-ltr">{formatNumberString(totalUsdSum)}</td>
-                                    <td className="p-2 border border-gray-300 font-mono dir-ltr">{formatNumberString(totalEurSum)}</td>
-                                    <td className="p-2 border border-gray-300 font-mono dir-ltr">{formatNumberString(totalAedSum)}</td>
-                                    <td className="p-2 border border-gray-300 font-mono dir-ltr">{formatNumberString(totalCnySum)}</td>
-                                    <td colSpan={2}></td>
-                                </tr>
-                            </tfoot>
-                        </table>
+                                        return (
+                                            <tr key={r.id} className={`hover:bg-blue-50 border-b border-gray-200 transition-colors ${idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}`}>
+                                                <td className="p-2 border border-gray-200">{idx + 1}</td>
+                                                <td className="p-2 border border-gray-200 bg-orange-100 font-bold text-orange-800">{r.currencyAllocationType || 'نیمایی'}</td>
+                                                <td className="p-2 border border-gray-200"><input type="checkbox" readOnly checked className="accent-blue-600 w-4 h-4"/></td>
+                                                <td className={`p-2 border border-gray-200 font-bold ${days > 30 ? 'text-red-600 bg-red-50' : 'text-gray-700'}`}>{days}</td>
+                                                <td className="p-2 border border-gray-200 bg-yellow-50 text-xs font-medium">نیاز تولید خود</td>
+                                                <td className="p-2 border border-gray-200 font-bold">{r.company}</td>
+                                                <td className="p-2 border border-gray-200 bg-gray-100">{r.operatingBank || '-'}</td>
+                                                <td className="p-2 border border-gray-200 bg-yellow-100 text-yellow-800 font-bold">در صف</td>
+                                                <td className="p-2 border border-gray-200 dir-ltr font-mono text-[10px]">{r.registrationExpiry || '-'}</td>
+                                                <td className="p-2 border border-gray-200 dir-ltr font-mono text-[10px]">{r.registrationDate || '-'}</td>
+                                                <td className="p-2 border border-gray-200 font-mono font-bold text-gray-700">{r.registrationNumber}</td>
+                                                <td className="p-2 border border-gray-200 bg-blue-50 font-mono font-bold text-blue-800 dir-ltr">{formatCurrency(rialEquiv)}</td>
+                                                <td className="p-2 border border-gray-200 font-mono dir-ltr">{currency === 'USD' ? formatNumberString(totalAmount) : '-'}</td>
+                                                <td className="p-2 border border-gray-200 font-mono dir-ltr">{currency === 'EUR' ? formatNumberString(totalAmount) : '-'}</td>
+                                                <td className="p-2 border border-gray-200 font-mono dir-ltr">{currency === 'AED' ? formatNumberString(totalAmount) : '-'}</td>
+                                                <td className="p-2 border border-gray-200 font-mono dir-ltr">{currency === 'CNY' ? formatNumberString(totalAmount) : '-'}</td>
+                                                <td className="p-2 border border-gray-200 font-mono">{r.fileNumber}</td>
+                                                <td className="p-2 border border-gray-200 text-xs truncate max-w-[150px]" title={r.goodsName}>{r.goodsName}</td>
+                                            </tr>
+                                        );
+                                    })}
+                                </tbody>
+                                <tfoot className="bg-gray-200 font-bold sticky bottom-0 z-10 border-t-2 border-gray-400">
+                                    <tr>
+                                        <td colSpan={11} className="p-3 text-left">جمع کل</td>
+                                        <td className="p-2 border border-gray-300 font-mono dir-ltr text-blue-900">{formatCurrency(totalRialSum)}</td>
+                                        <td className="p-2 border border-gray-300 font-mono dir-ltr">{formatNumberString(totalUsdSum)}</td>
+                                        <td className="p-2 border border-gray-300 font-mono dir-ltr">{formatNumberString(totalEurSum)}</td>
+                                        <td className="p-2 border border-gray-300 font-mono dir-ltr">{formatNumberString(totalAedSum)}</td>
+                                        <td className="p-2 border border-gray-300 font-mono dir-ltr">{formatNumberString(totalCnySum)}</td>
+                                        <td colSpan={2}></td>
+                                    </tr>
+                                </tfoot>
+                            </table>
+                        </div>
+                        {queueRecords.length === 0 && <div className="text-center py-8 text-gray-400">موردی برای نمایش یافت نشد.</div>}
                     </div>
                 );
             case 'clearance':
@@ -1265,7 +1288,7 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
                             </div>
                             
                             <div className="flex justify-end gap-2">
-                                <button onClick={handlePrintTrade} className="bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-gray-50 text-sm"><Printer size={16}/> چاپ گزارش</button>
+                                <button onClick={handlePrintReport} className="bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-gray-50 text-sm"><Printer size={16}/> چاپ گزارش</button>
                                 <button onClick={handleDownloadFinalCalculationPDF} disabled={isGeneratingPdf} className="bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-gray-50 text-sm">{isGeneratingPdf ? <Loader2 size={16} className="animate-spin"/> : <FileDown size={16}/>} دانلود PDF</button>
                             </div>
 
@@ -1383,7 +1406,8 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
                                     <div className="space-y-1"><label className="text-xs font-bold text-gray-700">شماره ثبت سفارش</label><input className="w-full border rounded p-2 text-sm dir-ltr font-mono" value={selectedRecord.registrationNumber || ''} onChange={(e) => handleUpdateProforma('registrationNumber', e.target.value)} placeholder="8-digit code"/></div>
                                     <div className="space-y-1"><label className="text-xs font-bold text-gray-700">تاریخ صدور</label><input className="w-full border rounded p-2 text-sm dir-ltr" value={selectedRecord.registrationDate || ''} onChange={(e) => handleUpdateProforma('registrationDate', e.target.value)} placeholder="1403/01/01"/></div>
                                     <div className="space-y-1"><label className="text-xs font-bold text-gray-700">مهلت اعتبار</label><input className="w-full border rounded p-2 text-sm dir-ltr" value={selectedRecord.registrationExpiry || ''} onChange={(e) => handleUpdateProforma('registrationExpiry', e.target.value)} placeholder="1403/06/01"/></div>
-                                    <div className="space-y-1"><label className="text-xs font-bold text-gray-700">نوع ارز (منشا)</label><select className="w-full border rounded p-2 text-sm bg-white" value={selectedRecord.currencyAllocationType || ''} onChange={(e) => handleUpdateProforma('currencyAllocationType', e.target.value)}><option value="">-- انتخاب کنید --</option><option value="ارز مبادله ای">ارز مبادله ای</option><option value="ارز حاصل از صادرات دیگران">ارز حاصل از صادرات دیگران</option><option value="ارز حاصل از صادرات خود">ارز حاصل از صادرات خود</option></select></div>
+                                    <div className="space-y-1"><label className="text-xs font-bold text-gray-700">نوع ارز (منشا)</label><select className="w-full border rounded p-2 text-sm bg-white" value={selectedRecord.currencyAllocationType || ''} onChange={(e) => handleUpdateProforma('currencyAllocationType', e.target.value)}><option value="">-- انتخاب کنید --</option><option value="ارز مبادله ای">ارز مبادله ای</option><option value="ارز حاصل از صادرات دیگران">ارز حاصل از صادرات دیگران</option><option value="ارز حاصل از صادرات خود">ارز حاصل از صادرات خود</option><option value="ارز نیمایی">ارز نیمایی</option></select></div>
+                                    <div className="space-y-1"><label className="text-xs font-bold text-gray-700">بانک عامل</label><select className="w-full border rounded p-2 text-sm bg-white" value={selectedRecord.operatingBank || ''} onChange={(e) => handleUpdateProforma('operatingBank', e.target.value)}><option value="">-- انتخاب بانک --</option>{availableBanks.map(b => <option key={b} value={b}>{b}</option>)}</select></div>
                                 </div>
                             </div>
 
