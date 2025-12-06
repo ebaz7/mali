@@ -426,6 +426,15 @@ export interface InvoiceItem {
     totalPrice: number;
 }
 
+export interface PackingItem {
+    id: string;
+    description: string;
+    netWeight: number;
+    grossWeight: number;
+    packageCount: number;
+    part: string;
+}
+
 export interface ShippingDocument {
     id: string;
     type: ShippingDocType;
@@ -441,9 +450,10 @@ export interface ShippingDocument {
     currency?: string;
     
     // Packing Specific
-    netWeight?: number;
-    grossWeight?: number;
-    packagesCount?: number;
+    packingItems?: PackingItem[];
+    netWeight?: number; // Total Net
+    grossWeight?: number; // Total Gross
+    packagesCount?: number; // Total Packages
 
     // CO Specific
     chamberOfCommerce?: string;
