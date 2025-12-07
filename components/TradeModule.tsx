@@ -334,18 +334,24 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
         if (reportSearchTerm) { const term = reportSearchTerm.toLowerCase(); filteredRecords = filteredRecords.filter(r => r.fileNumber.includes(term) || r.goodsName.includes(term) || r.sellerName.includes(term)); }
         
         const usdRate = parseFloat(reportEurUsdRate) || 1.08;
-        const rialRate = parseFloat(reportUsdRialRate) || 0;
+        const rialRate = deformatNumberString(reportUsdRialRate) || 0; // Fixed: using deformat to ensure number
 
-        const dataRows = filteredRecords.filter(r => r.stages[TradeStage.ALLOCATION_QUEUE]?.queueDate).map((r, index) => {
+        const dataRows = filteredRecords.filter(r => r.status !== 'Completed').map((r, index) => {
             const stageQ = r.stages[TradeStage.ALLOCATION_QUEUE];
             const stageA = r.stages[TradeStage.ALLOCATION_APPROVED];
             const isAllocated = stageA?.allocationCode;
             
-            const amount = stageQ.costCurrency || 0;
+            // Fallback: If stage cost is 0, use total items price
+            let amount = stageQ.costCurrency;
+            if (!amount || amount === 0) {
+                amount = r.items.reduce((sum, item) => sum + item.totalPrice, 0);
+            }
+
             const currency = r.mainCurrency || 'EUR';
             let amountInUSD = 0;
             if (currency === 'USD') amountInUSD = amount;
             else if (currency === 'EUR') amountInUSD = amount * usdRate;
+            else amountInUSD = amount; // Fallback for other currencies (assume 1:1 if rate unknown or user must convert)
             
             const rialEquiv = amountInUSD * rialRate;
             const daysWait = calculateDaysDiff(stageQ.queueDate || '');
@@ -454,47 +460,57 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
                 let totalAllocated = 0;
                 let totalQueue = 0;
                 const usdRate = parseFloat(reportEurUsdRate) || 1.08;
+                // Deformat ensures we get the number even if there are commas (e.g. 500,000)
+                const rialRate = deformatNumberString(reportUsdRialRate) || 0;
 
-                const processedRecords = filteredRecords.filter(r => r.stages[TradeStage.ALLOCATION_QUEUE]?.queueDate).map(r => {
+                // CHANGED: Filter to include ALL active records (not completed), even if queueDate is missing, so user sees data gaps.
+                const processedRecords = filteredRecords.filter(r => r.status !== 'Completed').map((r, index) => {
                     const stageQ = r.stages[TradeStage.ALLOCATION_QUEUE];
                     const stageA = r.stages[TradeStage.ALLOCATION_APPROVED];
                     const isAllocated = stageA?.allocationCode;
                     
-                    const amount = stageQ.costCurrency || 0;
+                    // CHANGED: Fallback to total proforma price if stage cost is 0
+                    let amount = stageQ.costCurrency;
+                    if (!amount || amount === 0) {
+                        amount = r.items.reduce((sum, item) => sum + item.totalPrice, 0);
+                    }
+
                     const currency = r.mainCurrency || 'EUR';
                     let amountInUSD = 0;
 
                     if (currency === 'USD') amountInUSD = amount;
                     else if (currency === 'EUR') amountInUSD = amount * usdRate;
-                    // Add more conversions if needed
+                    else amountInUSD = amount; // Fallback for other currencies (assume 1:1 if rate unknown or user must convert)
 
-                    if (!companySummary[r.company || 'Unknown']) {
-                        companySummary[r.company || 'Unknown'] = { allocated: 0, queue: 0 };
+                    // Company Summary Logic
+                    const companyName = r.company || 'نامشخص';
+                    if (!companySummary[companyName]) {
+                        companySummary[companyName] = { allocated: 0, queue: 0 };
                     }
 
                     if (isAllocated) {
-                        companySummary[r.company || 'Unknown'].allocated += amountInUSD;
+                        companySummary[companyName].allocated += amountInUSD;
                         totalAllocated += amountInUSD;
                     } else {
-                        companySummary[r.company || 'Unknown'].queue += amountInUSD;
+                        companySummary[companyName].queue += amountInUSD;
                         totalQueue += amountInUSD;
                     }
 
-                    return { ...r, amountInUSD, isAllocated };
+                    return { ...r, amount, amountInUSD, isAllocated, stageQ, stageA };
                 });
 
                 return (
                     <div className="overflow-x-auto bg-white p-4 rounded-lg" id="allocation-report-table-print-area">
                         {/* Settings Bar for Report */}
                         <div className="bg-gray-100 p-3 rounded mb-4 flex flex-wrap gap-4 text-xs no-print items-center justify-between border border-gray-200">
-                            <div className="flex gap-4 items-center">
+                            <div className="flex gap-4 items-center flex-wrap">
                                 <div className="flex items-center gap-2">
-                                    <label className="font-bold text-gray-700">نرخ تبدیل یورو به دلار:</label>
-                                    <input type="number" className="border p-1.5 rounded w-20 text-center" value={reportEurUsdRate} onChange={e => setReportEurUsdRate(e.target.value)} />
+                                    <label className="font-bold text-gray-700">نرخ برابری EUR به USD:</label>
+                                    <input type="number" step="0.01" className="border p-1.5 rounded w-20 text-center font-bold" value={reportEurUsdRate} onChange={e => setReportEurUsdRate(e.target.value)} />
                                 </div>
                                 <div className="flex items-center gap-2">
-                                    <label className="font-bold text-gray-700">نرخ دلار به ریال:</label>
-                                    <input type="text" className="border p-1.5 rounded w-28 text-center" value={formatNumberString(reportUsdRialRate)} onChange={e => setReportUsdRialRate(deformatNumberString(e.target.value).toString())} />
+                                    <label className="font-bold text-gray-700">نرخ ارز مبادله‌ای (ریال):</label>
+                                    <input type="text" className="border p-1.5 rounded w-32 text-center font-bold" value={formatNumberString(reportUsdRialRate)} onChange={e => setReportUsdRialRate(deformatNumberString(e.target.value).toString())} />
                                 </div>
                             </div>
                             <div className="flex gap-2">
@@ -526,12 +542,8 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
                             </thead>
                             <tbody>
                                 {processedRecords.map((r, index) => {
-                                    const stageQ = r.stages[TradeStage.ALLOCATION_QUEUE];
-                                    const stageA = r.stages[TradeStage.ALLOCATION_APPROVED];
-                                    const isAllocated = r.isAllocated;
-                                    // const daysWait = calculateDaysDiff(stageQ.queueDate || ''); // Removed as per requested screenshot logic
-                                    const rialRate = parseFloat(reportUsdRialRate) || 0;
-                                    const rialEquiv = r.amountInUSD * rialRate;
+                                    const { stageQ, stageA, isAllocated, amount, amountInUSD } = r;
+                                    const rialEquiv = amountInUSD * rialRate;
                                     
                                     // Origin Label mapping
                                     const originMap: any = { 'Bank': 'بانکی', 'Export': 'صادرات', 'Free': 'آزاد', 'Nima': 'نیما' };
@@ -561,10 +573,10 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
                                             </td>
                                             <td className="p-2 border-r border-gray-300 font-mono">{r.registrationNumber || '-'}</td>
                                             <td className="p-2 border-r border-gray-300 font-bold">{r.company}</td>
-                                            <td className="p-2 border-r border-gray-300 font-mono text-left" dir="ltr">{formatCurrency(stageQ.costCurrency)} {r.mainCurrency}</td>
-                                            <td className="p-2 border-r border-gray-300 font-mono font-bold text-left" dir="ltr">$ {formatUSD(r.amountInUSD)}</td>
+                                            <td className="p-2 border-r border-gray-300 font-mono text-left" dir="ltr">{formatCurrency(amount)} {r.mainCurrency}</td>
+                                            <td className="p-2 border-r border-gray-300 font-mono font-bold text-left" dir="ltr">$ {formatUSD(amountInUSD)}</td>
                                             <td className="p-2 border-r border-gray-300 font-mono text-blue-600 text-left" dir="ltr">{formatCurrency(rialEquiv)}</td>
-                                            <td className="p-2 border-r border-gray-300 dir-ltr">{stageQ.queueDate}</td>
+                                            <td className="p-2 border-r border-gray-300 dir-ltr">{stageQ?.queueDate || '-'}</td>
                                             <td className="p-2 border-r border-gray-300 dir-ltr">{stageA?.allocationDate || '-'}</td>
                                             <td className={`p-2 border-r border-gray-300 ${remainingColorClass}`}>{remainingDays}</td>
                                             <td className={`p-2 border-r border-gray-300 font-bold ${isAllocated ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}`}>
