@@ -489,6 +489,10 @@ export interface TradeRecord {
     registrationExpiry?: string; // مهلت ثبت سفارش
     currencyAllocationType?: string; // New: نوع ارز تخصیصی
     
+    // Report specific interactive fields
+    allocationCurrencyRank?: 'Type1' | 'Type2'; // نوع اول / نوع دوم
+    isPriority?: boolean; // اولویت
+
     commodityGroup?: string; // گروه کالایی
     sellerName: string; // فروشنده
     mainCurrency?: string; // ارز پایه (USD, EUR, etc.)
