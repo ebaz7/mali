@@ -322,33 +322,55 @@ async function processN8NRequest(user, messageText, audioData = null, audioMimeT
         };
 
         const response = await axios.post(webhookUrl, payload, { timeout: 40000 }); // timeout increased for audio
-        const data = response.data;
+        let data = response.data;
 
-        // Ensure data is parsed if n8n returns stringified JSON
-        let parsedData = data;
+        console.log(">>> Raw n8n response:", JSON.stringify(data, null, 2));
+
+        // 1. Handle Array Response (n8n sometimes returns array of items)
+        if (Array.isArray(data)) {
+            data = data[0];
+        }
+
+        // 2. Handle String Response (Markdown/JSON string)
         if (typeof data === 'string') {
-            try { parsedData = JSON.parse(data); } catch(e) {}
+            // Remove markdown code blocks if present
+            const cleanData = data.replace(/```json\s?|```/g, '').trim();
+            try { 
+                data = JSON.parse(cleanData); 
+            } catch(e) {
+                // If it's a plain string and not JSON, treat it as the message text
+                if (!cleanData.startsWith('{') && !cleanData.startsWith('[')) {
+                    return cleanData;
+                }
+            }
         }
 
-        // Handle Smart Analysis JSON Response
-        if (parsedData.recommendation && parsedData.score) {
-            return parsedData;
+        // 3. Handle Smart Analysis JSON Response
+        if (data.recommendation && data.score) {
+            return data;
         }
 
-        if (parsedData.type === 'message') {
-            return parsedData.text;
+        // 4. Handle Standard Tool/Message Response
+        if (data.type === 'message') {
+            return data.text;
         } 
         
-        if (parsedData.type === 'tool_call') {
-            return handleToolExecution(parsedData.tool, parsedData.args, user);
+        if (data.type === 'tool_call') {
+            return handleToolExecution(data.tool, data.args, user);
         }
 
-        if (parsedData.text || parsedData.reply) return parsedData.text || parsedData.reply;
-        if (typeof parsedData === 'string') return parsedData;
+        // 5. Fallback heuristics for malformed JSON
+        if (data.text) return data.text;
+        if (data.reply) return data.reply;
+        if (data.message && data.message.content) return data.message.content; // Raw OpenAI structure
+        if (data.content) return data.content;
 
-        return "پاسخ نامفهومی از هوش مصنوعی دریافت شد.";
+        console.warn(">>> Unknown AI Response Format:", data);
+        return `پاسخ نامفهومی از هوش مصنوعی دریافت شد. \n(داده خام: ${JSON.stringify(data)})`;
 
     } catch (error) {
+        console.error(">>> AI Request Error:", error.message);
+        
         // --- FALLBACK MODE (OFFLINE AI) ---
         if (systemPrompt && systemPrompt.includes("JSON generator")) {
             return null; 
@@ -358,18 +380,18 @@ async function processN8NRequest(user, messageText, audioData = null, audioMimeT
             return "🎤 پیام صوتی دریافت شد اما ارتباط با سرویس هوش مصنوعی (n8n) برقرار نیست.";
         }
 
-        // Simple Rule-Based Chatbot
+        // Simple Rule-Based Chatbot Fallback
         const lowerMsg = (messageText || '').toLowerCase();
         
         if (lowerMsg.includes('سلام') || lowerMsg.includes('درود')) {
-            return `سلام ${user.fullName} عزیز! چطور می‌توانم کمکتان کنم؟ (حالت آفلاین)`;
+            return `سلام ${user.fullName} عزیز! (حالت آفلاین)`;
         }
         
         if (lowerMsg.includes('وضعیت') || lowerMsg.includes('گزارش') || lowerMsg.includes('کارتابل')) {
             return handleToolExecution('get_financial_summary', {}, user);
         }
 
-        return "⚠️ ارتباط با موتور هوشمند برقرار نیست. سیستم در حالت آفلاین کار می‌کند.";
+        return "⚠️ ارتباط با موتور هوشمند (n8n) برقرار نیست.\nلطفا بررسی کنید که:\n۱. کانتینر n8n در حال اجرا باشد.\n۲. اعتبارنامه OpenAI در n8n تنظیم شده باشد.\n۳. آدرس وب‌هوک صحیح باشد.";
     }
 }
 
