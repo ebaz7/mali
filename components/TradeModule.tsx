@@ -43,7 +43,7 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
     
     // Report Specific States
     const [reportSearchTerm, setReportSearchTerm] = useState('');
-    const [reportUsdRialRate, setReportUsdRialRate] = useState<string>('600000'); // Default Rial Rate
+    const [reportUsdRialRate, setReportUsdRialRate] = useState<string>('500000'); // Default Rial Rate
     const [reportEurUsdRate, setReportEurUsdRate] = useState<string>('1.08'); // Default EUR to USD Rate
     const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
     const [sendingReport, setSendingReport] = useState(false);
@@ -352,6 +352,17 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
             const originMap: any = { 'Bank': 'بانکی', 'Export': 'صادرات', 'Free': 'آزاد', 'Nima': 'نیما' };
             const originLabel = originMap[r.currencyAllocationType || ''] || '-';
 
+            // Calculate Remaining Days
+            let remainingDays: string | number = '-';
+            if (isAllocated && stageA?.allocationExpiry) {
+                const expiry = parsePersianDate(stageA.allocationExpiry);
+                if (expiry) {
+                    const now = new Date();
+                    const diffTime = expiry.getTime() - now.getTime();
+                    remainingDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                }
+            }
+
             return [
                 index + 1,
                 escape(r.fileNumber),
@@ -364,7 +375,7 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
                 escape(rialEquiv),
                 escape(stageQ.queueDate || ''),
                 escape(stageA?.allocationDate || '-'),
-                escape(daysWait || 0),
+                escape(remainingDays),
                 escape(isAllocated ? 'تخصیص یافته' : 'در صف'),
                 escape(r.operatingBank || '-')
             ].join(",");
@@ -518,13 +529,28 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
                                     const stageQ = r.stages[TradeStage.ALLOCATION_QUEUE];
                                     const stageA = r.stages[TradeStage.ALLOCATION_APPROVED];
                                     const isAllocated = r.isAllocated;
-                                    const daysWait = calculateDaysDiff(stageQ.queueDate || '');
+                                    // const daysWait = calculateDaysDiff(stageQ.queueDate || ''); // Removed as per requested screenshot logic
                                     const rialRate = parseFloat(reportUsdRialRate) || 0;
                                     const rialEquiv = r.amountInUSD * rialRate;
                                     
                                     // Origin Label mapping
                                     const originMap: any = { 'Bank': 'بانکی', 'Export': 'صادرات', 'Free': 'آزاد', 'Nima': 'نیما' };
                                     const originLabel = originMap[r.currencyAllocationType || ''] || '-';
+
+                                    // Calculate Remaining Days Logic
+                                    let remainingDays: string | number = '-';
+                                    let remainingColorClass = 'text-gray-500';
+
+                                    if (isAllocated && stageA?.allocationExpiry) {
+                                        const expiry = parsePersianDate(stageA.allocationExpiry);
+                                        if (expiry) {
+                                            const now = new Date();
+                                            const diffTime = expiry.getTime() - now.getTime();
+                                            const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                                            remainingDays = diffDays;
+                                            remainingColorClass = diffDays > 0 ? 'text-green-600 font-bold' : 'text-red-600 font-bold';
+                                        }
+                                    }
 
                                     return (
                                         <tr key={r.id} className="hover:bg-gray-50 border-b border-gray-300">
@@ -540,7 +566,7 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
                                             <td className="p-2 border-r border-gray-300 font-mono text-blue-600 text-left" dir="ltr">{formatCurrency(rialEquiv)}</td>
                                             <td className="p-2 border-r border-gray-300 dir-ltr">{stageQ.queueDate}</td>
                                             <td className="p-2 border-r border-gray-300 dir-ltr">{stageA?.allocationDate || '-'}</td>
-                                            <td className={`p-2 border-r border-gray-300 font-bold ${isAllocated ? 'text-green-600' : 'text-amber-600'}`}>{daysWait}</td>
+                                            <td className={`p-2 border-r border-gray-300 ${remainingColorClass}`}>{remainingDays}</td>
                                             <td className={`p-2 border-r border-gray-300 font-bold ${isAllocated ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}`}>
                                                 {isAllocated ? 'تخصیص یافته' : 'در صف'}
                                             </td>
