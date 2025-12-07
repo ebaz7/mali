@@ -317,6 +317,117 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
     const handleUpdateRecordFromTable = async (record: TradeRecord, updates: Partial<TradeRecord>) => { const updated = { ...record, ...updates }; const newRecords = records.map(r => r.id === record.id ? updated : r); setRecords(newRecords); await updateTradeRecord(updated); };
     const formatUSD = (val: number) => { return val.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); };
     
+    // New Export Functions for Allocation Report
+    const handleExportAllocationExcel = () => {
+        // Collect data from the DOM or State logic
+        // We reuse the filtered logic below to match exactly what is shown
+        const rows = [];
+        // Headers
+        const headers = ["ردیف", "شماره پرونده", "شماره ثبت سفارش", "شرکت", "فروشنده", "منشا ارز", "مبلغ ثبت سفارش", "تبدیل به دلار", "معادل ریالی", "زمان در صف", "زمان تخصیص", "مانده مهلت", "وضعیت", "بانک عامل"];
+        rows.push(headers.join(","));
+
+        // Helper to escape CSV
+        const escape = (val: string | number) => `"${String(val).replace(/"/g, '""')}"`;
+
+        let filteredRecords = records;
+        if (reportFilterCompany) filteredRecords = records.filter(r => r.company === reportFilterCompany);
+        if (reportSearchTerm) { const term = reportSearchTerm.toLowerCase(); filteredRecords = filteredRecords.filter(r => r.fileNumber.includes(term) || r.goodsName.includes(term) || r.sellerName.includes(term)); }
+        
+        const usdRate = parseFloat(reportEurUsdRate) || 1.08;
+        const rialRate = parseFloat(reportUsdRialRate) || 0;
+
+        const dataRows = filteredRecords.filter(r => r.stages[TradeStage.ALLOCATION_QUEUE]?.queueDate).map((r, index) => {
+            const stageQ = r.stages[TradeStage.ALLOCATION_QUEUE];
+            const stageA = r.stages[TradeStage.ALLOCATION_APPROVED];
+            const isAllocated = stageA?.allocationCode;
+            
+            const amount = stageQ.costCurrency || 0;
+            const currency = r.mainCurrency || 'EUR';
+            let amountInUSD = 0;
+            if (currency === 'USD') amountInUSD = amount;
+            else if (currency === 'EUR') amountInUSD = amount * usdRate;
+            
+            const rialEquiv = amountInUSD * rialRate;
+            const daysWait = calculateDaysDiff(stageQ.queueDate || '');
+            const originMap: any = { 'Bank': 'بانکی', 'Export': 'صادرات', 'Free': 'آزاد', 'Nima': 'نیما' };
+            const originLabel = originMap[r.currencyAllocationType || ''] || '-';
+
+            return [
+                index + 1,
+                escape(r.fileNumber),
+                escape(r.registrationNumber || ''),
+                escape(r.company || ''),
+                escape(r.sellerName),
+                escape(originLabel),
+                escape(`${amount} ${currency}`),
+                escape(amountInUSD.toFixed(2)),
+                escape(rialEquiv),
+                escape(stageQ.queueDate || ''),
+                escape(stageA?.allocationDate || '-'),
+                escape(daysWait || 0),
+                escape(isAllocated ? 'تخصیص یافته' : 'در صف'),
+                escape(r.operatingBank || '-')
+            ].join(",");
+        });
+
+        const csvContent = "\uFEFF" + rows.concat(dataRows).join("\n");
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const link = document.createElement("a");
+        link.href = URL.createObjectURL(blob);
+        link.download = `Allocation_Queue_${new Date().toISOString().slice(0,10)}.csv`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    };
+
+    const handleShareAllocationWhatsApp = async () => {
+        if (!settings?.whatsappNumber) {
+            alert('شماره واتساپ در تنظیمات وارد نشده است.');
+            return;
+        }
+        let target = prompt("شماره یا آیدی گروه را وارد کنید:", settings.whatsappNumber);
+        if (!target) return;
+
+        setSendingReport(true);
+        const element = document.getElementById('allocation-report-table-print-area');
+        if (!element) {
+            setSendingReport(false);
+            return;
+        }
+
+        try {
+            // @ts-ignore
+            const canvas = await window.html2canvas(element, { 
+                scale: 2, 
+                useCORS: true, 
+                backgroundColor: '#ffffff',
+                onclone: (doc) => {
+                    const el = doc.getElementById('allocation-report-table-print-area');
+                    if (el) {
+                        el.style.width = '1200px'; // Force width for better image
+                        el.style.direction = 'rtl';
+                    }
+                }
+            });
+            const base64 = canvas.toDataURL('image/png').split(',')[1];
+            
+            await apiCall('/send-whatsapp', 'POST', {
+                number: target,
+                message: `گزارش صف تخصیص ارز - ${new Date().toLocaleDateString('fa-IR')}`,
+                mediaData: {
+                    data: base64,
+                    mimeType: 'image/png',
+                    filename: `allocation_report.png`
+                }
+            });
+            alert('گزارش با موفقیت به واتساپ ارسال شد.');
+        } catch (e: any) {
+            alert(`خطا در ارسال: ${e.message}`);
+        } finally {
+            setSendingReport(false);
+        }
+    };
+
     // ... (Keep existing renderReportContent) ...
     const renderReportContent = () => {
         let filteredRecords = records;
@@ -362,16 +473,24 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
                 });
 
                 return (
-                    <div className="overflow-x-auto" id="allocation-report-table-print-area">
+                    <div className="overflow-x-auto bg-white p-4 rounded-lg" id="allocation-report-table-print-area">
                         {/* Settings Bar for Report */}
-                        <div className="bg-gray-100 p-3 rounded mb-4 flex gap-4 text-xs no-print">
-                            <div className="flex items-center gap-2">
-                                <label>نرخ تبدیل یورو به دلار:</label>
-                                <input type="number" className="border p-1 w-20 text-center" value={reportEurUsdRate} onChange={e => setReportEurUsdRate(e.target.value)} />
+                        <div className="bg-gray-100 p-3 rounded mb-4 flex flex-wrap gap-4 text-xs no-print items-center justify-between border border-gray-200">
+                            <div className="flex gap-4 items-center">
+                                <div className="flex items-center gap-2">
+                                    <label className="font-bold text-gray-700">نرخ تبدیل یورو به دلار:</label>
+                                    <input type="number" className="border p-1.5 rounded w-20 text-center" value={reportEurUsdRate} onChange={e => setReportEurUsdRate(e.target.value)} />
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <label className="font-bold text-gray-700">نرخ دلار به ریال:</label>
+                                    <input type="text" className="border p-1.5 rounded w-28 text-center" value={formatNumberString(reportUsdRialRate)} onChange={e => setReportUsdRialRate(deformatNumberString(e.target.value).toString())} />
+                                </div>
                             </div>
-                            <div className="flex items-center gap-2">
-                                <label>نرخ دلار به ریال (جهت نمایش):</label>
-                                <input type="text" className="border p-1 w-28 text-center" value={formatNumberString(reportUsdRialRate)} onChange={e => setReportUsdRialRate(deformatNumberString(e.target.value).toString())} />
+                            <div className="flex gap-2">
+                                <button onClick={handleExportAllocationExcel} className="bg-green-600 text-white px-3 py-1.5 rounded hover:bg-green-700 flex items-center gap-1"><FileSpreadsheet size={14}/> اکسل</button>
+                                <button onClick={() => handleDownloadReportPDF('allocation-report-table-print-area', 'Allocation_Report')} className="bg-red-600 text-white px-3 py-1.5 rounded hover:bg-red-700 flex items-center gap-1"><FileDown size={14}/> PDF</button>
+                                <button onClick={handleShareAllocationWhatsApp} disabled={sendingReport} className="bg-green-500 text-white px-3 py-1.5 rounded hover:bg-green-600 flex items-center gap-1">{sendingReport ? <Loader2 size={14} className="animate-spin"/> : <Share2 size={14}/>} واتساپ</button>
+                                <button onClick={handlePrintReport} className="bg-blue-600 text-white px-3 py-1.5 rounded hover:bg-blue-700 flex items-center gap-1"><Printer size={14}/> چاپ</button>
                             </div>
                         </div>
 
