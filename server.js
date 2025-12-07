@@ -195,11 +195,33 @@ const syncN8nWorkflow = async () => {
     }, 2000);
 };
 
-const startN8nService = () => {
+const checkN8nStatus = async () => {
+    try {
+        // Try pinging n8n default port
+        // Use shorter timeout to fail fast if down
+        await axios.get('http://localhost:5678/healthz', { timeout: 1000 });
+        return true;
+    } catch (e) {
+        // If status code is present (e.g. 401 auth required), it means service IS running
+        if (e.response && (e.response.status === 401 || e.response.status === 200)) return true;
+        // ECONNREFUSED means it is definitely down
+        return false;
+    }
+};
+
+const startN8nService = async () => {
     if (process.env.N8N_WEBHOOK_URL) {
         console.log('>>> Using external/docker n8n service defined in env.');
         return;
     }
+
+    // --- SMART CHECK: IS N8N ALREADY RUNNING? ---
+    const isRunning = await checkN8nStatus();
+    if (isRunning) {
+        console.log('>>> ⚡ n8n service is ALREADY RUNNING on port 5678. Skipping launch.');
+        return;
+    }
+    // --------------------------------------------
 
     console.log('>>> Initializing Local AI Engine (n8n)...');
     
