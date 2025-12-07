@@ -105,8 +105,21 @@
     },
     {
       "parameters": {
+        "jsCode": "const content = $input.item.json.message.content;\nlet cleanContent = content;\n\n// Remove Markdown blocks\nif (typeof content === 'string') {\n  cleanContent = content.replace(/```json\\s?|```/g, '').trim();\n}\n\ntry {\n  const parsed = JSON.parse(cleanContent);\n  return { json: parsed };\n} catch (e) {\n  // Fallback if not valid JSON, force a message structure\n  return { \n    json: { \n      type: 'message', \n      text: cleanContent || \"خطا در پردازش پاسخ هوش مصنوعی.\" \n    } \n  };\n}"
+      },
+      "id": "sanitize-output",
+      "name": "Sanitize JSON",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1480,
+        340
+      ]
+    },
+    {
+      "parameters": {
         "respondWith": "json",
-        "responseBody": "={{ JSON.parse($json.message.content) }}",
+        "responseBody": "={{ $json }}",
         "options": {}
       },
       "id": "webhook-response",
@@ -114,7 +127,7 @@
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1,
       "position": [
-        1480,
+        1700,
         340
       ]
     }
@@ -172,6 +185,17 @@
       ]
     },
     "OpenAI Chat": {
+      "main": [
+        [
+          {
+            "node": "Sanitize JSON",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sanitize JSON": {
       "main": [
         [
           {

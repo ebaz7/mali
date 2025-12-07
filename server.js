@@ -324,10 +324,16 @@ async function processN8NRequest(user, messageText, audioData = null, audioMimeT
             timestamp: new Date().toISOString()
         };
 
-        const response = await axios.post(webhookUrl, payload, { timeout: 40000 }); // timeout increased for audio
+        const response = await axios.post(webhookUrl, payload, { timeout: 60000 }); // timeout increased
         let data = response.data;
 
         console.log(">>> Raw n8n response:", JSON.stringify(data, null, 2));
+
+        // HANDLE EMPTY RESPONSE (Empty String)
+        if (data === "") {
+            console.warn(">>> n8n returned empty string.");
+            return "⛔ هوش مصنوعی پاسخ خالی داد. لطفاً لاگ‌های n8n را بررسی کنید.";
+        }
 
         // CRITICAL CHECK: If n8n returns standard success message instead of our JSON
         if (data && data.message === 'Workflow was started') {
@@ -705,7 +711,13 @@ const initTelegram = async () => {
 
                 if (messageText || audioData) {
                     const reply = await processN8NRequest(user, messageText, audioData);
-                    telegramBot.sendMessage(chatId, typeof reply === 'string' ? reply : JSON.stringify(reply, null, 2));
+                    
+                    // CRITICAL FIX: Only send if reply is not empty to avoid ETELEGRAM crash
+                    if (reply && typeof reply === 'string' && reply.trim() !== '') {
+                        telegramBot.sendMessage(chatId, reply);
+                    } else if (typeof reply === 'object') {
+                        telegramBot.sendMessage(chatId, JSON.stringify(reply, null, 2));
+                    }
                 }
             });
             
@@ -789,7 +801,9 @@ const initWhatsApp = async () => {
             // If it's a voice message or text message, process it
             if (messageText || audioData) {
                 const reply = await processN8NRequest(user, messageText, audioData, audioMimeType);
-                msg.reply(typeof reply === 'string' ? reply : JSON.stringify(reply));
+                if (reply) {
+                    msg.reply(typeof reply === 'string' ? reply : JSON.stringify(reply));
+                }
             }
         });
 
