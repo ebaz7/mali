@@ -5,7 +5,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import axios from 'axios';
-import { spawn } from 'child_process';
+import { spawn, execSync } from 'child_process';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -122,7 +122,7 @@ const syncN8nWorkflow = async () => {
     console.log(`>>> Starting n8n Sync to ${apiBase}...`);
 
     let attempts = 0;
-    const maxAttempts = 20; // Try for 60 seconds
+    const maxAttempts = 30; // Increased to 30 attempts (90 seconds) to allow for install time
     
     const interval = setInterval(async () => {
         attempts++;
@@ -160,7 +160,7 @@ const syncN8nWorkflow = async () => {
             clearInterval(interval);
         } catch (e) {
             // Silent error logging while waiting for startup
-            if (attempts % 3 === 0) console.log(`>>> Waiting for n8n to be ready (${attempts}/${maxAttempts})...`);
+            if (attempts % 5 === 0) console.log(`>>> Waiting for n8n to be ready (${attempts}/${maxAttempts})...`);
         }
     }, 3000);
 };
@@ -173,14 +173,26 @@ const startN8nService = () => {
     }
 
     console.log('>>> Initializing Local AI Engine (n8n)...');
-    console.log('>>> This may take a few moments. We are setting up n8n for you.');
     
     const isWin = process.platform === 'win32';
-    // Use npx to ensure we run the installed n8n, passing -y to skip prompts
-    const command = isWin ? 'npx.cmd' : 'npx';
-    const args = ['-y', 'n8n', 'start'];
+    const npmCmd = isWin ? 'npm.cmd' : 'npm';
+    
+    // 1. Check if n8n is installed, if not, install it.
+    const localBinPath = path.join(__dirname, 'node_modules', '.bin', isWin ? 'n8n.cmd' : 'n8n');
+    
+    if (!fs.existsSync(localBinPath)) {
+        console.log('>>> n8n binary not found. Installing n8n locally (this may take a few minutes)...');
+        try {
+            execSync(`${npmCmd} install n8n --no-audit --no-fund --loglevel=error`, { stdio: 'inherit' });
+            console.log('>>> n8n installed successfully.');
+        } catch (err) {
+            console.error('>>> Failed to install n8n. Will try to use npx fallback.', err.message);
+        }
+    } else {
+        console.log('>>> n8n is installed locally.');
+    }
 
-    // Inject Environment Variables for n8n to enable Basic Auth and set defaults
+    // 2. Prepare Environment
     const n8nEnv = {
         ...process.env,
         N8N_BASIC_AUTH_ACTIVE: 'true',
@@ -188,36 +200,56 @@ const startN8nService = () => {
         N8N_BASIC_AUTH_PASSWORD: 'password',
         N8N_PORT: '5678',
         N8N_HOST: 'localhost',
-        // Disable setup wizard and tracking
         N8N_DIAGNOSTICS_ENABLED: 'false',
-        N8N_PERSONALIZATION_ENABLED: 'false'
+        N8N_PERSONALIZATION_ENABLED: 'false',
+        N8N_ENCRYPTION_KEY: 'payment-system-local-key',
+        // Ensure user folder is used for data
+        N8N_USER_FOLDER: path.join(__dirname, 'n8n_data')
     };
 
+    // Create data dir if missing
+    if (!fs.existsSync(path.join(__dirname, 'n8n_data'))) {
+        fs.mkdirSync(path.join(__dirname, 'n8n_data'), { recursive: true });
+    }
+
+    // 3. Launch n8n
+    console.log('>>> Spawning n8n process...');
+    
     try {
+        // Prefer local node_modules binary, fallback to npx
+        const command = fs.existsSync(localBinPath) ? localBinPath : (isWin ? 'npx.cmd' : 'npx');
+        const args = fs.existsSync(localBinPath) ? ['start'] : ['-y', 'n8n', 'start'];
+
         n8nProcess = spawn(command, args, {
-            shell: isWin,
             env: n8nEnv,
-            stdio: 'pipe', // Capture output to show status
-            detached: false
+            stdio: 'pipe', 
+            detached: false,
+            shell: false // Try false first for local bin, safer
         });
 
         n8nProcess.stdout.on('data', (data) => {
             const output = data.toString();
-            // Check for ready signal
             if (output.includes('Editor is now accessible')) {
                 console.log('>>> ✅ n8n is active and running locally on port 5678');
             }
         });
 
         n8nProcess.stderr.on('data', (data) => {
-            // console.error('[n8n]', data.toString()); // Uncomment for debugging
+            // Un-comment to debug n8n startup issues
+            // console.error('[n8n Log]', data.toString()); 
         });
 
         n8nProcess.on('error', (err) => {
             console.warn('>>> Local AI Engine failed to start:', err.message);
+            // Fallback strategy could go here
         });
         
-        console.log('>>> Local AI Engine process spawned.');
+        n8nProcess.on('exit', (code) => {
+            if (code !== 0 && code !== null) {
+                console.log(`>>> n8n process exited with code ${code}`);
+            }
+        });
+        
     } catch (e) {
         console.warn('>>> Could not spawn AI Engine. Offline Mode active.', e);
     }
@@ -248,7 +280,7 @@ async function processN8NRequest(user, messageText, audioData = null, audioMimeT
             timestamp: new Date().toISOString()
         };
 
-        const response = await axios.post(webhookUrl, payload, { timeout: 8000 }); 
+        const response = await axios.post(webhookUrl, payload, { timeout: 15000 }); // Increased timeout for n8n processing
         const data = response.data;
 
         // Ensure data is parsed if n8n returns stringified JSON
