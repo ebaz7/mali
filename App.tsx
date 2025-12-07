@@ -9,6 +9,7 @@ import ManageUsers from './components/ManageUsers';
 import Settings from './components/Settings';
 import ChatRoom from './components/ChatRoom';
 import TradeModule from './components/TradeModule';
+import SmartPaymentAnalysis from './components/SmartPaymentAnalysis'; // NEW
 import { getOrders, getSettings } from './services/storageService';
 import { getCurrentUser } from './services/authService';
 import { PaymentOrder, User, OrderStatus, UserRole, AppNotification, SystemSettings, PaymentMethod } from './types';
@@ -31,20 +32,13 @@ function App() {
   const NOTIFICATION_CHECK_KEY = 'last_notification_check';
 
   // History API Management
-  const safePushState = (state: any, title: string, url?: string) => {
-      try { if (url) window.history.pushState(state, title, url); else window.history.pushState(state, title); } catch (e) { try { window.history.pushState(state, title); } catch(e2) {} }
-  };
-  const safeReplaceState = (state: any, title: string, url?: string) => {
-      try { if (url) window.history.replaceState(state, title, url); else window.history.replaceState(state, title); } catch (e) { try { window.history.replaceState(state, title); } catch(e2) {} }
-  };
-  const setActiveTab = (tab: string, addToHistory = true) => {
-      setActiveTabState(tab);
-      if (addToHistory) safePushState({ tab }, '', `#${tab}`);
-  };
+  const safePushState = (state: any, title: string, url?: string) => { try { if (url) window.history.pushState(state, title, url); else window.history.pushState(state, title); } catch (e) { try { window.history.pushState(state, title); } catch(e2) {} } };
+  const safeReplaceState = (state: any, title: string, url?: string) => { try { if (url) window.history.replaceState(state, title, url); else window.history.replaceState(state, title); } catch (e) { try { window.history.replaceState(state, title); } catch(e2) {} } };
+  const setActiveTab = (tab: string, addToHistory = true) => { setActiveTabState(tab); if (addToHistory) safePushState({ tab }, '', `#${tab}`); };
 
   useEffect(() => {
     const hash = window.location.hash.replace('#', '');
-    if (hash && ['dashboard', 'create', 'manage', 'chat', 'trade', 'users', 'settings'].includes(hash)) {
+    if (hash && ['dashboard', 'create', 'manage', 'chat', 'trade', 'users', 'settings', 'tahlil'].includes(hash)) {
         setActiveTabState(hash);
         safeReplaceState({ tab: hash }, '', `#${hash}`);
     } else {
@@ -57,11 +51,7 @@ function App() {
 
   useEffect(() => { const user = getCurrentUser(); if (user) setCurrentUser(user); }, []);
 
-  const handleLogout = () => {
-    setCurrentUser(null);
-    isFirstLoad.current = true;
-    if (idleTimeoutRef.current) clearTimeout(idleTimeoutRef.current);
-  };
+  const handleLogout = () => { setCurrentUser(null); isFirstLoad.current = true; if (idleTimeoutRef.current) clearTimeout(idleTimeoutRef.current); };
 
   useEffect(() => {
     if (currentUser) {
@@ -76,9 +66,7 @@ function App() {
     }
   }, [currentUser]);
 
-  const addAppNotification = (title: string, message: string) => {
-      setNotifications(prev => [{ id: generateUUID(), title, message, timestamp: Date.now(), read: false }, ...prev]);
-  };
+  const addAppNotification = (title: string, message: string) => { setNotifications(prev => [{ id: generateUUID(), title, message, timestamp: Date.now(), read: false }, ...prev]); };
 
   const loadData = async (silent = false) => {
     if (!currentUser) return;
@@ -86,19 +74,10 @@ function App() {
     try {
         const [ordersData, settingsData] = await Promise.all([getOrders(), getSettings()]);
         setSettings(settingsData);
-        
-        // Smart Notification Check
         const lastCheck = parseInt(localStorage.getItem(NOTIFICATION_CHECK_KEY) || '0');
         checkForNotifications(ordersData, currentUser, lastCheck);
-        
-        // Check for Cheque Alerts on First Load Only
-        if (isFirstLoad.current) {
-            checkChequeAlerts(ordersData);
-        }
-
-        // Update the last check time to now
+        if (isFirstLoad.current) { checkChequeAlerts(ordersData); }
         localStorage.setItem(NOTIFICATION_CHECK_KEY, Date.now().toString());
-
         setOrders(ordersData);
         isFirstLoad.current = false;
     } catch (error) { console.error("Failed to load data", error); } finally { if (!silent) setLoading(false); }
@@ -114,99 +93,32 @@ function App() {
                   if (dueDate) {
                       const diffTime = dueDate.getTime() - now.getTime();
                       const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-                      if (diffDays <= 2 && diffDays >= 0) {
-                          alertCount++;
-                      }
+                      if (diffDays <= 2 && diffDays >= 0) { alertCount++; }
                   }
               }
           });
       });
-      if (alertCount > 0) {
-          addAppNotification('هشدار سررسید چک', `${alertCount} چک در ۲ روز آینده سررسید می‌شوند. لطفا داشبورد را بررسی کنید.`);
-      }
+      if (alertCount > 0) { addAppNotification('هشدار سررسید چک', `${alertCount} چک در ۲ روز آینده سررسید می‌شوند. لطفا داشبورد را بررسی کنید.`); }
   };
 
   const checkForNotifications = (newList: PaymentOrder[], user: User, lastCheckTime: number) => {
-     // Find orders that have been updated since the last check
      const newEvents = newList.filter(o => o.updatedAt && o.updatedAt > lastCheckTime);
-
      newEvents.forEach(newItem => {
         const status = newItem.status;
         const isAdmin = user.role === UserRole.ADMIN;
-        
-        // Admin Monitor
         if (isAdmin) {
              const isAdminSelfChange = (status === OrderStatus.PENDING && newItem.requester === user.fullName); 
-             if (!isAdminSelfChange) { // Don't notify admin if they just created it themselves
-                 addAppNotification(`تغییر وضعیت (${newItem.trackingNumber})`, `وضعیت جدید: ${status}`);
-             }
+             if (!isAdminSelfChange) { addAppNotification(`تغییر وضعیت (${newItem.trackingNumber})`, `وضعیت جدید: ${status}`); }
         }
-
-        // 1. New Order -> Notify Financial
-        if (status === OrderStatus.PENDING) {
-             if (user.role === UserRole.FINANCIAL) {
-                 const title = 'درخواست پرداخت جدید';
-                 const body = `شماره: ${newItem.trackingNumber} | درخواست کننده: ${newItem.requester}`;
-                 sendNotification(title, body);
-                 addAppNotification(title, body);
-             }
-        }
-        
-        // 2. Approved Financial -> Notify Manager
-        else if (status === OrderStatus.APPROVED_FINANCE) {
-             if (user.role === UserRole.MANAGER) {
-                 const title = 'تایید مالی شد';
-                 const body = `درخواست ${newItem.trackingNumber} منتظر تایید مدیریت است.`;
-                 sendNotification(title, body);
-                 addAppNotification(title, body);
-             }
-        }
-
-        // 3. Approved Manager -> Notify CEO
-        else if (status === OrderStatus.APPROVED_MANAGER) {
-             if (user.role === UserRole.CEO) {
-                 const title = 'تایید مدیریت شد';
-                 const body = `درخواست ${newItem.trackingNumber} منتظر تایید نهایی شماست.`;
-                 sendNotification(title, body);
-                 addAppNotification(title, body);
-             }
-        }
-
-        // 4. Approved CEO -> Notify Financial & Requester
-        else if (status === OrderStatus.APPROVED_CEO) {
-             if (user.role === UserRole.FINANCIAL) {
-                 const title = 'تایید نهایی شد (پرداخت)';
-                 const body = `درخواست ${newItem.trackingNumber} تایید شد. لطفا اقدام به پرداخت کنید.`;
-                 sendNotification(title, body);
-                 addAppNotification(title, body);
-             }
-             if (newItem.requester === user.fullName) {
-                 const title = 'درخواست تایید شد';
-                 const body = `درخواست شما (${newItem.trackingNumber}) تایید نهایی شد.`;
-                 sendNotification(title, body);
-                 addAppNotification(title, body);
-             }
-        }
-
-        // 5. Rejected -> Notify Requester
-        else if (status === OrderStatus.REJECTED) {
-             if (newItem.requester === user.fullName) {
-                 const title = 'درخواست رد شد';
-                 const body = `درخواست ${newItem.trackingNumber} رد شد. دلیل: ${newItem.rejectionReason || 'نامشخص'}`;
-                 sendNotification(title, body);
-                 addAppNotification(title, body);
-             }
-        }
+        if (status === OrderStatus.PENDING && user.role === UserRole.FINANCIAL) { addAppNotification('درخواست پرداخت جدید', `شماره: ${newItem.trackingNumber} | درخواست کننده: ${newItem.requester}`); }
+        else if (status === OrderStatus.APPROVED_FINANCE && user.role === UserRole.MANAGER) { addAppNotification('تایید مالی شد', `درخواست ${newItem.trackingNumber} منتظر تایید مدیریت است.`); }
+        else if (status === OrderStatus.APPROVED_MANAGER && user.role === UserRole.CEO) { addAppNotification('تایید مدیریت شد', `درخواست ${newItem.trackingNumber} منتظر تایید نهایی شماست.`); }
+        else if (status === OrderStatus.APPROVED_CEO) { if (user.role === UserRole.FINANCIAL) { addAppNotification('تایید نهایی شد (پرداخت)', `درخواست ${newItem.trackingNumber} تایید شد. لطفا اقدام به پرداخت کنید.`); } if (newItem.requester === user.fullName) { addAppNotification('درخواست تایید شد', `درخواست شما (${newItem.trackingNumber}) تایید نهایی شد.`); } }
+        else if (status === OrderStatus.REJECTED && newItem.requester === user.fullName) { addAppNotification('درخواست رد شد', `درخواست ${newItem.trackingNumber} رد شد. دلیل: ${newItem.rejectionReason || 'نامشخص'}`); }
      });
   };
 
-  useEffect(() => {
-    if (currentUser) {
-      loadData(false);
-      const intervalId = setInterval(() => loadData(true), 15000);
-      return () => clearInterval(intervalId);
-    }
-  }, [currentUser]);
+  useEffect(() => { if (currentUser) { loadData(false); const intervalId = setInterval(() => loadData(true), 15000); return () => clearInterval(intervalId); } }, [currentUser]);
 
   const handleOrderCreated = () => { loadData(); setManageOrdersInitialTab('current'); setDashboardStatusFilter(null); setActiveTab('manage'); };
   const handleLogin = (user: User) => { setCurrentUser(user); setActiveTab('dashboard'); };
@@ -220,6 +132,7 @@ function App() {
       {loading && orders.length === 0 ? ( <div className="flex h-[50vh] items-center justify-center text-blue-600"><Loader2 size={48} className="animate-spin" /></div> ) : (
         <>
             {activeTab === 'dashboard' && <Dashboard orders={orders} settings={settings} onViewArchive={handleViewArchive} onFilterByStatus={handleDashboardFilter} />}
+            {activeTab === 'tahlil' && <SmartPaymentAnalysis />} 
             {activeTab === 'create' && <CreateOrder onSuccess={handleOrderCreated} currentUser={currentUser} />}
             {activeTab === 'manage' && <ManageOrders orders={orders} refreshData={() => loadData(true)} currentUser={currentUser} initialTab={manageOrdersInitialTab} settings={settings} statusFilter={dashboardStatusFilter} />}
             {activeTab === 'trade' && <TradeModule currentUser={currentUser} />}

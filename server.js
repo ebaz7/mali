@@ -56,8 +56,8 @@ const getDb = () => {
                 smsApiKey: '',
                 smsSenderNumber: '',
                 whatsappNumber: '',
-                // Default to Docker network alias 'n8n' if in docker, else localhost
-                n8nWebhookUrl: process.env.N8N_WEBHOOK_URL || 'http://localhost:5678/webhook/ai'
+                // Native n8n URL
+                n8nWebhookUrl: 'http://localhost:5678/webhook/ai'
             },
             orders: [],
             users: [
@@ -90,17 +90,12 @@ const findNextAvailableTrackingNumber = (db) => {
 };
 
 // ==========================================
-// N8N ORCHESTRATOR LOGIC
+// N8N ORCHESTRATOR LOGIC (Restored)
 // ==========================================
 
-async function processN8NRequest(user, messageText, audioData = null, audioMimeType = null) {
+async function processN8NRequest(user, messageText, audioData = null, audioMimeType = null, systemPrompt = null) {
     const db = getDb();
-    // Prefer DB setting, fallback to Env (Docker), fallback to Localhost
-    const webhookUrl = db.settings.n8nWebhookUrl || process.env.N8N_WEBHOOK_URL || 'http://localhost:5678/webhook/ai';
-
-    if (!webhookUrl) {
-        return "خطا: آدرس وب‌هوک n8n مشخص نشده است.";
-    }
+    const webhookUrl = db.settings.n8nWebhookUrl || 'http://localhost:5678/webhook/ai';
 
     try {
         const payload = {
@@ -110,6 +105,7 @@ async function processN8NRequest(user, messageText, audioData = null, audioMimeT
                 id: user.id
             },
             message: messageText,
+            systemPrompt: systemPrompt, // Optional override for analysis
             audio: audioData ? {
                 data: audioData,
                 mimeType: audioMimeType
@@ -118,13 +114,18 @@ async function processN8NRequest(user, messageText, audioData = null, audioMimeT
         };
 
         console.log(`Sending to n8n: ${webhookUrl}`);
-        const response = await axios.post(webhookUrl, payload, { timeout: 45000 }); // 45s timeout for AI
+        const response = await axios.post(webhookUrl, payload, { timeout: 60000 }); // 60s timeout
         const data = response.data;
 
         // Ensure data is parsed if n8n returns stringified JSON
         let parsedData = data;
         if (typeof data === 'string') {
             try { parsedData = JSON.parse(data); } catch(e) {}
+        }
+
+        // Handle Smart Analysis JSON Response
+        if (parsedData.recommendation && parsedData.score) {
+            return parsedData;
         }
 
         if (parsedData.type === 'message') {
@@ -143,7 +144,7 @@ async function processN8NRequest(user, messageText, audioData = null, audioMimeT
     } catch (error) {
         console.error("n8n Error:", error.message);
         if (error.code === 'ECONNREFUSED') {
-            return "سرور هوش مصنوعی (n8n) در دسترس نیست. لطفا از اجرای آن اطمینان حاصل کنید.";
+            return "سرور هوش مصنوعی (n8n) خاموش است. لطفا n8n start را اجرا کنید.";
         }
         return "خطا در پردازش هوش مصنوعی.";
     }
@@ -210,9 +211,63 @@ function handleToolExecution(toolName, args, user) {
     return `دستور ناشناخته: ${toolName}`;
 }
 
+// ==========================================
+// SMART ANALYSIS ENDPOINT (Linked to n8n)
+// ==========================================
+app.post('/api/analyze-payment', async (req, res) => {
+    const { amount, date, company } = req.body;
+    
+    const prompt = `
+    Analyze this payment request:
+    Amount: ${amount} Rials
+    Date: ${date}
+    Company: ${company}
+    
+    You are a financial advisor. Return a JSON object with:
+    {
+        "recommendation": "Pay Now" or "Wait" or "Caution",
+        "score": number (0-100),
+        "reasons": ["reason 1", "reason 2"]
+    }
+    Translate recommendation and reasons to Persian.
+    `;
+
+    // Try to get AI response
+    const aiResponse = await processN8NRequest(
+        { fullName: 'Analyzer', role: 'system', id: 'sys' }, 
+        prompt,
+        null,
+        null,
+        "You are a JSON generator. Output ONLY JSON."
+    );
+
+    // Check if n8n returned structured data or string
+    if (typeof aiResponse === 'object' && aiResponse.recommendation) {
+        res.json({ ...aiResponse, analysisId: Date.now() });
+    } else {
+        // Fallback Logic if n8n is not set up correctly or fails
+        console.warn("n8n did not return valid analysis JSON, using fallback logic.");
+        
+        const amountNum = Number(amount);
+        let score = 80;
+        let reasons = ["تحلیل خودکار (عدم ارتباط با هوش مصنوعی)"];
+        let recommendation = "پرداخت کنید";
+
+        if (amountNum > 100000000) { score -= 20; reasons.push("مبلغ بالاست"); }
+        if (score < 60) recommendation = "احتیاط";
+
+        res.json({
+            recommendation,
+            score,
+            reasons,
+            analysisId: Date.now()
+        });
+    }
+});
+
 
 // ==========================================
-// WHATSAPP & TELEGRAM SETUP
+// WHATSAPP & TELEGRAM SETUP (Robust Mode)
 // ==========================================
 
 let whatsappClient = null;
@@ -230,6 +285,7 @@ const initTelegram = async () => {
         const token = db.settings.telegramBotToken;
         
         if (token) {
+            // Add polling error handler specifically to prevent crashes
             telegramBot = new TelegramBot(token, { polling: true });
             console.log('>>> Telegram Bot Started <<<');
 
@@ -239,7 +295,7 @@ const initTelegram = async () => {
                 const user = db.users.find(u => u.telegramChatId === chatId);
 
                 if (!user) {
-                    telegramBot.sendMessage(chatId, `⛔ شما دسترسی ندارید.\nChat ID شما: ${chatId}\nلطفا این کد را به مدیر سیستم بدهید تا دسترسی شما را فعال کند.`);
+                    telegramBot.sendMessage(chatId, `⛔ شما دسترسی ندارید.\nChat ID شما: ${chatId}`);
                     return;
                 }
 
@@ -251,20 +307,25 @@ const initTelegram = async () => {
                     const mimeType = msg.voice ? 'audio/ogg' : 'audio/mpeg'; 
                     telegramBot.sendChatAction(chatId, 'typing');
                     const reply = await processN8NRequest(user, null, base64, mimeType);
-                    telegramBot.sendMessage(chatId, reply);
+                    telegramBot.sendMessage(chatId, typeof reply === 'string' ? reply : JSON.stringify(reply));
                 } else if (msg.text) {
                     telegramBot.sendChatAction(chatId, 'typing');
                     const reply = await processN8NRequest(user, msg.text);
-                    telegramBot.sendMessage(chatId, reply);
+                    telegramBot.sendMessage(chatId, typeof reply === 'string' ? reply : JSON.stringify(reply));
                 }
             });
             
             telegramBot.on('polling_error', (error) => {
-                console.error("Telegram Polling Error:", error.code);
+                // Just log, do not crash
+                console.error("Telegram Polling Warning (Ignored):", error.code);
+            });
+            
+            telegramBot.on('error', (error) => {
+                 console.error("Telegram General Error:", error.message);
             });
         }
     } catch (e) {
-        console.warn('Telegram Bot Init Failed (Token missing or library issue).');
+        console.warn('Telegram Bot Init Failed:', e.message);
     }
 };
 
@@ -277,22 +338,16 @@ const initWhatsApp = async () => {
         const qrcodeModule = await import('qrcode-terminal');
         const qrcode = qrcodeModule.default || qrcodeModule;
 
+        // Windows VM compatible Chrome detection
         const getBrowserPath = () => {
-            // Priority: Docker Environment Variable
-            if (process.env.PUPPETEER_EXECUTABLE_PATH) {
-                if (fs.existsSync(process.env.PUPPETEER_EXECUTABLE_PATH)) {
-                    return process.env.PUPPETEER_EXECUTABLE_PATH;
-                }
-            }
-
             const platform = process.platform;
             let paths = [];
             if (platform === 'win32') {
-                paths = ['C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe', 'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe', 'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe'];
-            } else if (platform === 'linux') {
-                paths = ['/usr/bin/google-chrome', '/usr/bin/google-chrome-stable', '/usr/bin/chromium', '/usr/bin/chromium-browser'];
-            } else if (platform === 'darwin') {
-                paths = ['/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'];
+                paths = [
+                    'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe', 
+                    'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe', 
+                    'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe'
+                ];
             }
             for (const p of paths) { if (fs.existsSync(p)) return p; }
             return null;
@@ -306,14 +361,13 @@ const initWhatsApp = async () => {
             puppeteer: { 
                 headless: true, 
                 executablePath: executablePath, 
+                // CRITICAL ARGS FOR WINDOWS SERVER / VM
                 args: [
                     '--no-sandbox', 
                     '--disable-setuid-sandbox',
                     '--disable-dev-shm-usage',
                     '--disable-accelerated-2d-canvas',
                     '--no-first-run',
-                    '--no-zygote',
-                    '--single-process', 
                     '--disable-gpu'
                 ] 
             }
@@ -322,6 +376,7 @@ const initWhatsApp = async () => {
         whatsappClient.on('qr', (qr) => {
             currentQR = qr; isWhatsAppReady = false;
             // Generate QR in terminal (useful for docker logs)
+            console.log("QR Code received, waiting for scan...");
             qrcode.generate(qr, { small: true });
         });
 
@@ -342,23 +397,31 @@ const initWhatsApp = async () => {
                 const media = await msg.downloadMedia();
                 if (media.mimetype.startsWith('audio/')) {
                     const reply = await processN8NRequest(user, null, media.data, media.mimetype);
-                    msg.reply(reply);
+                    msg.reply(typeof reply === 'string' ? reply : JSON.stringify(reply));
                 }
             } else {
                 const reply = await processN8NRequest(user, msg.body);
-                msg.reply(reply);
+                msg.reply(typeof reply === 'string' ? reply : JSON.stringify(reply));
             }
         });
 
-        whatsappClient.initialize().catch(err => console.error("WA Init Error:", err.message));
+        // Initialize with error catching to prevent crash
+        whatsappClient.initialize().catch(err => {
+            console.error("WA Init Error (Caught):", err.message);
+            isWhatsAppReady = false;
+        });
 
     } catch (e) {
         console.warn('WhatsApp Module Error:', e.message);
     }
 };
 
-initWhatsApp();
-setTimeout(initTelegram, 5000); 
+// Start Bots (Delayed slightly to allow server to bind port first)
+setTimeout(() => {
+    initWhatsApp();
+    initTelegram();
+}, 3000);
+
 
 // --- API ROUTES ---
 
@@ -387,7 +450,10 @@ app.post('/api/send-whatsapp', async (req, res) => {
 app.post('/api/ai-request', async (req, res) => {
     const { message } = req.body;
     const user = { fullName: 'کاربر سیستم', role: 'user', id: 'frontend' }; 
-    try { const reply = await processN8NRequest(user, message); res.json({ reply }); } catch (e) { res.status(500).json({ error: e.message }); }
+    try { 
+        const reply = await processN8NRequest(user, message); 
+        res.json({ reply: typeof reply === 'string' ? reply : JSON.stringify(reply) }); 
+    } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 app.get('/api/manifest', (req, res) => {
