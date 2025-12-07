@@ -1,4 +1,3 @@
-
 {
   "name": "payment-order-system",
   "private": true,
@@ -9,6 +8,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "start": "node server.js",
+    "n8n": "npx -y n8n start",
     "install-offline": "set PUPPETEER_SKIP_DOWNLOAD=true && npm install"
   },
   "dependencies": {

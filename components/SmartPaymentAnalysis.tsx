@@ -101,6 +101,20 @@ const SmartPaymentAnalysis: React.FC = () => {
                 {/* Form */}
                 <div className="bg-white p-6 rounded-2xl shadow-xl border border-gray-100 h-fit">
                     <form onSubmit={handleAnalyze} className="space-y-6">
+                        
+                        {/* 1. Date Input */}
+                        <div>
+                            <label className="block text-sm font-bold text-gray-700 mb-2 flex items-center gap-2">
+                                <Calendar size={18} className="text-blue-500"/> تاریخ سررسید / پرداخت
+                            </label>
+                            <div className="grid grid-cols-3 gap-2">
+                                <select className="border rounded-xl p-2 bg-gray-50" value={date.day} onChange={e => setDate({...date, day: Number(e.target.value)})}>{days.map(d => <option key={d} value={d}>{d}</option>)}</select>
+                                <select className="border rounded-xl p-2 bg-gray-50" value={date.month} onChange={e => setDate({...date, month: Number(e.target.value)})}>{months.map((m, i) => <option key={i} value={i+1}>{m}</option>)}</select>
+                                <select className="border rounded-xl p-2 bg-gray-50" value={date.year} onChange={e => setDate({...date, year: Number(e.target.value)})}>{years.map(y => <option key={y} value={y}>{y}</option>)}</select>
+                            </div>
+                        </div>
+
+                        {/* 2. Company (Place) Input */}
                         <div>
                             <label className="block text-sm font-bold text-gray-700 mb-2 flex items-center gap-2">
                                 <Building2 size={18} className="text-blue-500"/> محل پرداخت / شرکت
@@ -119,6 +133,7 @@ const SmartPaymentAnalysis: React.FC = () => {
                             </select>
                         </div>
 
+                        {/* 3. Amount Input */}
                         <div>
                             <label className="block text-sm font-bold text-gray-700 mb-2 flex items-center gap-2">
                                 <Calculator size={18} className="text-blue-500"/> مبلغ (ریال)
@@ -131,17 +146,6 @@ const SmartPaymentAnalysis: React.FC = () => {
                                 onChange={e => setAmount(formatNumberString(deformatNumberString(e.target.value)))}
                                 placeholder="0"
                             />
-                        </div>
-
-                        <div>
-                            <label className="block text-sm font-bold text-gray-700 mb-2 flex items-center gap-2">
-                                <Calendar size={18} className="text-blue-500"/> تاریخ سررسید
-                            </label>
-                            <div className="grid grid-cols-3 gap-2">
-                                <select className="border rounded-xl p-2 bg-gray-50" value={date.day} onChange={e => setDate({...date, day: Number(e.target.value)})}>{days.map(d => <option key={d} value={d}>{d}</option>)}</select>
-                                <select className="border rounded-xl p-2 bg-gray-50" value={date.month} onChange={e => setDate({...date, month: Number(e.target.value)})}>{months.map((m, i) => <option key={i} value={i+1}>{m}</option>)}</select>
-                                <select className="border rounded-xl p-2 bg-gray-50" value={date.year} onChange={e => setDate({...date, year: Number(e.target.value)})}>{years.map(y => <option key={y} value={y}>{y}</option>)}</select>
-                            </div>
                         </div>
 
                         <button 
