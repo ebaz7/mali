@@ -278,6 +278,13 @@ const initWhatsApp = async () => {
         const qrcode = qrcodeModule.default || qrcodeModule;
 
         const getBrowserPath = () => {
+            // Priority: Docker Environment Variable
+            if (process.env.PUPPETEER_EXECUTABLE_PATH) {
+                if (fs.existsSync(process.env.PUPPETEER_EXECUTABLE_PATH)) {
+                    return process.env.PUPPETEER_EXECUTABLE_PATH;
+                }
+            }
+
             const platform = process.platform;
             let paths = [];
             if (platform === 'win32') {
@@ -292,14 +299,29 @@ const initWhatsApp = async () => {
         };
 
         const executablePath = getBrowserPath();
+        console.log(`Using Browser executable: ${executablePath || 'bundled (puppeteer)'}`);
         
         whatsappClient = new Client({
             authStrategy: new LocalAuth({ dataPath: WAUTH_DIR }),
-            puppeteer: { headless: true, executablePath: executablePath, args: ['--no-sandbox', '--disable-setuid-sandbox'] }
+            puppeteer: { 
+                headless: true, 
+                executablePath: executablePath, 
+                args: [
+                    '--no-sandbox', 
+                    '--disable-setuid-sandbox',
+                    '--disable-dev-shm-usage',
+                    '--disable-accelerated-2d-canvas',
+                    '--no-first-run',
+                    '--no-zygote',
+                    '--single-process', 
+                    '--disable-gpu'
+                ] 
+            }
         });
 
         whatsappClient.on('qr', (qr) => {
             currentQR = qr; isWhatsAppReady = false;
+            // Generate QR in terminal (useful for docker logs)
             qrcode.generate(qr, { small: true });
         });
 
