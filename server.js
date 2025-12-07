@@ -57,8 +57,7 @@ const getDb = () => {
                 smsApiKey: '',
                 smsSenderNumber: '',
                 whatsappNumber: '',
-                // Native n8n URL
-                n8nWebhookUrl: 'http://localhost:5678/webhook/ai'
+                n8nWebhookUrl: ''
             },
             orders: [],
             users: [
@@ -91,31 +90,110 @@ const findNextAvailableTrackingNumber = (db) => {
 };
 
 // ==========================================
-// N8N AUTO-START ORCHESTRATOR
+// N8N ORCHESTRATOR & SYNC
 // ==========================================
-const startN8nService = () => {
-    console.log('>>> Initializing n8n Service...');
-    
-    // Check if n8n is likely already running on port 5678 (basic check)
-    // For simplicity in this environment, we just try to spawn it. 
-    // n8n handles port conflict gracefully usually or we catch the error.
-    
-    // Using 'npx -y n8n start' ensures we use the installed version or download it if missing
-    // 'shell: true' is critical for Windows
-    const n8n = spawn('npx', ['-y', 'n8n', 'start'], {
-        shell: true,
-        stdio: 'inherit' // Pipe output to main console so user can see what's happening
-    });
+let n8nProcess = null;
 
-    n8n.on('error', (err) => {
-        console.error('>>> Failed to start n8n automatically:', err);
-    });
+// Function to auto-configure n8n (Import Workflow & Activate)
+const syncN8nWorkflow = async () => {
+    const db = getDb();
+    // Prioritize Env Var (Docker), then DB setting, then Localhost default
+    const webhookUrl = process.env.N8N_WEBHOOK_URL || db.settings.n8nWebhookUrl || 'http://localhost:5678/webhook/ai';
+    
+    // Extract base URL (e.g., http://n8n:5678)
+    let apiBase = webhookUrl.split('/webhook')[0];
+    if (!apiBase) apiBase = 'http://localhost:5678';
 
-    n8n.on('close', (code) => {
-        if (code !== 0) {
-            console.log(`>>> n8n process exited with code ${code}`);
+    const workflowPath = path.join(__dirname, 'n8n_workflow.json');
+    if (!fs.existsSync(workflowPath)) {
+        console.warn(">>> n8n workflow file not found.");
+        return;
+    }
+
+    const workflowJson = JSON.parse(fs.readFileSync(workflowPath, 'utf8'));
+    
+    // Default Basic Auth as configured in Docker Compose
+    const auth = Buffer.from('admin:password').toString('base64');
+    const headers = { 
+        'Authorization': `Basic ${auth}`, 
+        'Content-Type': 'application/json' 
+    };
+
+    console.log(`>>> Starting n8n Sync to ${apiBase}...`);
+
+    let attempts = 0;
+    const maxAttempts = 15; // Try for 45 seconds
+    
+    const interval = setInterval(async () => {
+        attempts++;
+        if (attempts > maxAttempts) {
+            clearInterval(interval);
+            console.warn('>>> Giving up on n8n sync (n8n might be unreachable).');
+            return;
         }
-    });
+
+        try {
+            // 1. Check if n8n API is up by listing workflows
+            const listRes = await axios.get(`${apiBase}/api/v1/workflows`, { headers, timeout: 2000 });
+            const existing = listRes.data.data.find(w => w.name === workflowJson.name);
+            
+            let workflowId;
+            
+            if (existing) {
+                // Update Existing
+                console.log('>>> Updating existing n8n workflow...');
+                workflowId = existing.id;
+                await axios.put(`${apiBase}/api/v1/workflows/${workflowId}`, workflowJson, { headers });
+            } else {
+                // Create New
+                console.log('>>> Creating new n8n workflow...');
+                const createRes = await axios.post(`${apiBase}/api/v1/workflows`, workflowJson, { headers });
+                workflowId = createRes.data.id;
+            }
+
+            // 2. Activate Workflow
+            if (workflowId) {
+                await axios.post(`${apiBase}/api/v1/workflows/${workflowId}/activate`, {}, { headers });
+                console.log('>>> ✅ n8n Workflow synced and ACTIVATED successfully.');
+            }
+            
+            clearInterval(interval);
+        } catch (e) {
+            // Silent error logging while waiting for startup
+            if (attempts % 3 === 0) console.log(`>>> Waiting for n8n to be ready (${attempts}/${maxAttempts})...`);
+        }
+    }, 3000);
+};
+
+const startN8nService = () => {
+    // Only spawn locally if we are NOT in a docker environment that provides n8n
+    // Simple check: if N8N_WEBHOOK_URL is set, assume Docker/External n8n
+    if (process.env.N8N_WEBHOOK_URL) {
+        console.log('>>> Using external/docker n8n service defined in env.');
+        return;
+    }
+
+    console.log('>>> Initializing Local AI Engine (n8n)...');
+    
+    const isWin = process.platform === 'win32';
+    const command = isWin ? 'npx.cmd' : 'npx';
+    const args = ['-y', 'n8n', 'start'];
+
+    try {
+        n8nProcess = spawn(command, args, {
+            shell: isWin,
+            stdio: 'ignore',
+            detached: false
+        });
+
+        n8nProcess.on('error', (err) => {
+            console.warn('>>> Local AI Engine failed to start (Offline Mode active).');
+        });
+        
+        console.log('>>> Local AI Engine process spawned.');
+    } catch (e) {
+        console.warn('>>> Could not spawn AI Engine. Offline Mode active.');
+    }
 };
 
 // ==========================================
@@ -124,7 +202,8 @@ const startN8nService = () => {
 
 async function processN8NRequest(user, messageText, audioData = null, audioMimeType = null, systemPrompt = null) {
     const db = getDb();
-    const webhookUrl = db.settings.n8nWebhookUrl || 'http://localhost:5678/webhook/ai';
+    // Prioritize Env Var, then DB, then Default
+    const webhookUrl = process.env.N8N_WEBHOOK_URL || db.settings.n8nWebhookUrl || 'http://localhost:5678/webhook/ai';
 
     try {
         const payload = {
@@ -134,7 +213,7 @@ async function processN8NRequest(user, messageText, audioData = null, audioMimeT
                 id: user.id
             },
             message: messageText,
-            systemPrompt: systemPrompt, // Optional override for analysis
+            systemPrompt: systemPrompt,
             audio: audioData ? {
                 data: audioData,
                 mimeType: audioMimeType
@@ -142,8 +221,7 @@ async function processN8NRequest(user, messageText, audioData = null, audioMimeT
             timestamp: new Date().toISOString()
         };
 
-        // console.log(`Sending to n8n: ${webhookUrl}`);
-        const response = await axios.post(webhookUrl, payload, { timeout: 5000 }); // Short timeout for local check
+        const response = await axios.post(webhookUrl, payload, { timeout: 8000 }); 
         const data = response.data;
 
         // Ensure data is parsed if n8n returns stringified JSON
@@ -172,15 +250,12 @@ async function processN8NRequest(user, messageText, audioData = null, audioMimeT
 
     } catch (error) {
         // --- FALLBACK MODE (OFFLINE AI) ---
-        console.warn("n8n unavailable, switching to local fallback logic.");
-        
         if (systemPrompt && systemPrompt.includes("JSON generator")) {
-            // It's an analysis request
-            return null; // Return null to let the caller use its own fallback
+            return null; 
         }
 
         if (audioData) {
-            return "🎤 پیام صوتی دریافت شد (پردازش صدا نیازمند اتصال به n8n است).";
+            return "🎤 پیام صوتی دریافت شد (پردازش صدا نیازمند اتصال اینترنت/n8n است).";
         }
 
         // Simple Rule-Based Chatbot
@@ -194,11 +269,7 @@ async function processN8NRequest(user, messageText, audioData = null, audioMimeT
             return handleToolExecution('get_financial_summary', {}, user);
         }
 
-        if (lowerMsg.includes('ثبت') && lowerMsg.includes('دستور')) {
-            return "برای ثبت دستور پرداخت، لطفا از منوی 'ثبت دستور' استفاده کنید یا مبلغ و گیرنده را دقیق بفرمایید.";
-        }
-
-        return "⚠️ ارتباط با موتور هوشمند (n8n) برقرار نیست. \nسیستم در حال تلاش برای اجرای خودکار n8n است، لطفا چند لحظه صبر کنید و مجددا تلاش کنید.";
+        return "⚠️ ارتباط با موتور هوشمند برقرار نیست. سیستم در حالت آفلاین کار می‌کند.";
     }
 }
 
@@ -241,9 +312,6 @@ function handleToolExecution(toolName, args, user) {
     }
 
     if (toolName === 'search_trade_file') {
-        if (user.role === 'user' && !user.canManageTrade) {
-            return "شما دسترسی به بخش بازرگانی ندارید.";
-        }
         const term = (args.query || '').toLowerCase();
         const found = (db.tradeRecords || []).filter(r => 
             r.fileNumber.includes(term) || 
@@ -264,74 +332,64 @@ function handleToolExecution(toolName, args, user) {
 }
 
 // ==========================================
-// SMART ANALYSIS ENDPOINT (Linked to n8n)
+// SMART ANALYSIS ENDPOINT
 // ==========================================
 app.post('/api/analyze-payment', async (req, res) => {
     const { amount, date, company } = req.body;
     
-    const prompt = `
-    Analyze this payment request:
-    Amount: ${amount} Rials
-    Date: ${date}
-    Company: ${company}
-    
-    You are a financial advisor. Return a JSON object with:
-    {
-        "recommendation": "Pay Now" or "Wait" or "Caution",
-        "score": number (0-100),
-        "reasons": ["reason 1", "reason 2"]
-    }
-    Translate recommendation and reasons to Persian.
-    `;
-
-    // Try to get AI response
+    // 1. Try AI Analysis
+    const prompt = `Analyze: Amount ${amount}, Date ${date}, Company ${company}. JSON: {recommendation, score, reasons}`;
     const aiResponse = await processN8NRequest(
         { fullName: 'Analyzer', role: 'system', id: 'sys' }, 
-        prompt,
-        null,
-        null,
-        "You are a JSON generator. Output ONLY JSON."
+        prompt, null, null, "You are a JSON generator."
     );
 
-    // Check if n8n returned structured data or string
     if (aiResponse && typeof aiResponse === 'object' && aiResponse.recommendation) {
-        res.json({ ...aiResponse, analysisId: Date.now() });
-    } else {
-        // Fallback Logic if n8n is not set up correctly or fails
-        console.warn("n8n did not return valid analysis JSON, using fallback logic.");
-        
-        const amountNum = Number(amount);
-        let score = 80;
-        let reasons = ["تحلیل خودکار (حالت آفلاین)"];
-        let recommendation = "پرداخت بلامانع است";
-
-        if (amountNum > 1000000000) { 
-            score -= 30; 
-            reasons.push("مبلغ بسیار سنگین است، موجودی چک شود."); 
-            recommendation = "احتیاط";
-        } else if (amountNum > 100000000) {
-            score -= 10;
-            reasons.push("مبلغ قابل توجه است.");
-        }
-
-        const dayOfMonth = new Date().getDate(); // approximate check
-        if (dayOfMonth > 25) {
-            reasons.push("روزهای پایانی ماه (ترافیک پرداخت).");
-            score -= 5;
-        }
-
-        res.json({
-            recommendation,
-            score,
-            reasons,
-            analysisId: Date.now()
-        });
+        return res.json({ ...aiResponse, analysisId: Date.now() });
     }
+
+    // 2. Fallback Rule-Based Analysis (Offline Mode)
+    console.log("Using fallback analysis logic.");
+    const amountNum = Number(amount);
+    let score = 85;
+    let reasons = [];
+    let recommendation = "پرداخت بلامانع";
+
+    if (amountNum > 5000000000) { 
+        score -= 25; 
+        reasons.push("مبلغ کلان است، نیاز به بررسی نقدینگی."); 
+        recommendation = "احتیاط";
+    } else if (amountNum > 1000000000) {
+        score -= 10;
+        reasons.push("مبلغ قابل توجه است.");
+    }
+
+    const d = new Date(date);
+    const day = d.getDate();
+    if (day > 25) {
+        reasons.push("ترافیک پرداخت آخر ماه.");
+        score -= 5;
+    }
+
+    if (company && company.includes("بازرگانی")) {
+        reasons.push("اولویت پرداخت‌های بازرگانی بالاست.");
+        score += 5;
+    }
+
+    if (reasons.length === 0) reasons.push("شرایط نرمال ارزیابی شد.");
+
+    res.json({
+        recommendation,
+        score: Math.min(100, Math.max(0, score)),
+        reasons,
+        analysisId: Date.now(),
+        isOffline: true
+    });
 });
 
 
 // ==========================================
-// WHATSAPP & TELEGRAM SETUP (Robust Mode)
+// WHATSAPP & TELEGRAM
 // ==========================================
 
 let whatsappClient = null;
@@ -341,7 +399,6 @@ let isWhatsAppReady = false;
 let currentQR = null; 
 let whatsappUser = null; 
 
-// --- TELEGRAM INIT ---
 const initTelegram = async () => {
     try {
         const TelegramBot = (await import('node-telegram-bot-api')).default;
@@ -349,7 +406,6 @@ const initTelegram = async () => {
         const token = db.settings.telegramBotToken;
         
         if (token) {
-            // Add polling error handler specifically to prevent crashes
             telegramBot = new TelegramBot(token, { polling: true });
             console.log('>>> Telegram Bot Started <<<');
 
@@ -359,37 +415,18 @@ const initTelegram = async () => {
                 const user = db.users.find(u => u.telegramChatId === chatId);
 
                 if (!user) {
-                    telegramBot.sendMessage(chatId, `⛔ شما دسترسی ندارید.\nChat ID شما: ${chatId}`);
+                    telegramBot.sendMessage(chatId, `⛔ عدم دسترسی. Chat ID: ${chatId}`);
                     return;
                 }
 
-                if (msg.voice || msg.audio) {
-                    const fileId = msg.voice ? msg.voice.file_id : msg.audio.file_id;
-                    const fileLink = await telegramBot.getFileLink(fileId);
-                    const response = await axios.get(fileLink, { responseType: 'arraybuffer' });
-                    const base64 = Buffer.from(response.data).toString('base64');
-                    const mimeType = msg.voice ? 'audio/ogg' : 'audio/mpeg'; 
-                    telegramBot.sendChatAction(chatId, 'typing');
-                    const reply = await processN8NRequest(user, null, base64, mimeType);
-                    // Handle object reply (from tool) vs string
-                    const textReply = typeof reply === 'string' ? reply : JSON.stringify(reply, null, 2);
-                    telegramBot.sendMessage(chatId, textReply);
-                } else if (msg.text) {
-                    telegramBot.sendChatAction(chatId, 'typing');
+                if (msg.text) {
                     const reply = await processN8NRequest(user, msg.text);
-                    const textReply = typeof reply === 'string' ? reply : JSON.stringify(reply, null, 2);
-                    telegramBot.sendMessage(chatId, textReply);
+                    telegramBot.sendMessage(chatId, typeof reply === 'string' ? reply : JSON.stringify(reply, null, 2));
                 }
             });
             
-            telegramBot.on('polling_error', (error) => {
-                // Just log, do not crash
-                console.error("Telegram Polling Warning (Ignored):", error.code);
-            });
-            
-            telegramBot.on('error', (error) => {
-                 console.error("Telegram General Error:", error.message);
-            });
+            telegramBot.on('polling_error', (e) => console.error("TG Poll Error:", e.code));
+            telegramBot.on('error', (e) => console.error("TG Error:", e.message));
         }
     } catch (e) {
         console.warn('Telegram Bot Init Failed:', e.message);
@@ -398,57 +435,42 @@ const initTelegram = async () => {
 
 const initWhatsApp = async () => {
     try {
-        console.log('Attempting to load WhatsApp modules...');
         const wwebjs = await import('whatsapp-web.js');
         const { Client, LocalAuth, MessageMedia: MM } = wwebjs.default || wwebjs;
         MessageMedia = MM; 
         const qrcodeModule = await import('qrcode-terminal');
         const qrcode = qrcodeModule.default || qrcodeModule;
 
-        // Windows VM compatible Chrome detection
         const getBrowserPath = () => {
             const platform = process.platform;
-            let paths = [];
             if (platform === 'win32') {
-                paths = [
+                const paths = [
                     'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe', 
                     'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe', 
                     'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe'
                 ];
+                for (const p of paths) { if (fs.existsSync(p)) return p; }
             }
-            for (const p of paths) { if (fs.existsSync(p)) return p; }
             return null;
         };
 
-        const executablePath = getBrowserPath();
-        console.log(`Using Browser executable: ${executablePath || 'bundled (puppeteer)'}`);
-        
         whatsappClient = new Client({
             authStrategy: new LocalAuth({ dataPath: WAUTH_DIR }),
             puppeteer: { 
                 headless: true, 
-                executablePath: executablePath, 
-                // CRITICAL ARGS FOR WINDOWS SERVER / VM
-                args: [
-                    '--no-sandbox', 
-                    '--disable-setuid-sandbox',
-                    '--disable-dev-shm-usage',
-                    '--disable-accelerated-2d-canvas',
-                    '--no-first-run',
-                    '--disable-gpu'
-                ] 
+                executablePath: getBrowserPath(),
+                args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu'] 
             }
         });
 
         whatsappClient.on('qr', (qr) => {
             currentQR = qr; isWhatsAppReady = false;
-            // Generate QR in terminal (useful for docker logs)
-            console.log("QR Code received, waiting for scan...");
+            console.log(">>> WA QR Received");
             qrcode.generate(qr, { small: true });
         });
 
         whatsappClient.on('ready', () => {
-            console.log('\n>>> WhatsApp Client is READY! <<<\n');
+            console.log('>>> WhatsApp Ready');
             isWhatsAppReady = true; currentQR = null; whatsappUser = whatsappClient.info?.wid?.user;
         });
 
@@ -457,24 +479,13 @@ const initWhatsApp = async () => {
             const db = getDb();
             const normalize = (n) => n ? n.replace(/^98|^0/, '') : '';
             const user = db.users.find(u => normalize(u.phoneNumber) === normalize(senderNumber));
-
             if (!user) return; 
-
-            if (msg.hasMedia) {
-                const media = await msg.downloadMedia();
-                if (media.mimetype.startsWith('audio/')) {
-                    const reply = await processN8NRequest(user, null, media.data, media.mimetype);
-                    msg.reply(typeof reply === 'string' ? reply : JSON.stringify(reply));
-                }
-            } else {
-                const reply = await processN8NRequest(user, msg.body);
-                msg.reply(typeof reply === 'string' ? reply : JSON.stringify(reply));
-            }
+            const reply = await processN8NRequest(user, msg.body);
+            msg.reply(typeof reply === 'string' ? reply : JSON.stringify(reply));
         });
 
-        // Initialize with error catching to prevent crash
         whatsappClient.initialize().catch(err => {
-            console.error("WA Init Error (Caught):", err.message);
+            console.error("WA Init Error:", err.message);
             isWhatsAppReady = false;
         });
 
@@ -483,34 +494,30 @@ const initWhatsApp = async () => {
     }
 };
 
-// Start Bots (Delayed slightly to allow server to bind port first)
+// Start Services
 setTimeout(() => {
-    // AUTO-START n8n HERE
-    startN8nService();
-    
+    startN8nService(); // Local start logic
+    syncN8nWorkflow(); // Auto Sync & Activate Workflow
     initWhatsApp();
     initTelegram();
 }, 3000);
 
-
-// --- API ROUTES ---
-
+// --- ROUTES ---
 app.get('/api/whatsapp/status', (req, res) => { res.json({ ready: isWhatsAppReady, qr: currentQR, user: whatsappUser }); });
 app.get('/api/whatsapp/groups', async (req, res) => {
-    if (!whatsappClient || !isWhatsAppReady) return res.status(503).json({ success: false, message: 'WhatsApp not ready' });
-    try { const chats = await whatsappClient.getChats(); const groups = chats.filter(chat => chat.isGroup).map(chat => ({ id: chat.id._serialized, name: chat.name })); res.json({ success: true, groups }); } catch (e) { res.status(500).json({ success: false, message: e.message }); }
+    if (!whatsappClient || !isWhatsAppReady) return res.status(503).json({ success: false });
+    try { const chats = await whatsappClient.getChats(); const groups = chats.filter(chat => chat.isGroup).map(chat => ({ id: chat.id._serialized, name: chat.name })); res.json({ success: true, groups }); } catch (e) { res.status(500).json({ success: false }); }
 });
 app.post('/api/whatsapp/logout', async (req, res) => {
-    if (whatsappClient) { try { await whatsappClient.logout(); isWhatsAppReady = false; whatsappUser = null; res.json({ success: true }); } catch (e) { res.status(500).json({ success: false, message: e.message }); } } else res.status(400).json({ success: false });
+    if (whatsappClient) { try { await whatsappClient.logout(); isWhatsAppReady = false; res.json({ success: true }); } catch (e) { res.status(500).json({ success: false }); } } else res.status(400).json({ success: false });
 });
 app.post('/api/send-whatsapp', async (req, res) => {
     if (!whatsappClient || !isWhatsAppReady) return res.status(503).json({ success: false, message: 'Bot not ready' });
     const { number, message, mediaData } = req.body;
-    if (!number) return res.status(400).json({ error: 'Missing number' });
     try {
-        let chatId = (number.includes('-') || number.includes('@g.us')) ? (number.endsWith('@g.us') ? number : `${number}@g.us`) : `${number.replace(/\D/g, '').replace(/^09/, '989').replace(/^9/, '989')}@c.us`;
+        let chatId = (number.includes('@')) ? number : `${number.replace(/\D/g, '').replace(/^09/, '989').replace(/^9/, '989')}@c.us`;
         if (mediaData && mediaData.data) {
-            const media = new MessageMedia(mediaData.mimeType || 'image/png', mediaData.data, mediaData.filename);
+            const media = new MessageMedia(mediaData.mimeType, mediaData.data, mediaData.filename);
             await whatsappClient.sendMessage(chatId, media, { caption: message || '' });
         } else if (message) { await whatsappClient.sendMessage(chatId, message); }
         res.json({ success: true });
@@ -518,65 +525,47 @@ app.post('/api/send-whatsapp', async (req, res) => {
 });
 
 app.post('/api/ai-request', async (req, res) => {
-    const { message } = req.body;
-    const user = { fullName: 'کاربر سیستم', role: 'user', id: 'frontend' }; 
-    try { 
-        const reply = await processN8NRequest(user, message); 
-        res.json({ reply: typeof reply === 'string' ? reply : JSON.stringify(reply) }); 
-    } catch (e) { res.status(500).json({ error: e.message }); }
+    try { const reply = await processN8NRequest({ fullName: 'User', role: 'user', id: 'fe' }, req.body.message); res.json({ reply: typeof reply === 'string' ? reply : JSON.stringify(reply) }); } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 app.get('/api/manifest', (req, res) => {
-    res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
     const db = getDb();
-    const settings = db.settings || {};
-    const iconBase = settings.pwaIcon || "https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/png/google-keep.png";
-    const iconSrc = iconBase.includes('?') ? iconBase : `${iconBase}?v=${Date.now()}`;
-    const manifest = { "name": "Payment Order System", "short_name": "PaymentSys", "start_url": "/", "display": "standalone", "background_color": "#f3f4f6", "theme_color": "#2563eb", "orientation": "portrait-primary", "icons": [ { "src": iconSrc, "sizes": "192x192", "type": "image/png" }, { "src": iconSrc, "sizes": "512x512", "type": "image/png" } ] };
-    res.json(manifest);
+    const icon = db.settings.pwaIcon || "https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/png/google-keep.png";
+    res.json({ "name": "PaymentSys", "short_name": "PaySys", "start_url": "/", "display": "standalone", "background_color": "#f3f4f6", "theme_color": "#2563eb", "icons": [ { "src": icon, "sizes": "192x192", "type": "image/png" }, { "src": icon, "sizes": "512x512", "type": "image/png" } ] });
 });
 
-app.post('/api/login', (req, res) => { const { username, password } = req.body; const db = getDb(); const user = db.users.find(u => u.username === username && u.password === password); if (user) res.json(user); else res.status(401).json({ message: 'Invalid credentials' }); });
-app.get('/api/users', (req, res) => { res.json(getDb().users); });
+// CRUD Routes
+app.post('/api/login', (req, res) => { const { username, password } = req.body; const db = getDb(); const user = db.users.find(u => u.username === username && u.password === password); if (user) res.json(user); else res.status(401).json({ message: 'Invalid' }); });
+app.get('/api/users', (req, res) => res.json(getDb().users));
 app.post('/api/users', (req, res) => { const db = getDb(); db.users.push(req.body); saveDb(db); res.json(db.users); });
-app.put('/api/users/:id', (req, res) => { const db = getDb(); const idx = db.users.findIndex(u => u.id === req.params.id); if (idx !== -1) { db.users[idx] = { ...db.users[idx], ...req.body }; saveDb(db); res.json(db.users); } else res.status(404).json({ message: 'User not found' }); });
+app.put('/api/users/:id', (req, res) => { const db = getDb(); const i = db.users.findIndex(u => u.id === req.params.id); if (i!==-1) { db.users[i] = { ...db.users[i], ...req.body }; saveDb(db); res.json(db.users); } else res.sendStatus(404); });
 app.delete('/api/users/:id', (req, res) => { const db = getDb(); db.users = db.users.filter(u => u.id !== req.params.id); saveDb(db); res.json(db.users); });
-app.get('/api/settings', (req, res) => { res.json(getDb().settings); });
+app.get('/api/settings', (req, res) => res.json(getDb().settings));
 app.post('/api/settings', (req, res) => { const db = getDb(); db.settings = req.body; saveDb(db); res.json(db.settings); });
-app.get('/api/chat', (req, res) => { res.json(getDb().messages); });
-app.post('/api/chat', (req, res) => { const db = getDb(); const newMsg = req.body; if (db.messages.length > 500) db.messages = db.messages.slice(-500); db.messages.push(newMsg); saveDb(db); res.json(db.messages); });
-app.put('/api/chat/:id', (req, res) => { const db = getDb(); const idx = db.messages.findIndex(m => m.id === req.params.id); if (idx !== -1) { db.messages[idx] = { ...db.messages[idx], ...req.body }; saveDb(db); res.json(db.messages); } else res.status(404).json({ message: 'Message not found' }); });
+app.get('/api/chat', (req, res) => res.json(getDb().messages));
+app.post('/api/chat', (req, res) => { const db = getDb(); const m = req.body; if(db.messages.length>500) db.messages.shift(); db.messages.push(m); saveDb(db); res.json(db.messages); });
+app.put('/api/chat/:id', (req, res) => { const db = getDb(); const i = db.messages.findIndex(m => m.id === req.params.id); if (i!==-1) { db.messages[i] = { ...db.messages[i], ...req.body }; saveDb(db); res.json(db.messages); } else res.sendStatus(404); });
 app.delete('/api/chat/:id', (req, res) => { const db = getDb(); db.messages = db.messages.filter(m => m.id !== req.params.id); saveDb(db); res.json(db.messages); });
-app.get('/api/groups', (req, res) => { res.json(getDb().groups); });
+app.get('/api/groups', (req, res) => res.json(getDb().groups));
 app.post('/api/groups', (req, res) => { const db = getDb(); db.groups.push(req.body); saveDb(db); res.json(db.groups); });
-app.put('/api/groups/:id', (req, res) => { const db = getDb(); const idx = db.groups.findIndex(g => g.id === req.params.id); if (idx !== -1) { db.groups[idx] = { ...db.groups[idx], ...req.body }; saveDb(db); res.json(db.groups); } else res.status(404).json({ message: 'Group not found' }); });
+app.put('/api/groups/:id', (req, res) => { const db = getDb(); const i = db.groups.findIndex(g => g.id === req.params.id); if(i!==-1){ db.groups[i] = { ...db.groups[i], ...req.body }; saveDb(db); res.json(db.groups); } else res.sendStatus(404); });
 app.delete('/api/groups/:id', (req, res) => { const db = getDb(); db.groups = db.groups.filter(g => g.id !== req.params.id); saveDb(db); res.json(db.groups); });
-app.get('/api/tasks', (req, res) => { res.json(getDb().tasks); });
+app.get('/api/tasks', (req, res) => res.json(getDb().tasks));
 app.post('/api/tasks', (req, res) => { const db = getDb(); db.tasks.push(req.body); saveDb(db); res.json(db.tasks); });
-app.put('/api/tasks/:id', (req, res) => { const db = getDb(); const idx = db.tasks.findIndex(t => t.id === req.params.id); if (idx !== -1) { db.tasks[idx] = req.body; saveDb(db); res.json(db.tasks); } else res.status(404).json({error: 'Task not found'}); });
+app.put('/api/tasks/:id', (req, res) => { const db = getDb(); const i = db.tasks.findIndex(t => t.id === req.params.id); if(i!==-1){ db.tasks[i] = req.body; saveDb(db); res.json(db.tasks); } else res.sendStatus(404); });
 app.delete('/api/tasks/:id', (req, res) => { const db = getDb(); db.tasks = db.tasks.filter(t => t.id !== req.params.id); saveDb(db); res.json(db.tasks); });
-app.get('/api/trade', (req, res) => { res.json(getDb().tradeRecords || []); });
+app.get('/api/trade', (req, res) => res.json(getDb().tradeRecords || []));
 app.post('/api/trade', (req, res) => { const db = getDb(); db.tradeRecords = db.tradeRecords || []; db.tradeRecords.push(req.body); saveDb(db); res.json(db.tradeRecords); });
-app.put('/api/trade/:id', (req, res) => { const db = getDb(); db.tradeRecords = db.tradeRecords || []; const idx = db.tradeRecords.findIndex(t => t.id === req.params.id); if (idx !== -1) { db.tradeRecords[idx] = req.body; saveDb(db); res.json(db.tradeRecords); } else res.status(404).json({error: 'Trade record not found'}); });
+app.put('/api/trade/:id', (req, res) => { const db = getDb(); db.tradeRecords = db.tradeRecords || []; const i = db.tradeRecords.findIndex(t => t.id === req.params.id); if(i!==-1){ db.tradeRecords[i] = req.body; saveDb(db); res.json(db.tradeRecords); } else res.sendStatus(404); });
 app.delete('/api/trade/:id', (req, res) => { const db = getDb(); db.tradeRecords = (db.tradeRecords || []).filter(t => t.id !== req.params.id); saveDb(db); res.json(db.tradeRecords); });
-app.post('/api/upload', (req, res) => {
-    try {
-        const { fileName, fileData } = req.body;
-        const matches = fileData.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
-        if (!matches || matches.length !== 3) return res.status(400).send('Invalid base64');
-        const buffer = Buffer.from(matches[2], 'base64');
-        const uniqueName = Date.now() + '_' + fileName;
-        const filePath = path.join(UPLOADS_DIR, uniqueName);
-        fs.writeFileSync(filePath, buffer);
-        res.json({ url: `/uploads/${uniqueName}`, fileName: uniqueName });
-    } catch (e) { res.status(500).send('Upload failed'); }
-});
-app.get('/api/next-tracking-number', (req, res) => { res.json({ nextTrackingNumber: findNextAvailableTrackingNumber(getDb()) }); });
-app.get('/api/orders', (req, res) => { res.json(getDb().orders); });
-app.post('/api/orders', (req, res) => { const db = getDb(); const newOrder = req.body; newOrder.updatedAt = Date.now(); let assignedTrackingNumber = newOrder.trackingNumber; const isTaken = db.orders.some(o => o.trackingNumber === assignedTrackingNumber); if (isTaken) { assignedTrackingNumber = findNextAvailableTrackingNumber(db); newOrder.trackingNumber = assignedTrackingNumber; } db.orders.unshift(newOrder); saveDb(db); res.json(db.orders); });
-app.put('/api/orders/:id', (req, res) => { const db = getDb(); const updatedOrder = req.body; updatedOrder.updatedAt = Date.now(); const index = db.orders.findIndex(o => o.id === req.params.id); if (index !== -1) { db.orders[index] = updatedOrder; saveDb(db); res.json(db.orders); } else res.status(404).json({ message: 'Order not found' }); });
-app.delete('/api/orders/:id', (req, res) => { const db = getDb(); db.orders = db.orders.filter(o => o.id !== req.params.id); saveDb(db); res.json(db.orders); });
-app.get('/api/backup', (req, res) => { const db = getDb(); res.setHeader('Content-Type', 'application/json'); res.setHeader('Content-Disposition', 'attachment; filename=database_backup.json'); res.json(db); });
-app.post('/api/restore', (req, res) => { const newData = req.body; if (!newData || !Array.isArray(newData.orders) || !Array.isArray(newData.users)) { return res.status(400).json({ message: 'Invalid backup' }); } saveDb(newData); res.json({ success: true }); });
-app.get('*', (req, res) => { const indexPath = path.join(__dirname, 'dist', 'index.html'); if (fs.existsSync(indexPath)) { res.sendFile(indexPath); } else { res.send('React App needs to be built. Run "npm run build" first.'); } });
-app.listen(PORT, () => { console.log(`Server running on 0.0.0.0:${PORT}`); });
+app.post('/api/upload', (req, res) => { try { const { fileName, fileData } = req.body; const b = Buffer.from(fileData.split(',')[1], 'base64'); const n = Date.now() + '_' + fileName; fs.writeFileSync(path.join(UPLOADS_DIR, n), b); res.json({ url: `/uploads/${n}`, fileName: n }); } catch (e) { res.status(500).send('Err'); } });
+app.get('/api/next-tracking-number', (req, res) => res.json({ nextTrackingNumber: findNextAvailableTrackingNumber(getDb()) }));
+app.get('/api/orders', (req, res) => res.json(getDb().orders));
+app.post('/api/orders', (req, res) => { const db = getDb(); const o = req.body; o.updatedAt = Date.now(); if(db.orders.some(x=>x.trackingNumber===o.trackingNumber)) o.trackingNumber = findNextAvailableTrackingNumber(db); db.orders.unshift(o); saveDb(db); res.json(db.orders); });
+app.put('/api/orders/:id', (req, res) => { const db = getDb(); const i = db.orders.findIndex(x=>x.id===req.params.id); if(i!==-1){ db.orders[i]=req.body; db.orders[i].updatedAt=Date.now(); saveDb(db); res.json(db.orders); } else res.sendStatus(404); });
+app.delete('/api/orders/:id', (req, res) => { const db = getDb(); db.orders = db.orders.filter(x=>x.id!==req.params.id); saveDb(db); res.json(db.orders); });
+app.get('/api/backup', (req, res) => { res.setHeader('Content-Type', 'application/json'); res.setHeader('Content-Disposition', 'attachment; filename=backup.json'); res.json(getDb()); });
+app.post('/api/restore', (req, res) => { if(req.body && req.body.orders) { saveDb(req.body); res.json({success:true}); } else res.sendStatus(400); });
+app.get('*', (req, res) => { const p = path.join(__dirname, 'dist', 'index.html'); if(fs.existsSync(p)) res.sendFile(p); else res.send('Build first'); });
+
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));

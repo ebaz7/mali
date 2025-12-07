@@ -4,7 +4,7 @@ import { getSettings } from '../services/storageService';
 import { apiCall } from '../services/apiService';
 import { SystemSettings } from '../types';
 import { formatNumberString, deformatNumberString, getCurrentShamsiDate, jalaliToGregorian } from '../constants';
-import { BrainCircuit, Calendar, Calculator, Building2, CheckCircle2, AlertTriangle, Loader2, Server, FileText, Wifi } from 'lucide-react';
+import { BrainCircuit, Calendar, Calculator, Building2, CheckCircle2, AlertTriangle, Loader2, Server, FileText, Wifi, RefreshCw } from 'lucide-react';
 
 const SmartPaymentAnalysis: React.FC = () => {
     const [settings, setSettings] = useState<SystemSettings | null>(null);
@@ -33,13 +33,22 @@ const SmartPaymentAnalysis: React.FC = () => {
             current += Math.floor(Math.random() * 5) + 1;
             if (current > 95) current = 95; // Wait for real response
             
-            if (current > 10 && current < 40) setLoadingStep('ارسال داده‌ها به موتور هوشمند (n8n)...');
+            if (current > 10 && current < 40) setLoadingStep('ارسال داده‌ها به موتور هوشمند...');
             if (current > 40 && current < 70) setLoadingStep('بررسی سوابق و نقدینگی...');
             if (current > 70 && current < 90) setLoadingStep('تحلیل الگوهای پرداخت...');
             if (current > 90) setLoadingStep('نهایی‌سازی پیشنهاد...');
             
             setProgress(current);
         }, 150);
+    };
+
+    const handleReset = () => {
+        setAmount('');
+        setCompany('');
+        setDate(getCurrentShamsiDate());
+        setAnalysisResult(null);
+        setLoading(false);
+        setProgress(0);
     };
 
     const handleAnalyze = async (e: React.FormEvent) => {
@@ -72,7 +81,7 @@ const SmartPaymentAnalysis: React.FC = () => {
         } catch (error) {
             clearInterval(progressInterval.current);
             setProgress(0);
-            alert('خطا در تحلیل. لطفا مطمئن شوید سرور (و n8n) در حال اجراست.');
+            alert('خطا در تحلیل. لطفا اتصال اینترنت را بررسی کنید.');
             setLoading(false);
         }
     };
@@ -103,25 +112,27 @@ const SmartPaymentAnalysis: React.FC = () => {
                     <form onSubmit={handleAnalyze} className="space-y-6">
                         
                         {/* 1. Date Input */}
-                        <div>
+                        <div className="relative">
+                            <span className="absolute -right-2 -top-2 w-6 h-6 flex items-center justify-center bg-blue-600 text-white rounded-full text-xs font-bold shadow-md ring-2 ring-white">1</span>
                             <label className="block text-sm font-bold text-gray-700 mb-2 flex items-center gap-2">
                                 <Calendar size={18} className="text-blue-500"/> تاریخ سررسید / پرداخت
                             </label>
                             <div className="grid grid-cols-3 gap-2">
-                                <select className="border rounded-xl p-2 bg-gray-50" value={date.day} onChange={e => setDate({...date, day: Number(e.target.value)})}>{days.map(d => <option key={d} value={d}>{d}</option>)}</select>
-                                <select className="border rounded-xl p-2 bg-gray-50" value={date.month} onChange={e => setDate({...date, month: Number(e.target.value)})}>{months.map((m, i) => <option key={i} value={i+1}>{m}</option>)}</select>
-                                <select className="border rounded-xl p-2 bg-gray-50" value={date.year} onChange={e => setDate({...date, year: Number(e.target.value)})}>{years.map(y => <option key={y} value={y}>{y}</option>)}</select>
+                                <select className="border rounded-xl p-2 bg-gray-50 focus:ring-2 focus:ring-blue-500 transition-all" value={date.day} onChange={e => setDate({...date, day: Number(e.target.value)})}>{days.map(d => <option key={d} value={d}>{d}</option>)}</select>
+                                <select className="border rounded-xl p-2 bg-gray-50 focus:ring-2 focus:ring-blue-500 transition-all" value={date.month} onChange={e => setDate({...date, month: Number(e.target.value)})}>{months.map((m, i) => <option key={i} value={i+1}>{m}</option>)}</select>
+                                <select className="border rounded-xl p-2 bg-gray-50 focus:ring-2 focus:ring-blue-500 transition-all" value={date.year} onChange={e => setDate({...date, year: Number(e.target.value)})}>{years.map(y => <option key={y} value={y}>{y}</option>)}</select>
                             </div>
                         </div>
 
                         {/* 2. Company (Place) Input */}
-                        <div>
+                        <div className="relative">
+                            <span className="absolute -right-2 -top-2 w-6 h-6 flex items-center justify-center bg-blue-600 text-white rounded-full text-xs font-bold shadow-md ring-2 ring-white">2</span>
                             <label className="block text-sm font-bold text-gray-700 mb-2 flex items-center gap-2">
                                 <Building2 size={18} className="text-blue-500"/> محل پرداخت / شرکت
                             </label>
                             <select 
                                 required 
-                                className="w-full border rounded-xl p-3 bg-gray-50 focus:bg-white transition-colors"
+                                className="w-full border rounded-xl p-3 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-blue-500 transition-all"
                                 value={company}
                                 onChange={e => setCompany(e.target.value)}
                             >
@@ -134,27 +145,39 @@ const SmartPaymentAnalysis: React.FC = () => {
                         </div>
 
                         {/* 3. Amount Input */}
-                        <div>
+                        <div className="relative">
+                            <span className="absolute -right-2 -top-2 w-6 h-6 flex items-center justify-center bg-blue-600 text-white rounded-full text-xs font-bold shadow-md ring-2 ring-white">3</span>
                             <label className="block text-sm font-bold text-gray-700 mb-2 flex items-center gap-2">
                                 <Calculator size={18} className="text-blue-500"/> مبلغ (ریال)
                             </label>
                             <input 
                                 required
                                 type="text" 
-                                className="w-full border rounded-xl p-3 bg-gray-50 focus:bg-white dir-ltr text-left font-mono font-bold text-lg"
+                                className="w-full border rounded-xl p-3 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-blue-500 transition-all dir-ltr text-left font-mono font-bold text-lg"
                                 value={amount}
                                 onChange={e => setAmount(formatNumberString(deformatNumberString(e.target.value)))}
                                 placeholder="0"
                             />
                         </div>
 
-                        <button 
-                            type="submit" 
-                            disabled={loading || !company || !amount}
-                            className="w-full bg-gradient-to-r from-indigo-600 to-blue-600 text-white py-4 rounded-xl font-bold shadow-lg shadow-blue-600/30 hover:shadow-xl hover:scale-[1.02] transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:hover:scale-100"
-                        >
-                            {loading ? <div className="animate-spin w-6 h-6 border-2 border-white border-t-transparent rounded-full"></div> : <><BrainCircuit/> تحلیل و پیشنهاد</>}
-                        </button>
+                        <div className="flex gap-2">
+                            <button 
+                                type="button" 
+                                onClick={handleReset}
+                                disabled={loading}
+                                className="px-4 py-3 rounded-xl border border-gray-200 text-gray-500 hover:bg-gray-50 hover:text-red-500 transition-colors"
+                                title="پاک کردن فرم"
+                            >
+                                <RefreshCw size={20} />
+                            </button>
+                            <button 
+                                type="submit" 
+                                disabled={loading || !company || !amount}
+                                className="flex-1 bg-gradient-to-r from-indigo-600 to-blue-600 text-white py-4 rounded-xl font-bold shadow-lg shadow-blue-600/30 hover:shadow-xl hover:scale-[1.02] transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:hover:scale-100"
+                            >
+                                {loading ? <div className="animate-spin w-6 h-6 border-2 border-white border-t-transparent rounded-full"></div> : <><BrainCircuit/> تحلیل و پیشنهاد</>}
+                            </button>
+                        </div>
                     </form>
                 </div>
 
@@ -212,7 +235,9 @@ const SmartPaymentAnalysis: React.FC = () => {
                                 <div className={`text-3xl font-black mb-2 ${analysisResult.score > 70 ? 'text-green-600' : analysisResult.score < 50 ? 'text-red-600' : 'text-amber-600'}`}>
                                     {analysisResult.recommendation}
                                 </div>
-                                <p className="text-gray-400 text-sm">بر اساس تحلیل هوشمند</p>
+                                <p className="text-gray-400 text-sm">
+                                    {analysisResult.isOffline ? 'بر اساس قوانین پیش‌فرض (آفلاین)' : 'بر اساس تحلیل هوشمند'}
+                                </p>
                             </div>
 
                             <div className="space-y-3 bg-gray-50 p-4 rounded-xl border border-gray-100">
