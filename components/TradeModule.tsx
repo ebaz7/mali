@@ -43,7 +43,7 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
     
     // Report Specific States
     const [reportSearchTerm, setReportSearchTerm] = useState('');
-    const [reportUsdRialRate, setReportUsdRialRate] = useState<string>('500000'); // Default Rial Rate
+    const [reportUsdRialRate, setReportUsdRialRate] = useState<string>('600000'); // Default Rial Rate
     const [reportEurUsdRate, setReportEurUsdRate] = useState<string>('1.08'); // Default EUR to USD Rate
     const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
     const [sendingReport, setSendingReport] = useState(false);
@@ -266,7 +266,7 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
     const getAllGuarantees = () => { const list = []; if (selectedRecord && selectedRecord.currencyPurchaseData?.guaranteeCheque) { list.push({ id: 'currency_g', type: 'ارزی', number: selectedRecord.currencyPurchaseData.guaranteeCheque.chequeNumber, bank: selectedRecord.currencyPurchaseData.guaranteeCheque.bank, amount: selectedRecord.currencyPurchaseData.guaranteeCheque.amount, isDelivered: selectedRecord.currencyPurchaseData.guaranteeCheque.isDelivered, toggleFunc: handleToggleCurrencyGuaranteeDelivery }); } if (selectedRecord && selectedRecord.greenLeafData?.guarantees) { selectedRecord.greenLeafData.guarantees.forEach(g => { list.push({ id: g.id, type: 'گمرکی', number: g.guaranteeNumber + (g.chequeNumber ? ` / چک: ${g.chequeNumber}` : ''), bank: g.chequeBank, amount: g.chequeAmount, isDelivered: g.isDelivered, toggleFunc: () => handleToggleGuaranteeDelivery(g.id) }); }); } return list; };
 
     // ... (Reporting functions)
-    const handlePrintReport = () => { const content = document.getElementById('allocation-report-table-print-area'); if (!content) return; const printWindow = window.open('', '_blank', 'width=1200,height=800'); if (!printWindow) { alert("پنجره پاپ‌آپ مسدود شده است. لطفا اجازه دهید."); return; } const styleSheets = Array.from(document.querySelectorAll('link[rel="stylesheet"], style')).map(el => el.outerHTML).join(''); printWindow.document.write(`<html dir="rtl" lang="fa"><head><title>گزارش صف تخصیص</title>${styleSheets}<script src="https://cdn.tailwindcss.com"></script><link href="https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.003/Vazirmatn-font-face.css" rel="stylesheet" type="text/css" /><style>body { background: white; margin: 0; padding: 20px; font-family: 'Vazirmatn', sans-serif; direction: rtl; } table { width: 100%; border-collapse: collapse; font-size: 10pt; } th, td { border: 1px solid #000; padding: 4px; text-align: center; } th { background-color: #f3f4f6; color: #000; font-weight: bold; } .no-print { display: none !important; } @media print { @page { size: A4 landscape; margin: 10mm; } body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }</style></head><body><div style="width: 100%;"><h2 style="text-align: center; margin-bottom: 20px; font-weight: bold;">گزارش صف تخصیص ارز</h2>${content.innerHTML}</div><script>setTimeout(function() { window.focus(); window.print(); }, 1000);</script></body></html>`); printWindow.document.close(); };
+    const handlePrintReport = () => { const content = document.getElementById('allocation-report-table-print-area'); if (!content) return; const printWindow = window.open('', '_blank', 'width=1200,height=800'); if (!printWindow) { alert("پنجره پاپ‌آپ مسدود شده است. لطفا اجازه دهید."); return; } const styleSheets = Array.from(document.querySelectorAll('link[rel="stylesheet"], style')).map(el => el.outerHTML).join(''); printWindow.document.write(`<html dir="rtl" lang="fa"><head><title>گزارش صف تخصیص</title>${styleSheets}<script src="https://cdn.tailwindcss.com"></script><link href="https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.003/Vazirmatn-font-face.css" rel="stylesheet" type="text/css" /><style>body { background: white; margin: 0; padding: 20px; font-family: 'Vazirmatn', sans-serif; direction: rtl; } table { width: 100%; border-collapse: collapse; font-size: 10pt; } th, td { border: 1px solid #000; padding: 4px; text-align: center; } th { background-color: #1e3a8a !important; color: white !important; font-weight: bold; } .no-print { display: none !important; } @media print { @page { size: A4 landscape; margin: 10mm; } body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }</style></head><body><div style="width: 100%;"><h2 style="text-align: center; margin-bottom: 20px; font-weight: bold;">گزارش صف تخصیص ارز</h2>${content.innerHTML}</div><script>setTimeout(function() { window.focus(); window.print(); }, 1000);</script></body></html>`); printWindow.document.close(); };
     const handlePrintTrade = () => { window.print(); };
     const handleDownloadReportPDF = async (elementId: string, filename: string) => {
         setIsGeneratingPdf(true);
@@ -326,48 +326,144 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
         switch (activeReport) {
             case 'general': return (<div className="overflow-x-auto"><table className="w-full text-sm text-right"><thead className="bg-gray-100 text-gray-700"><tr><th className="p-3">شماره پرونده</th><th className="p-3">فروشنده</th><th className="p-3">کالا</th><th className="p-3">شرکت</th><th className="p-3">مرحله جاری</th><th className="p-3">وضعیت</th></tr></thead><tbody>{filteredRecords.map(r => { const currentStage = STAGES.slice().reverse().find(s => r.stages[s]?.isCompleted) || 'شروع نشده'; return (<tr key={r.id} className="border-b hover:bg-gray-50"><td className="p-3 font-mono">{r.fileNumber}</td><td className="p-3">{r.sellerName}</td><td className="p-3">{r.goodsName}</td><td className="p-3">{r.company}</td><td className="p-3"><span className="bg-blue-100 text-blue-700 px-2 py-1 rounded text-xs">{currentStage}</span></td><td className="p-3">{r.status}</td></tr>); })}</tbody></table></div>);
             case 'currency': return (<div className="overflow-x-auto"><table className="w-full text-sm text-right"><thead className="bg-gray-100 text-gray-700"><tr><th className="p-3">شماره پرونده</th><th className="p-3">ارز</th><th className="p-3">خریداری شده</th><th className="p-3">تحویل شده</th><th className="p-3">باقیمانده</th></tr></thead><tbody>{filteredRecords.map(r => { const d = r.currencyPurchaseData; if (!d) return null; const purchased = d.purchasedAmount || 0; const delivered = d.deliveredAmount || 0; return (<tr key={r.id} className="border-b hover:bg-gray-50"><td className="p-3 font-mono">{r.fileNumber}</td><td className="p-3">{r.mainCurrency}</td><td className="p-3 font-bold text-blue-600">{formatCurrency(purchased)}</td><td className="p-3 font-bold text-green-600">{formatCurrency(delivered)}</td><td className="p-3 font-bold text-red-600">{formatCurrency(purchased - delivered)}</td></tr>); })}</tbody></table></div>);
-            case 'allocation_queue': 
+            case 'allocation_queue':
+                // Prepare Summary Data
+                const companySummary: Record<string, { allocated: number, queue: number }> = {};
+                let totalAllocated = 0;
+                let totalQueue = 0;
+                const usdRate = parseFloat(reportEurUsdRate) || 1.08;
+
+                const processedRecords = filteredRecords.filter(r => r.stages[TradeStage.ALLOCATION_QUEUE]?.queueDate).map(r => {
+                    const stageQ = r.stages[TradeStage.ALLOCATION_QUEUE];
+                    const stageA = r.stages[TradeStage.ALLOCATION_APPROVED];
+                    const isAllocated = stageA?.allocationCode;
+                    
+                    const amount = stageQ.costCurrency || 0;
+                    const currency = r.mainCurrency || 'EUR';
+                    let amountInUSD = 0;
+
+                    if (currency === 'USD') amountInUSD = amount;
+                    else if (currency === 'EUR') amountInUSD = amount * usdRate;
+                    // Add more conversions if needed
+
+                    if (!companySummary[r.company || 'Unknown']) {
+                        companySummary[r.company || 'Unknown'] = { allocated: 0, queue: 0 };
+                    }
+
+                    if (isAllocated) {
+                        companySummary[r.company || 'Unknown'].allocated += amountInUSD;
+                        totalAllocated += amountInUSD;
+                    } else {
+                        companySummary[r.company || 'Unknown'].queue += amountInUSD;
+                        totalQueue += amountInUSD;
+                    }
+
+                    return { ...r, amountInUSD, isAllocated };
+                });
+
                 return (
                     <div className="overflow-x-auto" id="allocation-report-table-print-area">
-                        <table className="w-full text-sm text-right border-collapse border border-gray-300">
-                            <thead className="bg-gray-100 text-gray-700">
-                                <tr>
-                                    <th className="p-2 border border-gray-300">ردیف</th>
-                                    <th className="p-2 border border-gray-300">شماره پرونده</th>
-                                    <th className="p-2 border border-gray-300">شماره ثبت سفارش</th>
-                                    <th className="p-2 border border-gray-300">شرکت</th>
-                                    <th className="p-2 border border-gray-300">فروشنده</th>
-                                    <th className="p-2 border border-gray-300">منشا ارز</th>
-                                    <th className="p-2 border border-gray-300">تاریخ ورود به صف</th>
-                                    <th className="p-2 border border-gray-300">مبلغ ارزی</th>
-                                    <th className="p-2 border border-gray-300">مدت انتظار</th>
+                        {/* Settings Bar for Report */}
+                        <div className="bg-gray-100 p-3 rounded mb-4 flex gap-4 text-xs no-print">
+                            <div className="flex items-center gap-2">
+                                <label>نرخ تبدیل یورو به دلار:</label>
+                                <input type="number" className="border p-1 w-20 text-center" value={reportEurUsdRate} onChange={e => setReportEurUsdRate(e.target.value)} />
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <label>نرخ دلار به ریال (جهت نمایش):</label>
+                                <input type="text" className="border p-1 w-28 text-center" value={formatNumberString(reportUsdRialRate)} onChange={e => setReportUsdRialRate(deformatNumberString(e.target.value).toString())} />
+                            </div>
+                        </div>
+
+                        <table className="w-full text-[11px] text-center border-collapse border border-gray-400">
+                            <thead>
+                                <tr className="bg-[#1e3a8a] text-white">
+                                    <th className="p-2 border border-gray-400">ردیف</th>
+                                    <th className="p-2 border border-gray-400">مشخصات پروفرما</th>
+                                    <th className="p-2 border border-gray-400">شماره ثبت سفارش</th>
+                                    <th className="p-2 border border-gray-400">شرکت</th>
+                                    <th className="p-2 border border-gray-400">مبلغ ثبت سفارش</th>
+                                    <th className="p-2 border border-gray-400">تبدیل به دلار</th>
+                                    <th className="p-2 border border-gray-400">معادل ریالی</th>
+                                    <th className="p-2 border border-gray-400">زمان در صف</th>
+                                    <th className="p-2 border border-gray-400">زمان تخصیص</th>
+                                    <th className="p-2 border border-gray-400">مانده مهلت (روز)</th>
+                                    <th className="p-2 border border-gray-400">وضعیت تخصیص</th>
+                                    <th className="p-2 border border-gray-400">بانک عامل</th>
+                                    <th className="p-2 border border-gray-400">اولویت</th>
+                                    <th className="p-2 border border-gray-400">نوع ارز</th>
                                 </tr>
                             </thead>
                             <tbody>
-                                {filteredRecords.filter(r => r.stages[TradeStage.ALLOCATION_QUEUE]?.queueDate).map((r, index) => {
-                                    const stage = r.stages[TradeStage.ALLOCATION_QUEUE];
-                                    const days = calculateDaysDiff(stage.queueDate || '');
+                                {processedRecords.map((r, index) => {
+                                    const stageQ = r.stages[TradeStage.ALLOCATION_QUEUE];
+                                    const stageA = r.stages[TradeStage.ALLOCATION_APPROVED];
+                                    const isAllocated = r.isAllocated;
+                                    const daysWait = calculateDaysDiff(stageQ.queueDate || '');
+                                    const rialRate = parseFloat(reportUsdRialRate) || 0;
+                                    const rialEquiv = r.amountInUSD * rialRate;
                                     
                                     // Origin Label mapping
                                     const originMap: any = { 'Bank': 'بانکی', 'Export': 'صادرات', 'Free': 'آزاد', 'Nima': 'نیما' };
                                     const originLabel = originMap[r.currencyAllocationType || ''] || '-';
 
                                     return (
-                                        <tr key={r.id} className="hover:bg-gray-50">
-                                            <td className="p-2 border border-gray-300 text-center">{index + 1}</td>
-                                            <td className="p-2 border border-gray-300 font-mono text-center">{r.fileNumber}</td>
-                                            <td className="p-2 border border-gray-300 font-mono text-center">{r.registrationNumber || '-'}</td>
-                                            <td className="p-2 border border-gray-300">{r.company}</td>
-                                            <td className="p-2 border border-gray-300 truncate max-w-[150px]" title={r.sellerName}>{r.sellerName}</td>
-                                            <td className="p-2 border border-gray-300 text-center">{originLabel}</td>
-                                            <td className="p-2 border border-gray-300 text-center dir-ltr">{stage.queueDate}</td>
-                                            <td className="p-2 border border-gray-300 text-center font-bold text-blue-600 dir-ltr">{formatCurrency(stage.costCurrency)} {r.mainCurrency}</td>
-                                            <td className="p-2 border border-gray-300 text-center font-bold text-amber-600">{days} روز</td>
+                                        <tr key={r.id} className="hover:bg-gray-50 border-b border-gray-300">
+                                            <td className="p-2 border-r border-gray-300">{index + 1}</td>
+                                            <td className="p-2 border-r border-gray-300">
+                                                <div className="font-bold">{r.fileNumber}</div>
+                                                <div className="text-[9px] text-gray-500">{r.goodsName}</div>
+                                            </td>
+                                            <td className="p-2 border-r border-gray-300 font-mono">{r.registrationNumber || '-'}</td>
+                                            <td className="p-2 border-r border-gray-300 font-bold">{r.company}</td>
+                                            <td className="p-2 border-r border-gray-300 font-mono text-left" dir="ltr">{formatCurrency(stageQ.costCurrency)} {r.mainCurrency}</td>
+                                            <td className="p-2 border-r border-gray-300 font-mono font-bold text-left" dir="ltr">$ {formatUSD(r.amountInUSD)}</td>
+                                            <td className="p-2 border-r border-gray-300 font-mono text-blue-600 text-left" dir="ltr">{formatCurrency(rialEquiv)}</td>
+                                            <td className="p-2 border-r border-gray-300 dir-ltr">{stageQ.queueDate}</td>
+                                            <td className="p-2 border-r border-gray-300 dir-ltr">{stageA?.allocationDate || '-'}</td>
+                                            <td className={`p-2 border-r border-gray-300 font-bold ${isAllocated ? 'text-green-600' : 'text-amber-600'}`}>{daysWait}</td>
+                                            <td className={`p-2 border-r border-gray-300 font-bold ${isAllocated ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}`}>
+                                                {isAllocated ? 'تخصیص یافته' : 'در صف'}
+                                            </td>
+                                            <td className="p-2 border-r border-gray-300">{r.operatingBank || '-'}</td>
+                                            <td className="p-2 border-r border-gray-300"><input type="checkbox" disabled /></td>
+                                            <td className="p-2 border-r border-gray-300 text-[10px]">{originLabel}</td>
                                         </tr>
                                     );
                                 })}
                             </tbody>
                         </table>
+
+                        {/* Summary Table */}
+                        <div className="mt-8 border-t-2 border-blue-800 pt-2">
+                            <h3 className="text-right font-bold text-blue-900 mb-2 border-r-4 border-blue-800 pr-2">خلاصه وضعیت ارزی به تفکیک شرکت (دلار آمریکا)</h3>
+                            <table className="w-full text-xs text-center border-collapse border border-gray-400">
+                                <thead>
+                                    <tr className="bg-gray-100 text-gray-800">
+                                        <th className="p-2 border border-gray-400">نام شرکت</th>
+                                        <th className="p-2 border border-gray-400">جمع تخصیص یافته ($)</th>
+                                        <th className="p-2 border border-gray-400">جمع در صف ($)</th>
+                                        <th className="p-2 border border-gray-400 bg-gray-200">مجموع کل ($)</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {Object.entries(companySummary).map(([comp, data]) => (
+                                        <tr key={comp} className="hover:bg-gray-50 border-b border-gray-300">
+                                            <td className="p-2 border-r border-gray-300 font-bold">{comp}</td>
+                                            <td className="p-2 border-r border-gray-300 font-mono text-green-700 font-bold">{formatUSD(data.allocated)}</td>
+                                            <td className="p-2 border-r border-gray-300 font-mono text-amber-700 font-bold">{formatUSD(data.queue)}</td>
+                                            <td className="p-2 border-r border-gray-300 font-mono font-black bg-gray-50">{formatUSD(data.allocated + data.queue)}</td>
+                                        </tr>
+                                    ))}
+                                    <tr className="bg-gray-300 font-black border-t-2 border-gray-500">
+                                        <td className="p-2 border-r border-gray-400">جمع نهایی</td>
+                                        <td className="p-2 border-r border-gray-400 font-mono">{formatUSD(totalAllocated)}</td>
+                                        <td className="p-2 border-r border-gray-400 font-mono">{formatUSD(totalQueue)}</td>
+                                        <td className="p-2 border-r border-gray-400 font-mono">{formatUSD(totalAllocated + totalQueue)}</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
                     </div>
                 );
             case 'clearance': return (<div className="overflow-x-auto"><table className="w-full text-sm text-right"><thead className="bg-gray-100 text-gray-700"><tr><th className="p-3">شماره پرونده</th><th className="p-3">قبض انبار(ها)</th><th className="p-3">هزینه ترخیصیه</th><th className="p-3">تعداد پارت</th></tr></thead><tbody>{filteredRecords.filter(r => r.clearanceData?.receipts.length).map(r => { return (<tr key={r.id} className="border-b hover:bg-gray-50"><td className="p-3 font-mono">{r.fileNumber}</td><td className="p-3">{r.clearanceData?.receipts.map(rc => rc.number).join(', ')}</td><td className="p-3">{formatCurrency(r.clearanceData?.payments.reduce((acc,p)=>acc+p.amount,0) || 0)}</td><td className="p-3">{r.clearanceData?.receipts.length}</td></tr>); })}</tbody></table></div>);
@@ -515,6 +611,17 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
                                             <option value="Export">ارز حاصل از صادرات</option>
                                             <option value="Free">آزاد / اشخاص</option>
                                             <option value="Nima">سامانه نیما</option>
+                                        </select>
+                                    </div>
+                                    <div className="space-y-1">
+                                        <label className="text-xs font-bold text-gray-700">بانک عامل</label>
+                                        <select 
+                                            className="w-full border rounded p-2 text-sm" 
+                                            value={selectedRecord.operatingBank || ''} 
+                                            onChange={e => handleUpdateProforma('operatingBank', e.target.value)}
+                                        >
+                                            <option value="">انتخاب کنید...</option>
+                                            {availableBanks.map(b => <option key={b} value={b}>{b}</option>)}
                                         </select>
                                     </div>
                                 </div>
