@@ -56,7 +56,8 @@ const getDb = () => {
                 smsApiKey: '',
                 smsSenderNumber: '',
                 whatsappNumber: '',
-                n8nWebhookUrl: ''
+                // Default to Docker network alias 'n8n' if in docker, else localhost
+                n8nWebhookUrl: process.env.N8N_WEBHOOK_URL || 'http://localhost:5678/webhook/ai'
             },
             orders: [],
             users: [
@@ -94,15 +95,14 @@ const findNextAvailableTrackingNumber = (db) => {
 
 async function processN8NRequest(user, messageText, audioData = null, audioMimeType = null) {
     const db = getDb();
-    const webhookUrl = db.settings.n8nWebhookUrl;
+    // Prefer DB setting, fallback to Env (Docker), fallback to Localhost
+    const webhookUrl = db.settings.n8nWebhookUrl || process.env.N8N_WEBHOOK_URL || 'http://localhost:5678/webhook/ai';
 
     if (!webhookUrl) {
-        return "خطا: آدرس وب‌هوک n8n در تنظیمات سیستم وارد نشده است.";
+        return "خطا: آدرس وب‌هوک n8n مشخص نشده است.";
     }
 
     try {
-        // 1. Prepare Payload for n8n
-        // n8n will use OpenAI to understand intent and return a JSON action
         const payload = {
             user: {
                 fullName: user.fullName,
@@ -117,30 +117,35 @@ async function processN8NRequest(user, messageText, audioData = null, audioMimeT
             timestamp: new Date().toISOString()
         };
 
-        // 2. Call n8n Webhook
-        const response = await axios.post(webhookUrl, payload, { timeout: 30000 }); // 30s timeout
+        console.log(`Sending to n8n: ${webhookUrl}`);
+        const response = await axios.post(webhookUrl, payload, { timeout: 45000 }); // 45s timeout for AI
         const data = response.data;
 
-        // 3. Process n8n Response (Expects JSON with 'action' or 'reply')
-        // Format expected from n8n: { type: 'tool_call', tool: '...', args: {...} } OR { type: 'message', text: '...' }
-        
-        if (data.type === 'message') {
-            return data.text;
-        } 
-        
-        if (data.type === 'tool_call') {
-            return handleToolExecution(data.tool, data.args, user);
+        // Ensure data is parsed if n8n returns stringified JSON
+        let parsedData = data;
+        if (typeof data === 'string') {
+            try { parsedData = JSON.parse(data); } catch(e) {}
         }
 
-        // Fallback if structure is unknown but text exists
-        if (data.text || data.reply) return data.text || data.reply;
-        if (typeof data === 'string') return data;
+        if (parsedData.type === 'message') {
+            return parsedData.text;
+        } 
+        
+        if (parsedData.type === 'tool_call') {
+            return handleToolExecution(parsedData.tool, parsedData.args, user);
+        }
 
-        return "پاسخ نامشخصی از سرور هوش مصنوعی دریافت شد.";
+        if (parsedData.text || parsedData.reply) return parsedData.text || parsedData.reply;
+        if (typeof parsedData === 'string') return parsedData;
+
+        return "پاسخ نامفهومی از هوش مصنوعی دریافت شد.";
 
     } catch (error) {
         console.error("n8n Error:", error.message);
-        return "متاسفانه در ارتباط با سرور هوش مصنوعی (n8n) خطایی رخ داد.";
+        if (error.code === 'ECONNREFUSED') {
+            return "سرور هوش مصنوعی (n8n) در دسترس نیست. لطفا از اجرای آن اطمینان حاصل کنید.";
+        }
+        return "خطا در پردازش هوش مصنوعی.";
     }
 }
 
@@ -231,8 +236,6 @@ const initTelegram = async () => {
             telegramBot.on('message', async (msg) => {
                 const chatId = msg.chat.id.toString();
                 const db = getDb();
-                
-                // Auth Check: Match Chat ID
                 const user = db.users.find(u => u.telegramChatId === chatId);
 
                 if (!user) {
@@ -240,17 +243,12 @@ const initTelegram = async () => {
                     return;
                 }
 
-                // Handle Audio/Voice
                 if (msg.voice || msg.audio) {
                     const fileId = msg.voice ? msg.voice.file_id : msg.audio.file_id;
                     const fileLink = await telegramBot.getFileLink(fileId);
-                    
-                    // Fetch file bytes
                     const response = await axios.get(fileLink, { responseType: 'arraybuffer' });
                     const base64 = Buffer.from(response.data).toString('base64');
-                    
                     const mimeType = msg.voice ? 'audio/ogg' : 'audio/mpeg'; 
-                    
                     telegramBot.sendChatAction(chatId, 'typing');
                     const reply = await processN8NRequest(user, null, base64, mimeType);
                     telegramBot.sendMessage(chatId, reply);
@@ -276,7 +274,6 @@ const initWhatsApp = async () => {
         const wwebjs = await import('whatsapp-web.js');
         const { Client, LocalAuth, MessageMedia: MM } = wwebjs.default || wwebjs;
         MessageMedia = MM; 
-        
         const qrcodeModule = await import('qrcode-terminal');
         const qrcode = qrcodeModule.default || qrcodeModule;
 
@@ -311,30 +308,21 @@ const initWhatsApp = async () => {
             isWhatsAppReady = true; currentQR = null; whatsappUser = whatsappClient.info?.wid?.user;
         });
 
-        // --- WHATSAPP MESSAGE HANDLER ---
         whatsappClient.on('message', async (msg) => {
-            // 1. Identify User
             const senderNumber = msg.from.replace('@c.us', '');
             const db = getDb();
-            // Normalize phone number matching (remove 98/0)
             const normalize = (n) => n ? n.replace(/^98|^0/, '') : '';
             const user = db.users.find(u => normalize(u.phoneNumber) === normalize(senderNumber));
 
-            if (!user) {
-                // Ignore unknown users
-                return; 
-            }
+            if (!user) return; 
 
-            // 2. Handle Inputs
             if (msg.hasMedia) {
                 const media = await msg.downloadMedia();
                 if (media.mimetype.startsWith('audio/')) {
-                    // Process Audio
                     const reply = await processN8NRequest(user, null, media.data, media.mimetype);
                     msg.reply(reply);
                 }
             } else {
-                // Process Text
                 const reply = await processN8NRequest(user, msg.body);
                 msg.reply(reply);
             }
@@ -348,30 +336,18 @@ const initWhatsApp = async () => {
 };
 
 initWhatsApp();
-setTimeout(initTelegram, 5000); // Delay Telegram init slightly
+setTimeout(initTelegram, 5000); 
 
 // --- API ROUTES ---
 
-app.get('/api/whatsapp/status', (req, res) => {
-    res.json({ ready: isWhatsAppReady, qr: currentQR, user: whatsappUser });
-});
-
+app.get('/api/whatsapp/status', (req, res) => { res.json({ ready: isWhatsAppReady, qr: currentQR, user: whatsappUser }); });
 app.get('/api/whatsapp/groups', async (req, res) => {
     if (!whatsappClient || !isWhatsAppReady) return res.status(503).json({ success: false, message: 'WhatsApp not ready' });
-    try {
-        const chats = await whatsappClient.getChats();
-        const groups = chats.filter(chat => chat.isGroup).map(chat => ({ id: chat.id._serialized, name: chat.name }));
-        res.json({ success: true, groups });
-    } catch (e) { res.status(500).json({ success: false, message: e.message }); }
+    try { const chats = await whatsappClient.getChats(); const groups = chats.filter(chat => chat.isGroup).map(chat => ({ id: chat.id._serialized, name: chat.name })); res.json({ success: true, groups }); } catch (e) { res.status(500).json({ success: false, message: e.message }); }
 });
-
 app.post('/api/whatsapp/logout', async (req, res) => {
-    if (whatsappClient) {
-        try { await whatsappClient.logout(); isWhatsAppReady = false; whatsappUser = null; res.json({ success: true }); } 
-        catch (e) { res.status(500).json({ success: false, message: e.message }); }
-    } else res.status(400).json({ success: false });
+    if (whatsappClient) { try { await whatsappClient.logout(); isWhatsAppReady = false; whatsappUser = null; res.json({ success: true }); } catch (e) { res.status(500).json({ success: false, message: e.message }); } } else res.status(400).json({ success: false });
 });
-
 app.post('/api/send-whatsapp', async (req, res) => {
     if (!whatsappClient || !isWhatsAppReady) return res.status(503).json({ success: false, message: 'Bot not ready' });
     const { number, message, mediaData } = req.body;
@@ -381,25 +357,15 @@ app.post('/api/send-whatsapp', async (req, res) => {
         if (mediaData && mediaData.data) {
             const media = new MessageMedia(mediaData.mimeType || 'image/png', mediaData.data, mediaData.filename);
             await whatsappClient.sendMessage(chatId, media, { caption: message || '' });
-        } else if (message) {
-            await whatsappClient.sendMessage(chatId, message);
-        }
+        } else if (message) { await whatsappClient.sendMessage(chatId, message); }
         res.json({ success: true });
     } catch (e) { res.status(500).json({ success: false, message: e.message }); }
 });
 
 app.post('/api/ai-request', async (req, res) => {
     const { message } = req.body;
-    // Default user for frontend requests (permission check is done by app logic before calling)
     const user = { fullName: 'کاربر سیستم', role: 'user', id: 'frontend' }; 
-    
-    try {
-        const reply = await processN8NRequest(user, message);
-        res.json({ reply });
-    } catch (e) {
-        console.error("AI Request Error:", e);
-        res.status(500).json({ error: e.message });
-    }
+    try { const reply = await processN8NRequest(user, message); res.json({ reply }); } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 app.get('/api/manifest', (req, res) => {
@@ -412,42 +378,29 @@ app.get('/api/manifest', (req, res) => {
     res.json(manifest);
 });
 
-app.post('/api/login', (req, res) => {
-    const { username, password } = req.body;
-    const db = getDb();
-    const user = db.users.find(u => u.username === username && u.password === password);
-    if (user) res.json(user);
-    else res.status(401).json({ message: 'Invalid credentials' });
-});
-
+app.post('/api/login', (req, res) => { const { username, password } = req.body; const db = getDb(); const user = db.users.find(u => u.username === username && u.password === password); if (user) res.json(user); else res.status(401).json({ message: 'Invalid credentials' }); });
 app.get('/api/users', (req, res) => { res.json(getDb().users); });
 app.post('/api/users', (req, res) => { const db = getDb(); db.users.push(req.body); saveDb(db); res.json(db.users); });
 app.put('/api/users/:id', (req, res) => { const db = getDb(); const idx = db.users.findIndex(u => u.id === req.params.id); if (idx !== -1) { db.users[idx] = { ...db.users[idx], ...req.body }; saveDb(db); res.json(db.users); } else res.status(404).json({ message: 'User not found' }); });
 app.delete('/api/users/:id', (req, res) => { const db = getDb(); db.users = db.users.filter(u => u.id !== req.params.id); saveDb(db); res.json(db.users); });
-
 app.get('/api/settings', (req, res) => { res.json(getDb().settings); });
 app.post('/api/settings', (req, res) => { const db = getDb(); db.settings = req.body; saveDb(db); res.json(db.settings); });
-
 app.get('/api/chat', (req, res) => { res.json(getDb().messages); });
 app.post('/api/chat', (req, res) => { const db = getDb(); const newMsg = req.body; if (db.messages.length > 500) db.messages = db.messages.slice(-500); db.messages.push(newMsg); saveDb(db); res.json(db.messages); });
 app.put('/api/chat/:id', (req, res) => { const db = getDb(); const idx = db.messages.findIndex(m => m.id === req.params.id); if (idx !== -1) { db.messages[idx] = { ...db.messages[idx], ...req.body }; saveDb(db); res.json(db.messages); } else res.status(404).json({ message: 'Message not found' }); });
 app.delete('/api/chat/:id', (req, res) => { const db = getDb(); db.messages = db.messages.filter(m => m.id !== req.params.id); saveDb(db); res.json(db.messages); });
-
 app.get('/api/groups', (req, res) => { res.json(getDb().groups); });
 app.post('/api/groups', (req, res) => { const db = getDb(); db.groups.push(req.body); saveDb(db); res.json(db.groups); });
 app.put('/api/groups/:id', (req, res) => { const db = getDb(); const idx = db.groups.findIndex(g => g.id === req.params.id); if (idx !== -1) { db.groups[idx] = { ...db.groups[idx], ...req.body }; saveDb(db); res.json(db.groups); } else res.status(404).json({ message: 'Group not found' }); });
 app.delete('/api/groups/:id', (req, res) => { const db = getDb(); db.groups = db.groups.filter(g => g.id !== req.params.id); saveDb(db); res.json(db.groups); });
-
 app.get('/api/tasks', (req, res) => { res.json(getDb().tasks); });
 app.post('/api/tasks', (req, res) => { const db = getDb(); db.tasks.push(req.body); saveDb(db); res.json(db.tasks); });
 app.put('/api/tasks/:id', (req, res) => { const db = getDb(); const idx = db.tasks.findIndex(t => t.id === req.params.id); if (idx !== -1) { db.tasks[idx] = req.body; saveDb(db); res.json(db.tasks); } else res.status(404).json({error: 'Task not found'}); });
 app.delete('/api/tasks/:id', (req, res) => { const db = getDb(); db.tasks = db.tasks.filter(t => t.id !== req.params.id); saveDb(db); res.json(db.tasks); });
-
 app.get('/api/trade', (req, res) => { res.json(getDb().tradeRecords || []); });
 app.post('/api/trade', (req, res) => { const db = getDb(); db.tradeRecords = db.tradeRecords || []; db.tradeRecords.push(req.body); saveDb(db); res.json(db.tradeRecords); });
 app.put('/api/trade/:id', (req, res) => { const db = getDb(); db.tradeRecords = db.tradeRecords || []; const idx = db.tradeRecords.findIndex(t => t.id === req.params.id); if (idx !== -1) { db.tradeRecords[idx] = req.body; saveDb(db); res.json(db.tradeRecords); } else res.status(404).json({error: 'Trade record not found'}); });
 app.delete('/api/trade/:id', (req, res) => { const db = getDb(); db.tradeRecords = (db.tradeRecords || []).filter(t => t.id !== req.params.id); saveDb(db); res.json(db.tradeRecords); });
-
 app.post('/api/upload', (req, res) => {
     try {
         const { fileName, fileData } = req.body;
@@ -460,36 +413,12 @@ app.post('/api/upload', (req, res) => {
         res.json({ url: `/uploads/${uniqueName}`, fileName: uniqueName });
     } catch (e) { res.status(500).send('Upload failed'); }
 });
-
 app.get('/api/next-tracking-number', (req, res) => { res.json({ nextTrackingNumber: findNextAvailableTrackingNumber(getDb()) }); });
 app.get('/api/orders', (req, res) => { res.json(getDb().orders); });
-
-app.post('/api/orders', (req, res) => {
-    const db = getDb();
-    const newOrder = req.body;
-    newOrder.updatedAt = Date.now();
-    let assignedTrackingNumber = newOrder.trackingNumber;
-    const isTaken = db.orders.some(o => o.trackingNumber === assignedTrackingNumber);
-    if (isTaken) { assignedTrackingNumber = findNextAvailableTrackingNumber(db); newOrder.trackingNumber = assignedTrackingNumber; }
-    db.orders.unshift(newOrder);
-    saveDb(db);
-    res.json(db.orders);
-});
-
-app.put('/api/orders/:id', (req, res) => {
-    const db = getDb();
-    const updatedOrder = req.body;
-    updatedOrder.updatedAt = Date.now();
-    const index = db.orders.findIndex(o => o.id === req.params.id);
-    if (index !== -1) {
-        db.orders[index] = updatedOrder;
-        saveDb(db);
-        res.json(db.orders);
-    } else res.status(404).json({ message: 'Order not found' });
-});
-
+app.post('/api/orders', (req, res) => { const db = getDb(); const newOrder = req.body; newOrder.updatedAt = Date.now(); let assignedTrackingNumber = newOrder.trackingNumber; const isTaken = db.orders.some(o => o.trackingNumber === assignedTrackingNumber); if (isTaken) { assignedTrackingNumber = findNextAvailableTrackingNumber(db); newOrder.trackingNumber = assignedTrackingNumber; } db.orders.unshift(newOrder); saveDb(db); res.json(db.orders); });
+app.put('/api/orders/:id', (req, res) => { const db = getDb(); const updatedOrder = req.body; updatedOrder.updatedAt = Date.now(); const index = db.orders.findIndex(o => o.id === req.params.id); if (index !== -1) { db.orders[index] = updatedOrder; saveDb(db); res.json(db.orders); } else res.status(404).json({ message: 'Order not found' }); });
 app.delete('/api/orders/:id', (req, res) => { const db = getDb(); db.orders = db.orders.filter(o => o.id !== req.params.id); saveDb(db); res.json(db.orders); });
 app.get('/api/backup', (req, res) => { const db = getDb(); res.setHeader('Content-Type', 'application/json'); res.setHeader('Content-Disposition', 'attachment; filename=database_backup.json'); res.json(db); });
 app.post('/api/restore', (req, res) => { const newData = req.body; if (!newData || !Array.isArray(newData.orders) || !Array.isArray(newData.users)) { return res.status(400).json({ message: 'Invalid backup' }); } saveDb(newData); res.json({ success: true }); });
 app.get('*', (req, res) => { const indexPath = path.join(__dirname, 'dist', 'index.html'); if (fs.existsSync(indexPath)) { res.sendFile(indexPath); } else { res.send('React App needs to be built. Run "npm run build" first.'); } });
-app.listen(PORT, () => { console.log(`Server running on http://localhost:${PORT}`); });
+app.listen(PORT, () => { console.log(`Server running on 0.0.0.0:${PORT}`); });

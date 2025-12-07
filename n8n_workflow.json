@@ -1,0 +1,88 @@
+
+{
+  "name": "AI Financial Agent",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "ai",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        460,
+        340
+      ]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4o-mini",
+        "messages": {
+          "values": [
+            {
+              "role": "system",
+              "content": "You are a smart financial assistant for a company. \nThe user will send a message (and maybe user details). \n\nYour goal is to decide what action to take and return a JSON object strictly in this format:\n\nIf the user wants to register a payment:\n{\n  \"type\": \"tool_call\",\n  \"tool\": \"register_payment_order\",\n  \"args\": {\n    \"payee\": \"Name of person/company\",\n    \"amount\": 100000 (number in Rials),\n    \"description\": \"Reason\",\n    \"company\": \"Paying Company Name (optional)\"\n  }\n}\n\nIf the user wants a report:\n{\n  \"type\": \"tool_call\",\n  \"tool\": \"get_financial_summary\",\n  \"args\": {}\n}\n\nIf the user wants to search trade files:\n{\n  \"type\": \"tool_call\",\n  \"tool\": \"search_trade_file\",\n  \"args\": {\n    \"query\": \"search term\"\n  }\n}\n\nIf it is just a chat or clarification:\n{\n  \"type\": \"message\",\n  \"text\": \"Your helpful response in Persian (Farsi)...\"\n}\n\nUser Message: {{ $json.body.message }}\nUser Role: {{ $json.body.user.role }}"
+            }
+          ]
+        },
+        "jsonOutput": true
+      },
+      "id": "openai-chat",
+      "name": "OpenAI Chat",
+      "type": "n8n-nodes-base.openAi",
+      "typeVersion": 1,
+      "position": [
+        680,
+        340
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "YOUR_OPENAI_CREDENTIAL_ID",
+          "name": "OpenAI account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json.message.content }}",
+        "options": {}
+      },
+      "id": "webhook-response",
+      "name": "Respond to App",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        900,
+        340
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "OpenAI Chat",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat": {
+      "main": [
+        [
+          {
+            "node": "Respond to App",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}

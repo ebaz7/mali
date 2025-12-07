@@ -9,6 +9,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "start": "node server.js",
+    "n8n": "n8n start --tunnel",
     "install-offline": "set PUPPETEER_SKIP_DOWNLOAD=true && npm install"
   },
   "dependencies": {
@@ -21,7 +22,8 @@
     "whatsapp-web.js": "^1.23.0",
     "qrcode-terminal": "^0.12.0",
     "node-telegram-bot-api": "^0.66.0",
-    "axios": "^1.6.0"
+    "axios": "^1.6.0",
+    "n8n": "^1.0.0"
   },
   "devDependencies": {
     "@types/react": "^18.2.64",
