@@ -4,8 +4,7 @@ import cors from 'cors';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-
-// NOTE: Dynamic imports for WhatsApp are handled inside initWhatsApp() to prevent crashes if not installed.
+import { GoogleGenAI } from "@google/genai";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -15,7 +14,7 @@ const PORT = process.env.PORT || 3000;
 const DB_FILE = path.join(__dirname, 'database.json');
 const UPLOADS_DIR = path.join(__dirname, 'uploads');
 const BACKUPS_DIR = path.join(__dirname, 'backups');
-const WAUTH_DIR = path.join(__dirname, 'wauth'); // Folder to store WhatsApp session
+const WAUTH_DIR = path.join(__dirname, 'wauth');
 
 if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR);
 if (!fs.existsSync(BACKUPS_DIR)) fs.mkdirSync(BACKUPS_DIR);
@@ -46,12 +45,12 @@ const getDb = () => {
             settings: {
                 currentTrackingNumber: 1602,
                 companyNames: [],
-                companies: [], // New structure
+                companies: [], 
                 defaultCompany: '',
                 bankNames: [],
                 commodityGroups: [],
                 rolePermissions: {},
-                savedContacts: [], // New Address Book
+                savedContacts: [],
                 telegramBotToken: '',
                 telegramAdminId: '',
                 smsApiKey: '',
@@ -79,136 +78,6 @@ const saveDb = (data) => {
     fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2));
 };
 
-// --- WHATSAPP CLIENT SETUP (Dynamic Import) ---
-let whatsappClient = null;
-let MessageMedia = null; // Store reference to MessageMedia class
-let isWhatsAppReady = false;
-let currentQR = null; // Store QR to send to frontend
-let whatsappUser = null; // Store connected user info
-
-const initWhatsApp = async () => {
-    try {
-        console.log('Attempting to load WhatsApp modules...');
-        const wwebjs = await import('whatsapp-web.js');
-        const { Client, LocalAuth, MessageMedia: MM } = wwebjs.default || wwebjs;
-        MessageMedia = MM; // Assign to global variable
-        
-        const qrcodeModule = await import('qrcode-terminal');
-        const qrcode = qrcodeModule.default || qrcodeModule;
-
-        // Function to find Chrome or Edge on Windows
-        const getBrowserPath = () => {
-            const platform = process.platform;
-            let paths = [];
-
-            if (platform === 'win32') {
-                paths = [
-                    'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
-                    'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
-                    'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe',
-                    'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
-                    path.join(process.env.LOCALAPPDATA || '', 'Google\\Chrome\\Application\\chrome.exe')
-                ];
-            } else if (platform === 'linux') {
-                paths = [
-                    '/usr/bin/google-chrome',
-                    '/usr/bin/google-chrome-stable',
-                    '/usr/bin/chromium',
-                    '/usr/bin/chromium-browser'
-                ];
-            } else if (platform === 'darwin') {
-                paths = [
-                    '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
-                ];
-            }
-
-            for (const p of paths) {
-                if (fs.existsSync(p)) {
-                    return p;
-                }
-            }
-            return null;
-        };
-
-        const executablePath = getBrowserPath();
-        if (executablePath) {
-            console.log(`\n>>> Browser found at: ${executablePath} <<<\n`);
-        } else {
-            console.warn('\n>>> WARNING: Could not find Chrome/Edge. Puppeteer might fail if bundled Chromium is missing. <<<\n');
-        }
-
-        console.log('Initializing WhatsApp Client...');
-        whatsappClient = new Client({
-            authStrategy: new LocalAuth({ dataPath: WAUTH_DIR }),
-            puppeteer: {
-                headless: true,
-                executablePath: executablePath,
-                args: ['--no-sandbox', '--disable-setuid-sandbox'] 
-            }
-        });
-
-        whatsappClient.on('qr', (qr) => {
-            console.log('\n=============================================================');
-            console.log('>>> لطفاً کد QR زیر را با واتساپ گوشی خود اسکن کنید <<<');
-            console.log('=============================================================\n');
-            currentQR = qr; // Store for frontend
-            isWhatsAppReady = false;
-            qrcode.generate(qr, { small: true });
-        });
-
-        whatsappClient.on('ready', () => {
-            console.log('\n>>> WhatsApp Client is READY! <<<\n');
-            isWhatsAppReady = true;
-            currentQR = null;
-            whatsappUser = whatsappClient.info?.wid?.user;
-        });
-
-        whatsappClient.on('auth_failure', msg => {
-            console.error('WhatsApp Authentication Failure:', msg);
-            isWhatsAppReady = false;
-        });
-
-        whatsappClient.on('disconnected', (reason) => {
-            console.log('WhatsApp Client was disconnected:', reason);
-            isWhatsAppReady = false;
-            whatsappUser = null;
-            // Re-initialize to allow re-scanning
-            whatsappClient.initialize();
-        });
-
-        // Use catch to prevent server crash if browser fails to launch
-        whatsappClient.initialize().catch(err => {
-            console.error("\n!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
-            console.error("CRITICAL WHATSAPP ERROR: Failed to launch browser.");
-            console.error("Message:", err.message);
-            console.error("Suggestion: Please install Google Chrome on the server.");
-            console.error("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n");
-        });
-
-    } catch (e) {
-        console.warn('\n********************************************************************************');
-        console.warn('هشدار: ماژول واتساپ (whatsapp-web.js) بارگذاری نشد.');
-        console.warn('سرور بدون قابلیت ارسال خودکار واتساپ اجرا می‌شود.');
-        console.warn('دلیل: ', e.code === 'ERR_MODULE_NOT_FOUND' ? 'پکیج نصب نیست' : e.message);
-        console.warn('راه حل: دستور "npm run install-offline" را اجرا کنید.');
-        console.warn('********************************************************************************\n');
-    }
-};
-
-initWhatsApp();
-
-// --- HELPER FUNCTIONS ---
-const toShamsi = (isoDate) => {
-    if (!isoDate) return '-';
-    try {
-        return new Date(isoDate).toLocaleDateString('fa-IR', { year: 'numeric', month: 'long', day: 'numeric' });
-    } catch (e) { return isoDate; }
-};
-
-const formatCurrency = (amount) => new Intl.NumberFormat('fa-IR').format(amount);
-
-const generateUUID = () => Date.now().toString(36) + Math.random().toString(36).substr(2);
-
 const findNextAvailableTrackingNumber = (db) => {
     const baseNum = (db.settings.currentTrackingNumber || 1602);
     const startNum = baseNum + 1;
@@ -218,93 +87,361 @@ const findNextAvailableTrackingNumber = (db) => {
     return nextNum;
 };
 
+// ==========================================
+// AI AGENT LOGIC (The Brain)
+// ==========================================
+
+const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+
+const AI_TOOLS = [
+    {
+        name: 'register_payment_order',
+        description: 'Registers a new payment order in the system. Use this when the user wants to pay someone or create a payment request.',
+        parameters: {
+            type: 'OBJECT',
+            properties: {
+                payee: { type: 'STRING', description: 'The name of the person or company receiving the payment.' },
+                amount: { type: 'NUMBER', description: 'The total amount in Rials.' },
+                description: { type: 'STRING', description: 'Reason or description for the payment.' },
+                company: { type: 'STRING', description: 'The paying company name (optional, use default if not specified).' }
+            },
+            required: ['payee', 'amount', 'description']
+        }
+    },
+    {
+        name: 'get_financial_summary',
+        description: 'Returns a summary of pending and approved payment orders.',
+        parameters: { type: 'OBJECT', properties: {} }
+    },
+    {
+        name: 'search_trade_file',
+        description: 'Searches for a trade/commercial file (Proforma, Import) status.',
+        parameters: {
+            type: 'OBJECT',
+            properties: {
+                query: { type: 'STRING', description: 'Search term: File Number, Seller Name, or Goods Name.' }
+            },
+            required: ['query']
+        }
+    }
+];
+
+async function processAIRequest(user, messageText, audioData = null, audioMimeType = null) {
+    const db = getDb();
+    
+    // 1. Construct Prompt
+    const systemInstruction = `
+    You are an intelligent financial and trade assistant for a company. 
+    You are talking to ${user.fullName} (Role: ${user.role}).
+    Current Date: ${new Date().toLocaleDateString('fa-IR')}.
+    
+    Your capabilities based on role:
+    - Admin/Manager/CEO: Can approve, view all, create all.
+    - Financial: Can view financial data, create orders.
+    - User: Can only create orders and view their own.
+
+    If the user asks to do something they are not allowed to, politely refuse.
+    Always reply in Persian (Farsi).
+    If the input is Audio, listen carefully and extract the intent.
+    
+    For numbers, convert "million" or "billion" to full numbers (e.g. 5 million -> 5000000).
+    `;
+
+    const contents = [];
+    if (audioData) {
+        contents.push({
+            role: 'user',
+            parts: [
+                { inlineData: { mimeType: audioMimeType, data: audioData } },
+                { text: messageText || "Please process this audio command." }
+            ]
+        });
+    } else {
+        contents.push({
+            role: 'user',
+            parts: [{ text: messageText }]
+        });
+    }
+
+    try {
+        // 2. Call Gemini
+        const result = await ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: contents,
+            config: {
+                systemInstruction: systemInstruction,
+                tools: [{ functionDeclarations: AI_TOOLS }]
+            }
+        });
+
+        const response = result.response;
+        
+        // 3. Handle Function Calls
+        const functionCalls = response.functionCalls();
+        if (functionCalls && functionCalls.length > 0) {
+            const call = functionCalls[0];
+            const args = call.args;
+            let toolResult = "";
+
+            if (call.name === 'register_payment_order') {
+                const trackingNum = findNextAvailableTrackingNumber(db);
+                const newOrder = {
+                    id: Date.now().toString(36),
+                    trackingNumber: trackingNum,
+                    date: new Date().toISOString().split('T')[0],
+                    payee: args.payee,
+                    totalAmount: args.amount,
+                    description: args.description,
+                    status: 'در انتظار بررسی مالی',
+                    requester: user.fullName,
+                    paymentDetails: [{
+                        id: Date.now().toString(36) + 'd',
+                        method: 'حواله بانکی', // Default
+                        amount: args.amount,
+                        description: 'ثبت شده توسط هوش مصنوعی'
+                    }],
+                    payingCompany: args.company || db.settings.defaultCompany,
+                    createdAt: Date.now()
+                };
+                db.orders.unshift(newOrder);
+                saveDb(db);
+                toolResult = `Order registered successfully. Tracking Number: ${trackingNum}. Amount: ${args.amount}. Payee: ${args.payee}.`;
+            } 
+            else if (call.name === 'get_financial_summary') {
+                if (['admin', 'manager', 'ceo', 'financial'].includes(user.role)) {
+                    const pending = db.orders.filter(o => o.status !== 'تایید نهایی' && o.status !== 'رد شده').length;
+                    const approved = db.orders.filter(o => o.status === 'تایید نهایی').length;
+                    const total = db.orders.filter(o => o.status === 'تایید نهایی').reduce((sum, o) => sum + o.totalAmount, 0);
+                    toolResult = `Pending Orders: ${pending}. Approved Orders: ${approved}. Total Paid: ${total} Rials.`;
+                } else {
+                    toolResult = "User does not have permission to view financial summary.";
+                }
+            }
+            else if (call.name === 'search_trade_file') {
+                if (user.role === 'user' && !user.canManageTrade) {
+                    toolResult = "User does not have access to trade files.";
+                } else {
+                    const term = args.query.toLowerCase();
+                    const found = (db.tradeRecords || []).filter(r => 
+                        r.fileNumber.includes(term) || 
+                        r.goodsName.includes(term) || 
+                        r.sellerName.includes(term)
+                    ).slice(0, 3); // Limit to 3
+                    
+                    if (found.length === 0) toolResult = "No files found.";
+                    else {
+                        toolResult = found.map(f => `File: ${f.fileNumber}, Goods: ${f.goodsName}, Status: ${f.status}`).join('\n');
+                    }
+                }
+            }
+
+            // 4. Send Tool Result back to AI for final natural language response
+            const finalResult = await ai.models.generateContent({
+                model: 'gemini-2.5-flash',
+                contents: [
+                    ...contents,
+                    { role: 'model', parts: [{ functionCall: call }] },
+                    { role: 'user', parts: [{ functionResponse: { name: call.name, response: { result: toolResult } } }] }
+                ],
+                config: { systemInstruction: systemInstruction }
+            });
+            
+            return finalResult.response.text();
+        } else {
+            return response.text();
+        }
+
+    } catch (error) {
+        console.error("AI Error:", error);
+        return "متاسفانه در پردازش درخواست شما مشکلی پیش آمد.";
+    }
+}
+
+
+// ==========================================
+// WHATSAPP & TELEGRAM SETUP
+// ==========================================
+
+let whatsappClient = null;
+let telegramBot = null;
+let MessageMedia = null; 
+let isWhatsAppReady = false;
+let currentQR = null; 
+let whatsappUser = null; 
+
+// --- TELEGRAM INIT ---
+const initTelegram = async () => {
+    try {
+        const TelegramBot = (await import('node-telegram-bot-api')).default;
+        const db = getDb();
+        const token = db.settings.telegramBotToken;
+        
+        if (token) {
+            telegramBot = new TelegramBot(token, { polling: true });
+            console.log('>>> Telegram Bot Started <<<');
+
+            telegramBot.on('message', async (msg) => {
+                const chatId = msg.chat.id.toString();
+                const db = getDb();
+                // Auth Check: Match Chat ID or Phone Number? 
+                // For simplicity, we match Chat ID stored in user profile or exact username match if implemented.
+                // Here we match User.telegramChatId
+                const user = db.users.find(u => u.telegramChatId === chatId);
+
+                if (!user) {
+                    telegramBot.sendMessage(chatId, `شما دسترسی ندارید. Chat ID شما: ${chatId}. لطفا به مدیر سیستم اطلاع دهید.`);
+                    return;
+                }
+
+                // Handle Audio/Voice
+                if (msg.voice || msg.audio) {
+                    const fileId = msg.voice ? msg.voice.file_id : msg.audio.file_id;
+                    const fileLink = await telegramBot.getFileLink(fileId);
+                    // Fetch file bytes
+                    const response = await fetch(fileLink);
+                    const arrayBuffer = await response.arrayBuffer();
+                    const buffer = Buffer.from(arrayBuffer);
+                    const base64 = buffer.toString('base64');
+                    // Telegram usually sends OGG for voice
+                    const mimeType = msg.voice ? 'audio/ogg' : 'audio/mpeg'; 
+                    
+                    telegramBot.sendChatAction(chatId, 'typing');
+                    const reply = await processAIRequest(user, null, base64, mimeType);
+                    telegramBot.sendMessage(chatId, reply);
+                } else if (msg.text) {
+                    telegramBot.sendChatAction(chatId, 'typing');
+                    const reply = await processAIRequest(user, msg.text);
+                    telegramBot.sendMessage(chatId, reply);
+                }
+            });
+            
+            telegramBot.on('polling_error', (error) => {
+                console.error("Telegram Polling Error (Check Token):", error.code);
+            });
+        }
+    } catch (e) {
+        console.warn('Telegram Bot Init Failed (Token missing or library issue).');
+    }
+};
+
+const initWhatsApp = async () => {
+    try {
+        console.log('Attempting to load WhatsApp modules...');
+        const wwebjs = await import('whatsapp-web.js');
+        const { Client, LocalAuth, MessageMedia: MM } = wwebjs.default || wwebjs;
+        MessageMedia = MM; 
+        
+        const qrcodeModule = await import('qrcode-terminal');
+        const qrcode = qrcodeModule.default || qrcodeModule;
+
+        const getBrowserPath = () => {
+            const platform = process.platform;
+            let paths = [];
+            if (platform === 'win32') {
+                paths = ['C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe', 'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe', 'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe'];
+            } else if (platform === 'linux') {
+                paths = ['/usr/bin/google-chrome', '/usr/bin/google-chrome-stable', '/usr/bin/chromium', '/usr/bin/chromium-browser'];
+            } else if (platform === 'darwin') {
+                paths = ['/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'];
+            }
+            for (const p of paths) { if (fs.existsSync(p)) return p; }
+            return null;
+        };
+
+        const executablePath = getBrowserPath();
+        
+        whatsappClient = new Client({
+            authStrategy: new LocalAuth({ dataPath: WAUTH_DIR }),
+            puppeteer: { headless: true, executablePath: executablePath, args: ['--no-sandbox', '--disable-setuid-sandbox'] }
+        });
+
+        whatsappClient.on('qr', (qr) => {
+            currentQR = qr; isWhatsAppReady = false;
+            qrcode.generate(qr, { small: true });
+        });
+
+        whatsappClient.on('ready', () => {
+            console.log('\n>>> WhatsApp Client is READY! <<<\n');
+            isWhatsAppReady = true; currentQR = null; whatsappUser = whatsappClient.info?.wid?.user;
+        });
+
+        // --- WHATSAPP MESSAGE HANDLER ---
+        whatsappClient.on('message', async (msg) => {
+            // 1. Identify User
+            const senderNumber = msg.from.replace('@c.us', '');
+            const db = getDb();
+            // Normalize phone number matching (remove 98/0)
+            const normalize = (n) => n ? n.replace(/^98|^0/, '') : '';
+            const user = db.users.find(u => normalize(u.phoneNumber) === normalize(senderNumber));
+
+            if (!user) {
+                // Optional: Reply "Access Denied" or just ignore
+                // msg.reply('شما در سیستم تعریف نشده‌اید.');
+                return; 
+            }
+
+            // 2. Handle Inputs
+            if (msg.hasMedia) {
+                const media = await msg.downloadMedia();
+                if (media.mimetype.startsWith('audio/')) {
+                    // Process Audio
+                    const reply = await processAIRequest(user, null, media.data, media.mimetype);
+                    msg.reply(reply);
+                }
+            } else {
+                // Process Text
+                const reply = await processAIRequest(user, msg.body);
+                msg.reply(reply);
+            }
+        });
+
+        whatsappClient.initialize().catch(err => console.error("WA Init Error:", err.message));
+
+    } catch (e) {
+        console.warn('WhatsApp Module Error:', e.message);
+    }
+};
+
+initWhatsApp();
+setTimeout(initTelegram, 5000); // Delay Telegram init slightly
+
 // --- API ROUTES ---
 
-// WhatsApp Session Management
 app.get('/api/whatsapp/status', (req, res) => {
-    res.json({ 
-        ready: isWhatsAppReady, 
-        qr: currentQR,
-        user: whatsappUser
-    });
+    res.json({ ready: isWhatsAppReady, qr: currentQR, user: whatsappUser });
 });
 
 app.get('/api/whatsapp/groups', async (req, res) => {
-    if (!whatsappClient || !isWhatsAppReady) {
-        return res.status(503).json({ success: false, message: 'WhatsApp not ready' });
-    }
+    if (!whatsappClient || !isWhatsAppReady) return res.status(503).json({ success: false, message: 'WhatsApp not ready' });
     try {
         const chats = await whatsappClient.getChats();
-        const groups = chats
-            .filter(chat => chat.isGroup)
-            .map(chat => ({
-                id: chat.id._serialized,
-                name: chat.name
-            }));
+        const groups = chats.filter(chat => chat.isGroup).map(chat => ({ id: chat.id._serialized, name: chat.name }));
         res.json({ success: true, groups });
-    } catch (e) {
-        res.status(500).json({ success: false, message: e.message });
-    }
+    } catch (e) { res.status(500).json({ success: false, message: e.message }); }
 });
 
 app.post('/api/whatsapp/logout', async (req, res) => {
     if (whatsappClient) {
-        try {
-            await whatsappClient.logout();
-            isWhatsAppReady = false;
-            whatsappUser = null;
-            res.json({ success: true, message: 'Logged out successfully' });
-            // Re-init happens automatically on disconnect, or we can force it
-        } catch (e) {
-            res.status(500).json({ success: false, message: e.message });
-        }
-    } else {
-        res.status(400).json({ success: false, message: 'Client not initialized' });
-    }
+        try { await whatsappClient.logout(); isWhatsAppReady = false; whatsappUser = null; res.json({ success: true }); } 
+        catch (e) { res.status(500).json({ success: false, message: e.message }); }
+    } else res.status(400).json({ success: false });
 });
 
 app.post('/api/send-whatsapp', async (req, res) => {
-    if (!whatsappClient || !isWhatsAppReady) {
-        return res.status(503).json({ success: false, message: 'ربات واتساپ سرور فعال نیست. لطفا لاگ سرور را بررسی کنید.' });
-    }
-    
-    const { number, message, mediaData } = req.body; // mediaData: { data: base64, mimeType: 'image/png', filename: '...' }
+    if (!whatsappClient || !isWhatsAppReady) return res.status(503).json({ success: false, message: 'Bot not ready' });
+    const { number, message, mediaData } = req.body;
     if (!number) return res.status(400).json({ error: 'Missing number' });
-
     try {
-        let chatId;
-        // Check if it's a Group ID (usually contains '-')
-        if (number.includes('-') || number.includes('@g.us')) {
-             chatId = number.endsWith('@g.us') ? number : `${number}@g.us`;
-        } else {
-            // Normalize Phone Number
-            let cleanNumber = number.toString().replace(/\D/g, ''); 
-            if (cleanNumber.startsWith('09')) {
-                cleanNumber = '98' + cleanNumber.substring(1);
-            } else if (cleanNumber.startsWith('9') && cleanNumber.length === 10) {
-                cleanNumber = '98' + cleanNumber;
-            }
-            chatId = `${cleanNumber}@c.us`;
-        }
-        
-        // Handle Media Sending
+        let chatId = (number.includes('-') || number.includes('@g.us')) ? (number.endsWith('@g.us') ? number : `${number}@g.us`) : `${number.replace(/\D/g, '').replace(/^09/, '989').replace(/^9/, '989')}@c.us`;
         if (mediaData && mediaData.data) {
             const media = new MessageMedia(mediaData.mimeType || 'image/png', mediaData.data, mediaData.filename);
             await whatsappClient.sendMessage(chatId, media, { caption: message || '' });
         } else if (message) {
             await whatsappClient.sendMessage(chatId, message);
-        } else {
-            return res.status(400).json({ error: 'Missing message or media' });
         }
-
         res.json({ success: true });
-    } catch (e) {
-        console.error("WhatsApp Send Error:", e);
-        res.status(500).json({ success: false, message: 'خطا در ارسال پیام واتساپ: ' + e.message });
-    }
+    } catch (e) { res.status(500).json({ success: false, message: e.message }); }
 });
-
-// ... (Rest of existing API routes remain unchanged) ...
 
 app.get('/api/manifest', (req, res) => {
     res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
@@ -333,14 +470,7 @@ app.get('/api/settings', (req, res) => { res.json(getDb().settings); });
 app.post('/api/settings', (req, res) => { const db = getDb(); db.settings = req.body; saveDb(db); res.json(db.settings); });
 
 app.get('/api/chat', (req, res) => { res.json(getDb().messages); });
-app.post('/api/chat', (req, res) => {
-    const db = getDb();
-    const newMsg = req.body;
-    if (db.messages.length > 500) db.messages = db.messages.slice(-500);
-    db.messages.push(newMsg);
-    saveDb(db);
-    res.json(db.messages);
-});
+app.post('/api/chat', (req, res) => { const db = getDb(); const newMsg = req.body; if (db.messages.length > 500) db.messages = db.messages.slice(-500); db.messages.push(newMsg); saveDb(db); res.json(db.messages); });
 app.put('/api/chat/:id', (req, res) => { const db = getDb(); const idx = db.messages.findIndex(m => m.id === req.params.id); if (idx !== -1) { db.messages[idx] = { ...db.messages[idx], ...req.body }; saveDb(db); res.json(db.messages); } else res.status(404).json({ message: 'Message not found' }); });
 app.delete('/api/chat/:id', (req, res) => { const db = getDb(); db.messages = db.messages.filter(m => m.id !== req.params.id); saveDb(db); res.json(db.messages); });
 

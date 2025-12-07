@@ -31,6 +31,7 @@ export interface User {
   canManageTrade?: boolean; // Specific permission override
   avatar?: string; // Profile picture URL
   telegramChatId?: string; // Telegram Chat ID for notifications
+  phoneNumber?: string; // For WhatsApp/AI Agent identification (e.g., 98912...)
 }
 
 export interface PaymentDetail {
