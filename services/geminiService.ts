@@ -1,16 +1,15 @@
 
-import { GoogleGenAI } from "@google/genai";
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
+import { apiCall } from './apiService';
+
 export const enhanceDescription = async (text: string): Promise<string> => {
   if (!text) return "";
   try {
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
-      contents: `Reword the following payment description into formal Persian business language suitable for a financial voucher or invoice. Keep it concise. Input: "${text}"`,
-    });
-    return response.text.trim();
+    // Send a prompt to the server, which proxies to n8n/OpenAI
+    const prompt = `لطفا متن زیر را به زبان فارسی رسمی و اداری برای شرح سند حسابداری بازنویسی کن. فقط متن نهایی را برگردان و هیچ توضیح اضافه‌ای نده: "${text}"`;
+    const response = await apiCall<{ reply: string }>('/ai-request', 'POST', { message: prompt });
+    return response.reply || text;
   } catch (error) {
-    console.error("Gemini API Error:", error);
+    console.error("AI Service Error:", error);
     return text;
   }
 };

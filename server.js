@@ -388,6 +388,20 @@ app.post('/api/send-whatsapp', async (req, res) => {
     } catch (e) { res.status(500).json({ success: false, message: e.message }); }
 });
 
+app.post('/api/ai-request', async (req, res) => {
+    const { message } = req.body;
+    // Default user for frontend requests (permission check is done by app logic before calling)
+    const user = { fullName: 'کاربر سیستم', role: 'user', id: 'frontend' }; 
+    
+    try {
+        const reply = await processN8NRequest(user, message);
+        res.json({ reply });
+    } catch (e) {
+        console.error("AI Request Error:", e);
+        res.status(500).json({ error: e.message });
+    }
+});
+
 app.get('/api/manifest', (req, res) => {
     res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
     const db = getDb();
