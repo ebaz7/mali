@@ -1,6 +1,6 @@
 
 {
-  "name": "AI Financial Agent",
+  "name": "AI Financial Agent (Voice Enabled)",
   "nodes": [
     {
       "parameters": {
@@ -13,9 +13,66 @@
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 1,
       "position": [
-        460,
+        380,
         340
       ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.body.audio.data }}",
+              "operation": "isNotEmpty"
+            }
+          ]
+        }
+      },
+      "id": "check-if-audio",
+      "name": "Is Audio?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        600,
+        340
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const audioData = $input.item.json.body.audio.data;\nconst binaryData = Buffer.from(audioData, 'base64');\n\nreturn {\n  binary: {\n    data: {\n      data: audioData,\n      mimeType: $input.item.json.body.audio.mimeType || 'audio/ogg',\n      fileName: 'voice_message.ogg'\n    }\n  },\n  json: $input.item.json\n};"
+      },
+      "id": "convert-audio",
+      "name": "Prepare Audio File",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        820,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "audio",
+        "operation": "transcribe",
+        "binaryPropertyName": "data",
+        "options": {
+          "language": "fa"
+        }
+      },
+      "id": "openai-whisper",
+      "name": "OpenAI Whisper",
+      "type": "n8n-nodes-base.openAi",
+      "typeVersion": 1,
+      "position": [
+        1040,
+        240
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "YOUR_OPENAI_CREDENTIAL_ID",
+          "name": "OpenAI account"
+        }
+      }
     },
     {
       "parameters": {
@@ -24,7 +81,7 @@
           "values": [
             {
               "role": "system",
-              "content": "You are a smart financial assistant for a company. \nThe user will send a message (and maybe user details). \n\nYour goal is to decide what action to take and return a JSON object strictly in this format:\n\nIf the user wants to register a payment:\n{\n  \"type\": \"tool_call\",\n  \"tool\": \"register_payment_order\",\n  \"args\": {\n    \"payee\": \"Name of person/company\",\n    \"amount\": 100000 (number in Rials),\n    \"description\": \"Reason\",\n    \"company\": \"Paying Company Name (optional)\"\n  }\n}\n\nIf the user wants a report:\n{\n  \"type\": \"tool_call\",\n  \"tool\": \"get_financial_summary\",\n  \"args\": {}\n}\n\nIf the user wants to search trade files:\n{\n  \"type\": \"tool_call\",\n  \"tool\": \"search_trade_file\",\n  \"args\": {\n    \"query\": \"search term\"\n  }\n}\n\nIf it is just a chat or clarification:\n{\n  \"type\": \"message\",\n  \"text\": \"Your helpful response in Persian (Farsi)...\"\n}\n\nUser Message: {{ $json.body.message }}\nUser Role: {{ $json.body.user.role }}"
+              "content": "You are a smart financial assistant for a company. \nThe user communicates via text or voice. They have a specific role (e.g., admin, financial, manager). \n\nYour goal is to decide what action to take based on the user's intent and return a JSON object.\n\n### Report / Cartable Requests\nIf the user asks for 'report', 'status', 'cartable', 'my tasks', or 'summary':\nCall the `get_financial_summary` tool. The server will handle filtering the report based on the user's role automatically.\nExample output:\n{\n  \"type\": \"tool_call\",\n  \"tool\": \"get_financial_summary\",\n  \"args\": {}\n}\n\n### Approve / Reject Order\nIf the user wants to approve or reject an order (e.g., \"approve 1605\", \"reject 1602 because...\"):\n{\n  \"type\": \"tool_call\",\n  \"tool\": \"manage_order\",\n  \"args\": {\n    \"trackingNumber\": 1605,\n    \"action\": \"approve\" (or \"reject\"),\n    \"reason\": \"Optional reason if rejected\"\n  }\n}\n\n### Register Payment\nIf the user wants to register a payment:\n{\n  \"type\": \"tool_call\",\n  \"tool\": \"register_payment_order\",\n  \"args\": {\n    \"payee\": \"Name\",\n    \"amount\": 100000,\n    \"description\": \"Reason\",\n    \"company\": \"Optional\"\n  }\n}\n\n### General Chat\nIf no tool matches:\n{\n  \"type\": \"message\",\n  \"text\": \"Response in Persian...\"\n}\n\nUser Message: {{ $json.text ? $json.text : $json.body.message }}\nUser Role: {{ $json.body ? $json.body.user.role : $('Webhook').item.json.body.user.role }}"
             }
           ]
         },
@@ -35,7 +92,7 @@
       "type": "n8n-nodes-base.openAi",
       "typeVersion": 1,
       "position": [
-        680,
+        1260,
         340
       ],
       "credentials": {
@@ -56,13 +113,53 @@
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1,
       "position": [
-        900,
+        1480,
         340
       ]
     }
   ],
   "connections": {
     "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Is Audio?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Audio?": {
+      "main": [
+        [
+          {
+            "node": "Prepare Audio File",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "OpenAI Chat",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Audio File": {
+      "main": [
+        [
+          {
+            "node": "OpenAI Whisper",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Whisper": {
       "main": [
         [
           {
