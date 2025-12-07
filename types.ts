@@ -119,6 +119,7 @@ export interface SystemSettings {
   smsSenderNumber?: string; // Sender Number for SMS
   googleCalendarId?: string; // New: Google Calendar ID for embedding
   whatsappNumber?: string; // New: Default WhatsApp number for reports
+  n8nWebhookUrl?: string; // New: URL to send messages to n8n
 }
 
 export interface DashboardStats {

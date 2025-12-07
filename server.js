@@ -4,7 +4,7 @@ import cors from 'cors';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { GoogleGenAI } from "@google/genai";
+import axios from 'axios';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -55,7 +55,8 @@ const getDb = () => {
                 telegramAdminId: '',
                 smsApiKey: '',
                 smsSenderNumber: '',
-                whatsappNumber: ''
+                whatsappNumber: '',
+                n8nWebhookUrl: ''
             },
             orders: [],
             users: [
@@ -88,173 +89,120 @@ const findNextAvailableTrackingNumber = (db) => {
 };
 
 // ==========================================
-// AI AGENT LOGIC (The Brain)
+// N8N ORCHESTRATOR LOGIC
 // ==========================================
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-
-const AI_TOOLS = [
-    {
-        name: 'register_payment_order',
-        description: 'Registers a new payment order in the system. Use this when the user wants to pay someone or create a payment request.',
-        parameters: {
-            type: 'OBJECT',
-            properties: {
-                payee: { type: 'STRING', description: 'The name of the person or company receiving the payment.' },
-                amount: { type: 'NUMBER', description: 'The total amount in Rials.' },
-                description: { type: 'STRING', description: 'Reason or description for the payment.' },
-                company: { type: 'STRING', description: 'The paying company name (optional, use default if not specified).' }
-            },
-            required: ['payee', 'amount', 'description']
-        }
-    },
-    {
-        name: 'get_financial_summary',
-        description: 'Returns a summary of pending and approved payment orders.',
-        parameters: { type: 'OBJECT', properties: {} }
-    },
-    {
-        name: 'search_trade_file',
-        description: 'Searches for a trade/commercial file (Proforma, Import) status.',
-        parameters: {
-            type: 'OBJECT',
-            properties: {
-                query: { type: 'STRING', description: 'Search term: File Number, Seller Name, or Goods Name.' }
-            },
-            required: ['query']
-        }
-    }
-];
-
-async function processAIRequest(user, messageText, audioData = null, audioMimeType = null) {
+async function processN8NRequest(user, messageText, audioData = null, audioMimeType = null) {
     const db = getDb();
-    
-    // 1. Construct Prompt
-    const systemInstruction = `
-    You are an intelligent financial and trade assistant for a company. 
-    You are talking to ${user.fullName} (Role: ${user.role}).
-    Current Date: ${new Date().toLocaleDateString('fa-IR')}.
-    
-    Your capabilities based on role:
-    - Admin/Manager/CEO: Can approve, view all, create all.
-    - Financial: Can view financial data, create orders.
-    - User: Can only create orders and view their own.
+    const webhookUrl = db.settings.n8nWebhookUrl;
 
-    If the user asks to do something they are not allowed to, politely refuse.
-    Always reply in Persian (Farsi).
-    If the input is Audio, listen carefully and extract the intent.
-    
-    For numbers, convert "million" or "billion" to full numbers (e.g. 5 million -> 5000000).
-    `;
-
-    const contents = [];
-    if (audioData) {
-        contents.push({
-            role: 'user',
-            parts: [
-                { inlineData: { mimeType: audioMimeType, data: audioData } },
-                { text: messageText || "Please process this audio command." }
-            ]
-        });
-    } else {
-        contents.push({
-            role: 'user',
-            parts: [{ text: messageText }]
-        });
+    if (!webhookUrl) {
+        return "خطا: آدرس وب‌هوک n8n در تنظیمات سیستم وارد نشده است.";
     }
 
     try {
-        // 2. Call Gemini
-        const result = await ai.models.generateContent({
-            model: 'gemini-2.5-flash',
-            contents: contents,
-            config: {
-                systemInstruction: systemInstruction,
-                tools: [{ functionDeclarations: AI_TOOLS }]
-            }
-        });
+        // 1. Prepare Payload for n8n
+        // n8n will use OpenAI to understand intent and return a JSON action
+        const payload = {
+            user: {
+                fullName: user.fullName,
+                role: user.role,
+                id: user.id
+            },
+            message: messageText,
+            audio: audioData ? {
+                data: audioData,
+                mimeType: audioMimeType
+            } : null,
+            timestamp: new Date().toISOString()
+        };
 
-        const response = result.response;
+        // 2. Call n8n Webhook
+        const response = await axios.post(webhookUrl, payload, { timeout: 30000 }); // 30s timeout
+        const data = response.data;
+
+        // 3. Process n8n Response (Expects JSON with 'action' or 'reply')
+        // Format expected from n8n: { type: 'tool_call', tool: '...', args: {...} } OR { type: 'message', text: '...' }
         
-        // 3. Handle Function Calls
-        const functionCalls = response.functionCalls();
-        if (functionCalls && functionCalls.length > 0) {
-            const call = functionCalls[0];
-            const args = call.args;
-            let toolResult = "";
-
-            if (call.name === 'register_payment_order') {
-                const trackingNum = findNextAvailableTrackingNumber(db);
-                const newOrder = {
-                    id: Date.now().toString(36),
-                    trackingNumber: trackingNum,
-                    date: new Date().toISOString().split('T')[0],
-                    payee: args.payee,
-                    totalAmount: args.amount,
-                    description: args.description,
-                    status: 'در انتظار بررسی مالی',
-                    requester: user.fullName,
-                    paymentDetails: [{
-                        id: Date.now().toString(36) + 'd',
-                        method: 'حواله بانکی', // Default
-                        amount: args.amount,
-                        description: 'ثبت شده توسط هوش مصنوعی'
-                    }],
-                    payingCompany: args.company || db.settings.defaultCompany,
-                    createdAt: Date.now()
-                };
-                db.orders.unshift(newOrder);
-                saveDb(db);
-                toolResult = `Order registered successfully. Tracking Number: ${trackingNum}. Amount: ${args.amount}. Payee: ${args.payee}.`;
-            } 
-            else if (call.name === 'get_financial_summary') {
-                if (['admin', 'manager', 'ceo', 'financial'].includes(user.role)) {
-                    const pending = db.orders.filter(o => o.status !== 'تایید نهایی' && o.status !== 'رد شده').length;
-                    const approved = db.orders.filter(o => o.status === 'تایید نهایی').length;
-                    const total = db.orders.filter(o => o.status === 'تایید نهایی').reduce((sum, o) => sum + o.totalAmount, 0);
-                    toolResult = `Pending Orders: ${pending}. Approved Orders: ${approved}. Total Paid: ${total} Rials.`;
-                } else {
-                    toolResult = "User does not have permission to view financial summary.";
-                }
-            }
-            else if (call.name === 'search_trade_file') {
-                if (user.role === 'user' && !user.canManageTrade) {
-                    toolResult = "User does not have access to trade files.";
-                } else {
-                    const term = args.query.toLowerCase();
-                    const found = (db.tradeRecords || []).filter(r => 
-                        r.fileNumber.includes(term) || 
-                        r.goodsName.includes(term) || 
-                        r.sellerName.includes(term)
-                    ).slice(0, 3); // Limit to 3
-                    
-                    if (found.length === 0) toolResult = "No files found.";
-                    else {
-                        toolResult = found.map(f => `File: ${f.fileNumber}, Goods: ${f.goodsName}, Status: ${f.status}`).join('\n');
-                    }
-                }
-            }
-
-            // 4. Send Tool Result back to AI for final natural language response
-            const finalResult = await ai.models.generateContent({
-                model: 'gemini-2.5-flash',
-                contents: [
-                    ...contents,
-                    { role: 'model', parts: [{ functionCall: call }] },
-                    { role: 'user', parts: [{ functionResponse: { name: call.name, response: { result: toolResult } } }] }
-                ],
-                config: { systemInstruction: systemInstruction }
-            });
-            
-            return finalResult.response.text();
-        } else {
-            return response.text();
+        if (data.type === 'message') {
+            return data.text;
+        } 
+        
+        if (data.type === 'tool_call') {
+            return handleToolExecution(data.tool, data.args, user);
         }
 
+        // Fallback if structure is unknown but text exists
+        if (data.text || data.reply) return data.text || data.reply;
+        if (typeof data === 'string') return data;
+
+        return "پاسخ نامشخصی از سرور هوش مصنوعی دریافت شد.";
+
     } catch (error) {
-        console.error("AI Error:", error);
-        return "متاسفانه در پردازش درخواست شما مشکلی پیش آمد.";
+        console.error("n8n Error:", error.message);
+        return "متاسفانه در ارتباط با سرور هوش مصنوعی (n8n) خطایی رخ داد.";
     }
+}
+
+function handleToolExecution(toolName, args, user) {
+    const db = getDb();
+    
+    if (toolName === 'register_payment_order') {
+        const trackingNum = findNextAvailableTrackingNumber(db);
+        const newOrder = {
+            id: Date.now().toString(36),
+            trackingNumber: trackingNum,
+            date: new Date().toISOString().split('T')[0],
+            payee: args.payee,
+            totalAmount: Number(args.amount),
+            description: args.description,
+            status: 'در انتظار بررسی مالی',
+            requester: user.fullName,
+            paymentDetails: [{
+                id: Date.now().toString(36) + 'd',
+                method: 'حواله بانکی',
+                amount: Number(args.amount),
+                description: 'ثبت شده توسط هوش مصنوعی'
+            }],
+            payingCompany: args.company || db.settings.defaultCompany,
+            createdAt: Date.now()
+        };
+        db.orders.unshift(newOrder);
+        saveDb(db);
+        return `دستور پرداخت با موفقیت ثبت شد.\nشماره: ${trackingNum}\nمبلغ: ${Number(args.amount).toLocaleString('fa-IR')} ریال\nگیرنده: ${args.payee}`;
+    }
+
+    if (toolName === 'get_financial_summary') {
+        if (!['admin', 'manager', 'ceo', 'financial'].includes(user.role)) {
+            return "شما دسترسی لازم برای مشاهده گزارش مالی را ندارید.";
+        }
+        const pending = db.orders.filter(o => o.status !== 'تایید نهایی' && o.status !== 'رد شده').length;
+        const approved = db.orders.filter(o => o.status === 'تایید نهایی').length;
+        const total = db.orders.filter(o => o.status === 'تایید نهایی').reduce((sum, o) => sum + o.totalAmount, 0);
+        return `📊 گزارش وضعیت مالی:\n\n🟡 در انتظار: ${pending} مورد\n✅ تایید شده: ${approved} مورد\n💰 مجموع پرداختی: ${total.toLocaleString('fa-IR')} ریال`;
+    }
+
+    if (toolName === 'search_trade_file') {
+        if (user.role === 'user' && !user.canManageTrade) {
+            return "شما دسترسی به بخش بازرگانی ندارید.";
+        }
+        const term = (args.query || '').toLowerCase();
+        const found = (db.tradeRecords || []).filter(r => 
+            r.fileNumber.includes(term) || 
+            r.goodsName.includes(term) || 
+            r.sellerName.includes(term)
+        ).slice(0, 3);
+        
+        if (found.length === 0) return "هیچ پرونده‌ای با این مشخصات یافت نشد.";
+        
+        let result = "📂 نتایج جستجو:\n";
+        found.forEach(f => {
+            result += `\n- پرونده: ${f.fileNumber}\n  کالا: ${f.goodsName}\n  وضعیت: ${f.status}\n`;
+        });
+        return result;
+    }
+
+    return `دستور ناشناخته: ${toolName}`;
 }
 
 
@@ -283,13 +231,12 @@ const initTelegram = async () => {
             telegramBot.on('message', async (msg) => {
                 const chatId = msg.chat.id.toString();
                 const db = getDb();
-                // Auth Check: Match Chat ID or Phone Number? 
-                // For simplicity, we match Chat ID stored in user profile or exact username match if implemented.
-                // Here we match User.telegramChatId
+                
+                // Auth Check: Match Chat ID
                 const user = db.users.find(u => u.telegramChatId === chatId);
 
                 if (!user) {
-                    telegramBot.sendMessage(chatId, `شما دسترسی ندارید. Chat ID شما: ${chatId}. لطفا به مدیر سیستم اطلاع دهید.`);
+                    telegramBot.sendMessage(chatId, `⛔ شما دسترسی ندارید.\nChat ID شما: ${chatId}\nلطفا این کد را به مدیر سیستم بدهید تا دسترسی شما را فعال کند.`);
                     return;
                 }
 
@@ -297,26 +244,25 @@ const initTelegram = async () => {
                 if (msg.voice || msg.audio) {
                     const fileId = msg.voice ? msg.voice.file_id : msg.audio.file_id;
                     const fileLink = await telegramBot.getFileLink(fileId);
+                    
                     // Fetch file bytes
-                    const response = await fetch(fileLink);
-                    const arrayBuffer = await response.arrayBuffer();
-                    const buffer = Buffer.from(arrayBuffer);
-                    const base64 = buffer.toString('base64');
-                    // Telegram usually sends OGG for voice
+                    const response = await axios.get(fileLink, { responseType: 'arraybuffer' });
+                    const base64 = Buffer.from(response.data).toString('base64');
+                    
                     const mimeType = msg.voice ? 'audio/ogg' : 'audio/mpeg'; 
                     
                     telegramBot.sendChatAction(chatId, 'typing');
-                    const reply = await processAIRequest(user, null, base64, mimeType);
+                    const reply = await processN8NRequest(user, null, base64, mimeType);
                     telegramBot.sendMessage(chatId, reply);
                 } else if (msg.text) {
                     telegramBot.sendChatAction(chatId, 'typing');
-                    const reply = await processAIRequest(user, msg.text);
+                    const reply = await processN8NRequest(user, msg.text);
                     telegramBot.sendMessage(chatId, reply);
                 }
             });
             
             telegramBot.on('polling_error', (error) => {
-                console.error("Telegram Polling Error (Check Token):", error.code);
+                console.error("Telegram Polling Error:", error.code);
             });
         }
     } catch (e) {
@@ -375,8 +321,7 @@ const initWhatsApp = async () => {
             const user = db.users.find(u => normalize(u.phoneNumber) === normalize(senderNumber));
 
             if (!user) {
-                // Optional: Reply "Access Denied" or just ignore
-                // msg.reply('شما در سیستم تعریف نشده‌اید.');
+                // Ignore unknown users
                 return; 
             }
 
@@ -385,12 +330,12 @@ const initWhatsApp = async () => {
                 const media = await msg.downloadMedia();
                 if (media.mimetype.startsWith('audio/')) {
                     // Process Audio
-                    const reply = await processAIRequest(user, null, media.data, media.mimetype);
+                    const reply = await processN8NRequest(user, null, media.data, media.mimetype);
                     msg.reply(reply);
                 }
             } else {
                 // Process Text
-                const reply = await processAIRequest(user, msg.body);
+                const reply = await processN8NRequest(user, msg.body);
                 msg.reply(reply);
             }
         });
