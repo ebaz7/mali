@@ -5,6 +5,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import axios from 'axios';
+import { spawn } from 'child_process';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -90,7 +91,35 @@ const findNextAvailableTrackingNumber = (db) => {
 };
 
 // ==========================================
-// N8N ORCHESTRATOR LOGIC (Restored & Enhanced)
+// N8N AUTO-START ORCHESTRATOR
+// ==========================================
+const startN8nService = () => {
+    console.log('>>> Initializing n8n Service...');
+    
+    // Check if n8n is likely already running on port 5678 (basic check)
+    // For simplicity in this environment, we just try to spawn it. 
+    // n8n handles port conflict gracefully usually or we catch the error.
+    
+    // Using 'npx -y n8n start' ensures we use the installed version or download it if missing
+    // 'shell: true' is critical for Windows
+    const n8n = spawn('npx', ['-y', 'n8n', 'start'], {
+        shell: true,
+        stdio: 'inherit' // Pipe output to main console so user can see what's happening
+    });
+
+    n8n.on('error', (err) => {
+        console.error('>>> Failed to start n8n automatically:', err);
+    });
+
+    n8n.on('close', (code) => {
+        if (code !== 0) {
+            console.log(`>>> n8n process exited with code ${code}`);
+        }
+    });
+};
+
+// ==========================================
+// N8N REQUEST LOGIC
 // ==========================================
 
 async function processN8NRequest(user, messageText, audioData = null, audioMimeType = null, systemPrompt = null) {
@@ -169,7 +198,7 @@ async function processN8NRequest(user, messageText, audioData = null, audioMimeT
             return "برای ثبت دستور پرداخت، لطفا از منوی 'ثبت دستور' استفاده کنید یا مبلغ و گیرنده را دقیق بفرمایید.";
         }
 
-        return "⚠️ ارتباط با موتور هوشمند (n8n) برقرار نیست. \nبرای فعال‌سازی کامل، دستور `n8n start` را در سرور اجرا کنید.\n\nمن فعلاً فقط می‌توانم گزارش‌های ساده بدهم.";
+        return "⚠️ ارتباط با موتور هوشمند (n8n) برقرار نیست. \nسیستم در حال تلاش برای اجرای خودکار n8n است، لطفا چند لحظه صبر کنید و مجددا تلاش کنید.";
     }
 }
 
@@ -456,6 +485,9 @@ const initWhatsApp = async () => {
 
 // Start Bots (Delayed slightly to allow server to bind port first)
 setTimeout(() => {
+    // AUTO-START n8n HERE
+    startN8nService();
+    
     initWhatsApp();
     initTelegram();
 }, 3000);

@@ -108,9 +108,9 @@ const SmartPaymentAnalysis: React.FC = () => {
                                 <Calendar size={18} className="text-blue-500"/> تاریخ سررسید / پرداخت
                             </label>
                             <div className="grid grid-cols-3 gap-2">
-                                <select className="border rounded-xl p-2 bg-gray-50 text-sm" value={date.day} onChange={e => setDate({...date, day: Number(e.target.value)})}>{days.map(d => <option key={d} value={d}>{d}</option>)}</select>
-                                <select className="border rounded-xl p-2 bg-gray-50 text-sm" value={date.month} onChange={e => setDate({...date, month: Number(e.target.value)})}>{months.map((m, i) => <option key={i} value={i+1}>{m}</option>)}</select>
-                                <select className="border rounded-xl p-2 bg-gray-50 text-sm" value={date.year} onChange={e => setDate({...date, year: Number(e.target.value)})}>{years.map(y => <option key={y} value={y}>{y}</option>)}</select>
+                                <select className="border rounded-xl p-2 bg-gray-50" value={date.day} onChange={e => setDate({...date, day: Number(e.target.value)})}>{days.map(d => <option key={d} value={d}>{d}</option>)}</select>
+                                <select className="border rounded-xl p-2 bg-gray-50" value={date.month} onChange={e => setDate({...date, month: Number(e.target.value)})}>{months.map((m, i) => <option key={i} value={i+1}>{m}</option>)}</select>
+                                <select className="border rounded-xl p-2 bg-gray-50" value={date.year} onChange={e => setDate({...date, year: Number(e.target.value)})}>{years.map(y => <option key={y} value={y}>{y}</option>)}</select>
                             </div>
                         </div>
 
