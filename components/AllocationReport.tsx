@@ -197,6 +197,32 @@ const AllocationReport: React.FC<AllocationReportProps> = ({ records, onUpdateRe
         const content = document.getElementById('allocation-report-table-print-area');
         if (!content) return;
 
+        // Clone the content to manipulate for print
+        const clone = content.cloneNode(true) as HTMLElement;
+
+        // 1. Sync Selects (Dropdowns) -> Text
+        const originalSelects = content.querySelectorAll('select');
+        const cloneSelects = clone.querySelectorAll('select');
+        originalSelects.forEach((sel, i) => {
+            const selectedText = sel.options[sel.selectedIndex]?.text || '';
+            const span = document.createElement('span');
+            span.innerText = selectedText !== 'انتخاب' ? selectedText : '-';
+            // Copy styles for consistency but ensure no border/bg
+            span.style.cssText = "display: inline-block; text-align: center; min-width: 50px;";
+            cloneSelects[i].parentNode?.replaceChild(span, cloneSelects[i]);
+        });
+
+        // 2. Sync Checkboxes -> Icons
+        const originalCheckboxes = content.querySelectorAll('input[type="checkbox"]');
+        const cloneCheckboxes = clone.querySelectorAll('input[type="checkbox"]');
+        originalCheckboxes.forEach((cb, i) => {
+            const isChecked = (cb as HTMLInputElement).checked;
+            const span = document.createElement('span');
+            span.innerText = isChecked ? '✅' : '⬜'; // Visual tick
+            span.style.fontSize = '16px';
+            cloneCheckboxes[i].parentNode?.replaceChild(span, cloneCheckboxes[i]);
+        });
+
         const iframe = document.createElement('iframe');
         iframe.style.position = 'fixed';
         iframe.style.right = '0';
@@ -226,23 +252,31 @@ const AllocationReport: React.FC<AllocationReportProps> = ({ records, onUpdateRe
                     th, td { border: 1px solid #000; padding: 4px; text-align: center; } 
                     th { background-color: #1e3a8a !important; color: white !important; font-weight: bold; } 
                     .no-print { display: none !important; }
-                    select { appearance: none; border: none; background: transparent; text-align: center; width: auto; font-family: inherit; color: black !important; }
-                    @media print { @page { size: A4 landscape; margin: 10mm; } body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } .no-print { display: none !important; } }
+                    @media print { 
+                        @page { size: A4 landscape; margin: 10mm; } 
+                        body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } 
+                        .no-print { display: none !important; } 
+                    }
                 </style>
             </head>
             <body>
                 <div style="width: 100%;">
                     <h2 style="text-align: center; margin-bottom: 20px; font-weight: bold;">گزارش صف تخصیص ارز</h2>
-                    ${content.innerHTML}
+                    ${clone.innerHTML}
                 </div>
-                <script>
-                    window.onload = function() { setTimeout(function() { window.focus(); window.print(); }, 1000); };
-                </script>
             </body>
             </html>
         `);
         doc.close();
-        setTimeout(() => { if (document.body.contains(iframe)) { document.body.removeChild(iframe); } }, 60000);
+
+        // Print from parent context to avoid script injection issues
+        setTimeout(() => {
+            if (iframe.contentWindow) {
+                iframe.contentWindow.focus();
+                iframe.contentWindow.print();
+            }
+            setTimeout(() => { if (document.body.contains(iframe)) document.body.removeChild(iframe); }, 3000);
+        }, 1000);
     };
 
     const handleDownloadPDF = async () => {
@@ -261,6 +295,12 @@ const AllocationReport: React.FC<AllocationReportProps> = ({ records, onUpdateRe
                         selects.forEach((s: any) => {
                             const val = s.options[s.selectedIndex].text;
                             if (val !== 'انتخاب') { const span = doc.createElement('span'); span.innerText = val; s.parentNode.replaceChild(span, s); }
+                        });
+                        const checkboxes = el.querySelectorAll('input[type="checkbox"]');
+                        checkboxes.forEach((c: any) => {
+                            const span = doc.createElement('span');
+                            span.innerText = c.checked ? '✅' : '⬜';
+                            c.parentNode.replaceChild(span, c);
                         });
                     }
                 }
