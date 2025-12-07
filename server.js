@@ -112,7 +112,7 @@ const syncN8nWorkflow = async () => {
 
     const workflowJson = JSON.parse(fs.readFileSync(workflowPath, 'utf8'));
     
-    // Default Basic Auth as configured in Docker Compose
+    // Default Basic Auth as configured in startN8nService
     const auth = Buffer.from('admin:password').toString('base64');
     const headers = { 
         'Authorization': `Basic ${auth}`, 
@@ -122,7 +122,7 @@ const syncN8nWorkflow = async () => {
     console.log(`>>> Starting n8n Sync to ${apiBase}...`);
 
     let attempts = 0;
-    const maxAttempts = 15; // Try for 45 seconds
+    const maxAttempts = 20; // Try for 60 seconds
     
     const interval = setInterval(async () => {
         attempts++;
@@ -167,32 +167,59 @@ const syncN8nWorkflow = async () => {
 
 const startN8nService = () => {
     // Only spawn locally if we are NOT in a docker environment that provides n8n
-    // Simple check: if N8N_WEBHOOK_URL is set, assume Docker/External n8n
     if (process.env.N8N_WEBHOOK_URL) {
         console.log('>>> Using external/docker n8n service defined in env.');
         return;
     }
 
     console.log('>>> Initializing Local AI Engine (n8n)...');
+    console.log('>>> This may take a few moments. We are setting up n8n for you.');
     
     const isWin = process.platform === 'win32';
+    // Use npx to ensure we run the installed n8n, passing -y to skip prompts
     const command = isWin ? 'npx.cmd' : 'npx';
     const args = ['-y', 'n8n', 'start'];
+
+    // Inject Environment Variables for n8n to enable Basic Auth and set defaults
+    const n8nEnv = {
+        ...process.env,
+        N8N_BASIC_AUTH_ACTIVE: 'true',
+        N8N_BASIC_AUTH_USER: 'admin',
+        N8N_BASIC_AUTH_PASSWORD: 'password',
+        N8N_PORT: '5678',
+        N8N_HOST: 'localhost',
+        // Disable setup wizard and tracking
+        N8N_DIAGNOSTICS_ENABLED: 'false',
+        N8N_PERSONALIZATION_ENABLED: 'false'
+    };
 
     try {
         n8nProcess = spawn(command, args, {
             shell: isWin,
-            stdio: 'ignore',
+            env: n8nEnv,
+            stdio: 'pipe', // Capture output to show status
             detached: false
         });
 
+        n8nProcess.stdout.on('data', (data) => {
+            const output = data.toString();
+            // Check for ready signal
+            if (output.includes('Editor is now accessible')) {
+                console.log('>>> ✅ n8n is active and running locally on port 5678');
+            }
+        });
+
+        n8nProcess.stderr.on('data', (data) => {
+            // console.error('[n8n]', data.toString()); // Uncomment for debugging
+        });
+
         n8nProcess.on('error', (err) => {
-            console.warn('>>> Local AI Engine failed to start (Offline Mode active).');
+            console.warn('>>> Local AI Engine failed to start:', err.message);
         });
         
         console.log('>>> Local AI Engine process spawned.');
     } catch (e) {
-        console.warn('>>> Could not spawn AI Engine. Offline Mode active.');
+        console.warn('>>> Could not spawn AI Engine. Offline Mode active.', e);
     }
 };
 
@@ -202,7 +229,7 @@ const startN8nService = () => {
 
 async function processN8NRequest(user, messageText, audioData = null, audioMimeType = null, systemPrompt = null) {
     const db = getDb();
-    // Prioritize Env Var, then DB, then Default
+    // Prioritize Env Var, then DB, then Default Localhost
     const webhookUrl = process.env.N8N_WEBHOOK_URL || db.settings.n8nWebhookUrl || 'http://localhost:5678/webhook/ai';
 
     try {
