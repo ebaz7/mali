@@ -171,16 +171,19 @@ const syncN8nWorkflow = async () => {
             let workflowId;
             
             if (existing) {
-                // Update Existing
-                console.log('>>> Updating existing n8n workflow...');
-                workflowId = existing.id;
-                await axios.put(`${apiBase}/api/v1/workflows/${workflowId}`, workflowJson, { headers });
-            } else {
-                // Create New
-                console.log('>>> Creating new n8n workflow...');
-                const createRes = await axios.post(`${apiBase}/api/v1/workflows`, workflowJson, { headers });
-                workflowId = createRes.data.id;
+                // DELETE EXISTING to ensure clean state and correct Response Mode
+                console.log('>>> Deleting old n8n workflow to ensure clean state...');
+                try {
+                    await axios.delete(`${apiBase}/api/v1/workflows/${existing.id}`, { headers });
+                } catch (delErr) {
+                    console.warn('>>> Failed to delete old workflow, trying to update...', delErr.message);
+                }
             }
+
+            // Create New
+            console.log('>>> Creating new n8n workflow...');
+            const createRes = await axios.post(`${apiBase}/api/v1/workflows`, workflowJson, { headers });
+            workflowId = createRes.data.id;
 
             // 2. Activate Workflow
             if (workflowId) {
