@@ -122,7 +122,7 @@ const syncN8nWorkflow = async () => {
     console.log(`>>> Starting n8n Sync to ${apiBase}...`);
 
     let attempts = 0;
-    const maxAttempts = 30; // Increased to 30 attempts (90 seconds) to allow for install time
+    const maxAttempts = 40; // Increased attempts
     
     const interval = setInterval(async () => {
         attempts++;
@@ -217,14 +217,18 @@ const startN8nService = () => {
     
     try {
         // Prefer local node_modules binary, fallback to npx
-        const command = fs.existsSync(localBinPath) ? localBinPath : (isWin ? 'npx.cmd' : 'npx');
-        const args = fs.existsSync(localBinPath) ? ['start'] : ['-y', 'n8n', 'start'];
+        const useLocal = fs.existsSync(localBinPath);
+        const command = useLocal ? localBinPath : (isWin ? 'npx.cmd' : 'npx');
+        const args = useLocal ? ['start'] : ['-y', 'n8n', 'start'];
+
+        console.log(`>>> Executing: ${command} ${args.join(' ')}`);
 
         n8nProcess = spawn(command, args, {
             env: n8nEnv,
             stdio: 'pipe', 
             detached: false,
-            shell: false // Try false first for local bin, safer
+            // CRITICAL FIX: Windows requires shell: true for .cmd files to avoid EINVAL
+            shell: isWin 
         });
 
         n8nProcess.stdout.on('data', (data) => {
@@ -235,13 +239,12 @@ const startN8nService = () => {
         });
 
         n8nProcess.stderr.on('data', (data) => {
-            // Un-comment to debug n8n startup issues
+            // Uncomment to debug n8n startup issues if needed
             // console.error('[n8n Log]', data.toString()); 
         });
 
         n8nProcess.on('error', (err) => {
             console.warn('>>> Local AI Engine failed to start:', err.message);
-            // Fallback strategy could go here
         });
         
         n8nProcess.on('exit', (code) => {
