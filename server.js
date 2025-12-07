@@ -5,7 +5,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import axios from 'axios';
-import { spawn, execSync } from 'child_process';
+import { spawn } from 'child_process';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -97,22 +97,18 @@ let n8nProcess = null;
 // Function to auto-configure n8n (Import Workflow & Activate)
 const syncN8nWorkflow = async () => {
     const db = getDb();
-    // Prioritize Env Var (Docker), then DB setting, then Localhost default
     const webhookUrl = process.env.N8N_WEBHOOK_URL || db.settings.n8nWebhookUrl || 'http://localhost:5678/webhook/ai';
     
-    // Extract base URL (e.g., http://n8n:5678)
     let apiBase = webhookUrl.split('/webhook')[0];
     if (!apiBase) apiBase = 'http://localhost:5678';
 
     const workflowPath = path.join(__dirname, 'n8n_workflow.json');
     if (!fs.existsSync(workflowPath)) {
-        console.warn(">>> n8n workflow file not found.");
         return;
     }
 
     const workflowJson = JSON.parse(fs.readFileSync(workflowPath, 'utf8'));
     
-    // Default Basic Auth as configured in startN8nService
     const auth = Buffer.from('admin:password').toString('base64');
     const headers = { 
         'Authorization': `Basic ${auth}`, 
@@ -122,7 +118,7 @@ const syncN8nWorkflow = async () => {
     console.log(`>>> Starting n8n Sync to ${apiBase}...`);
 
     let attempts = 0;
-    const maxAttempts = 40; // Increased attempts
+    const maxAttempts = 60; // Wait longer for n8n to fully boot
     
     const interval = setInterval(async () => {
         attempts++;
@@ -133,7 +129,7 @@ const syncN8nWorkflow = async () => {
         }
 
         try {
-            // 1. Check if n8n API is up by listing workflows
+            // 1. Check if n8n API is up
             const listRes = await axios.get(`${apiBase}/api/v1/workflows`, { headers, timeout: 2000 });
             const existing = listRes.data.data.find(w => w.name === workflowJson.name);
             
@@ -160,13 +156,11 @@ const syncN8nWorkflow = async () => {
             clearInterval(interval);
         } catch (e) {
             // Silent error logging while waiting for startup
-            if (attempts % 5 === 0) console.log(`>>> Waiting for n8n to be ready (${attempts}/${maxAttempts})...`);
         }
-    }, 3000);
+    }, 2000);
 };
 
 const startN8nService = () => {
-    // Only spawn locally if we are NOT in a docker environment that provides n8n
     if (process.env.N8N_WEBHOOK_URL) {
         console.log('>>> Using external/docker n8n service defined in env.');
         return;
@@ -174,25 +168,7 @@ const startN8nService = () => {
 
     console.log('>>> Initializing Local AI Engine (n8n)...');
     
-    const isWin = process.platform === 'win32';
-    const npmCmd = isWin ? 'npm.cmd' : 'npm';
-    
-    // 1. Check if n8n is installed, if not, install it.
-    const localBinPath = path.join(__dirname, 'node_modules', '.bin', isWin ? 'n8n.cmd' : 'n8n');
-    
-    if (!fs.existsSync(localBinPath)) {
-        console.log('>>> n8n binary not found. Installing n8n locally (this may take a few minutes)...');
-        try {
-            execSync(`${npmCmd} install n8n --no-audit --no-fund --loglevel=error`, { stdio: 'inherit' });
-            console.log('>>> n8n installed successfully.');
-        } catch (err) {
-            console.error('>>> Failed to install n8n. Will try to use npx fallback.', err.message);
-        }
-    } else {
-        console.log('>>> n8n is installed locally.');
-    }
-
-    // 2. Prepare Environment
+    // Prepare Environment
     const n8nEnv = {
         ...process.env,
         N8N_BASIC_AUTH_ACTIVE: 'true',
@@ -203,31 +179,40 @@ const startN8nService = () => {
         N8N_DIAGNOSTICS_ENABLED: 'false',
         N8N_PERSONALIZATION_ENABLED: 'false',
         N8N_ENCRYPTION_KEY: 'payment-system-local-key',
-        // Ensure user folder is used for data
         N8N_USER_FOLDER: path.join(__dirname, 'n8n_data')
     };
 
-    // Create data dir if missing
     if (!fs.existsSync(path.join(__dirname, 'n8n_data'))) {
         fs.mkdirSync(path.join(__dirname, 'n8n_data'), { recursive: true });
     }
 
-    // 3. Launch n8n
-    console.log('>>> Spawning n8n process...');
+    const isWin = process.platform === 'win32';
     
-    try {
-        // Prefer local node_modules binary, fallback to npx
-        const useLocal = fs.existsSync(localBinPath);
-        const command = useLocal ? localBinPath : (isWin ? 'npx.cmd' : 'npx');
-        const args = useLocal ? ['start'] : ['-y', 'n8n', 'start'];
+    // Strategy:
+    // 1. Try local node_modules/.bin/n8n (Fastest, uses installed package)
+    // 2. Fallback to 'npx n8n start' (Might check internet, but usually uses cache)
+    
+    const localBin = path.join(__dirname, 'node_modules', '.bin', isWin ? 'n8n.cmd' : 'n8n');
+    let command, args;
 
+    if (fs.existsSync(localBin)) {
+        console.log('>>> Found local n8n binary.');
+        command = localBin;
+        args = ['start'];
+    } else {
+        console.log('>>> Local binary not found. Falling back to npx (system cache).');
+        command = isWin ? 'npx.cmd' : 'npx';
+        args = ['n8n', 'start'];
+    }
+
+    try {
         console.log(`>>> Executing: ${command} ${args.join(' ')}`);
 
         n8nProcess = spawn(command, args, {
             env: n8nEnv,
             stdio: 'pipe', 
             detached: false,
-            // CRITICAL FIX: Windows requires shell: true for .cmd files to avoid EINVAL
+            // CRITICAL FIX: Shell must be true on Windows to execute .cmd/batch files properly
             shell: isWin 
         });
 
@@ -239,22 +224,18 @@ const startN8nService = () => {
         });
 
         n8nProcess.stderr.on('data', (data) => {
-            // Uncomment to debug n8n startup issues if needed
-            // console.error('[n8n Log]', data.toString()); 
+            // Keep logs silent unless there's a fatal crash
+            if (data.toString().includes('crash') || data.toString().includes('Error')) {
+                // console.error('[n8n Error]', data.toString()); 
+            }
         });
 
         n8nProcess.on('error', (err) => {
             console.warn('>>> Local AI Engine failed to start:', err.message);
         });
         
-        n8nProcess.on('exit', (code) => {
-            if (code !== 0 && code !== null) {
-                console.log(`>>> n8n process exited with code ${code}`);
-            }
-        });
-        
     } catch (e) {
-        console.warn('>>> Could not spawn AI Engine. Offline Mode active.', e);
+        console.warn('>>> Could not spawn AI Engine.', e);
     }
 };
 
@@ -283,7 +264,7 @@ async function processN8NRequest(user, messageText, audioData = null, audioMimeT
             timestamp: new Date().toISOString()
         };
 
-        const response = await axios.post(webhookUrl, payload, { timeout: 15000 }); // Increased timeout for n8n processing
+        const response = await axios.post(webhookUrl, payload, { timeout: 20000 }); // timeout increased
         const data = response.data;
 
         // Ensure data is parsed if n8n returns stringified JSON
@@ -558,8 +539,8 @@ const initWhatsApp = async () => {
 
 // Start Services
 setTimeout(() => {
-    startN8nService(); // Local start logic
-    syncN8nWorkflow(); // Auto Sync & Activate Workflow
+    startN8nService(); 
+    syncN8nWorkflow(); 
     initWhatsApp();
     initTelegram();
 }, 3000);
