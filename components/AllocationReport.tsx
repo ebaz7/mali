@@ -316,28 +316,75 @@ const AllocationReport: React.FC<AllocationReportProps> = ({ records, onUpdateRe
 
     const handleExport = () => {
         const rows = [];
-        const headers = ["ردیف", "پرونده / کالا", "شماره ثبت سفارش", "شرکت", "مبلغ ارزی", "معادل دلار ($)", "معادل ریالی", "زمان در صف", "زمان تخصیص", "مانده مهلت (روز)", "وضعیت", "بانک عامل", "اولویت", "نوع ارز"];
+        // Define Headers
+        const headers = [
+            "ردیف", 
+            "شماره پرونده", 
+            "شرح کالا", 
+            "شماره ثبت سفارش", 
+            "شرکت", 
+            "مبلغ ارزی (اصل)", 
+            "معادل دلار ($)", 
+            "معادل ریالی", 
+            "زمان در صف", 
+            "زمان تخصیص", 
+            "مانده مهلت (روز)", 
+            "وضعیت", 
+            "بانک عامل", 
+            "اولویت", 
+            "نوع ارز"
+        ];
         rows.push(headers.join(","));
-        const escape = (val: any) => `"${String(val || '').replace(/"/g, '""')}"`;
+
+        // Helper to escape CSV strings
+        const escape = (val: any) => {
+            if (val === null || val === undefined) return '""';
+            return `"${String(val).replace(/"/g, '""')}"`;
+        };
 
         processedRecords.forEach((r, index) => {
             const row = [
-                index + 1, escape(`${r.fileNumber} - ${r.goodsName}`), escape(r.registrationNumber), escape(r.company),
-                escape(`${formatCurrency(r.amount)} ${r.mainCurrency}`), escape(formatUSD(r.amountInUSD)), escape(formatCurrency(r.rialEquiv)),
-                escape(r.stageQ?.queueDate), escape(r.stageA?.allocationDate), escape(r.remainingDays),
-                escape(r.isAllocated ? 'تخصیص یافته' : 'در صف'), escape(r.operatingBank),
-                escape(r.isPriority ? 'بله' : 'خیر'), escape(r.allocationCurrencyRank === 'Type1' ? 'نوع اول' : r.allocationCurrencyRank === 'Type2' ? 'نوع دوم' : '')
+                index + 1,
+                escape(r.fileNumber),
+                escape(r.goodsName),
+                escape(r.registrationNumber || '-'),
+                escape(r.company),
+                escape(`${formatCurrency(r.amount)} ${r.mainCurrency}`),
+                escape(formatUSD(r.amountInUSD).replace(/,/g, '')), // Remove commas for Excel numeric handling
+                escape(r.rialEquiv), // Keep raw number or formatted based on preference, removed commas for calc
+                escape(r.stageQ?.queueDate || '-'),
+                escape(r.stageA?.allocationDate || '-'),
+                escape(r.remainingDays),
+                escape(r.isAllocated ? 'تخصیص یافته' : 'در صف'),
+                escape(r.operatingBank || '-'),
+                escape(r.isPriority ? 'بله' : 'خیر'),
+                escape(r.allocationCurrencyRank === 'Type1' ? 'نوع اول' : r.allocationCurrencyRank === 'Type2' ? 'نوع دوم' : '-')
             ];
             rows.push(row.join(","));
         });
-        rows.push("");
-        rows.push("خلاصه وضعیت,,,تخصیص یافته ($),در صف ($),مجموع ($)");
-        Object.entries(companySummary).forEach(([comp, data]) => { rows.push(`,,,${escape(comp)},"${formatUSD(data.allocated)}","${formatUSD(data.queue)}","${formatUSD(data.allocated + data.queue)}"`); });
-        rows.push(`,,,جمع کل,"${formatUSD(totalAllocated)}","${formatUSD(totalQueue)}","${formatUSD(totalAllocated + totalQueue)}"`);
 
-        const blob = new Blob(["\uFEFF" + rows.join("\n")], { type: 'text/csv;charset=utf-8;' });
-        const link = document.createElement("a"); link.href = URL.createObjectURL(blob); link.download = `Allocation_Report_${new Date().toISOString().slice(0,10)}.csv`;
-        document.body.appendChild(link); link.click(); document.body.removeChild(link);
+        // Empty row
+        rows.push("");
+
+        // Summary Section
+        rows.push("خلاصه وضعیت به تفکیک شرکت,,,,,,,,,,,,,,"); // Empty commas to align
+        rows.push(",,,,شرکت,جمع تخصیص یافته ($),جمع در صف ($),مجموع کل ($),,,,,,,");
+
+        Object.entries(companySummary).forEach(([comp, data]) => { 
+            rows.push(`,,,,${escape(comp)},"${formatUSD(data.allocated).replace(/,/g, '')}","${formatUSD(data.queue).replace(/,/g, '')}","${formatUSD(data.allocated + data.queue).replace(/,/g, '')}",,,,,,,`); 
+        });
+
+        rows.push(`,,,,جمع نهایی,"${formatUSD(totalAllocated).replace(/,/g, '')}","${formatUSD(totalQueue).replace(/,/g, '')}","${formatUSD(totalAllocated + totalQueue).replace(/,/g, '')}",,,,,,,`);
+
+        // BOM for UTF-8 Excel compatibility
+        const bom = "\uFEFF"; 
+        const blob = new Blob([bom + rows.join("\n")], { type: 'text/csv;charset=utf-8;' });
+        const link = document.createElement("a");
+        link.href = URL.createObjectURL(blob);
+        link.download = `Allocation_Report_${new Date().toISOString().slice(0,10)}.csv`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
     };
 
     const handleShareWhatsApp = async () => {
