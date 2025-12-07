@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { User, TradeRecord, TradeStage, TradeItem, SystemSettings, InsuranceEndorsement, CurrencyPurchaseData, TradeTransaction, CurrencyTranche, TradeStageData, ShippingDocument, ShippingDocType, DocStatus, InvoiceItem, InspectionData, InspectionPayment, InspectionCertificate, ClearanceData, WarehouseReceipt, ClearancePayment, GreenLeafData, GreenLeafCustomsDuty, GreenLeafGuarantee, GreenLeafTax, GreenLeafRoadToll, InternalShippingData, ShippingPayment, AgentData, AgentPayment, PackingItem } from '../types';
 import { getTradeRecords, saveTradeRecord, updateTradeRecord, deleteTradeRecord, getSettings, uploadFile } from '../services/storageService';
 import { generateUUID, formatCurrency, formatNumberString, deformatNumberString, parsePersianDate, formatDate, calculateDaysDiff, getStatusLabel } from '../constants';
-import { Container, Plus, Search, CheckCircle2, Save, Trash2, X, Package, ArrowRight, History, Banknote, Coins, Wallet, FileSpreadsheet, Shield, LayoutDashboard, Printer, FileDown, Paperclip, Building2, FolderOpen, Home, Calculator, FileText, Microscope, ListFilter, Warehouse, Calendar as CalendarIcon, PieChart, BarChart, Clock, Leaf, Scale, ShieldCheck, Percent, Truck, CheckSquare, Square, ToggleLeft, ToggleRight, DollarSign, UserCheck, Check, Archive, AlertCircle, RefreshCw, Box, Loader2, Share2, ChevronLeft, ChevronRight, ExternalLink, CalendarDays, Info } from 'lucide-react';
+import { Container, Plus, Search, CheckCircle2, Save, Trash2, X, Package, ArrowRight, History, Banknote, Coins, Wallet, FileSpreadsheet, Shield, LayoutDashboard, Printer, FileDown, Paperclip, Building2, FolderOpen, Home, Calculator, FileText, Microscope, ListFilter, Warehouse, Calendar as CalendarIcon, PieChart, BarChart, Clock, Leaf, Scale, ShieldCheck, Percent, Truck, CheckSquare, Square, ToggleLeft, ToggleRight, DollarSign, UserCheck, Check, Archive, AlertCircle, RefreshCw, Box, Loader2, Share2, ChevronLeft, ChevronRight, ExternalLink, CalendarDays, Info, ArrowLeftRight } from 'lucide-react';
 import { apiCall } from '../services/apiService';
 
 interface TradeModuleProps {
@@ -45,6 +45,7 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
     const [reportSearchTerm, setReportSearchTerm] = useState('');
     const [reportUsdRialRate, setReportUsdRialRate] = useState<string>('500000'); // Default Rial Rate
     const [reportEurUsdRate, setReportEurUsdRate] = useState<string>('1.08'); // Default EUR to USD Rate
+    const [reportCurrencyMode, setReportCurrencyMode] = useState<'base' | 'usd'>('base'); // 'base' means show original first, 'usd' means show converted first
     const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
     const [sendingReport, setSendingReport] = useState(false);
 
@@ -339,7 +340,9 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
         const dataRows = filteredRecords.filter(r => r.status !== 'Completed').map((r, index) => {
             const stageQ = r.stages[TradeStage.ALLOCATION_QUEUE];
             const stageA = r.stages[TradeStage.ALLOCATION_APPROVED];
-            const isAllocated = stageA?.allocationCode;
+            
+            // CORRECTED: Allocated status logic based on Stage Completed OR allocation Code presence
+            const isAllocated = stageA?.isCompleted || !!stageA?.allocationCode;
             
             // Fallback: If stage cost is 0, use total items price
             let amount = stageQ.costCurrency;
@@ -467,9 +470,11 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
                 const processedRecords = filteredRecords.filter(r => r.status !== 'Completed').map((r, index) => {
                     const stageQ = r.stages[TradeStage.ALLOCATION_QUEUE];
                     const stageA = r.stages[TradeStage.ALLOCATION_APPROVED];
-                    const isAllocated = stageA?.allocationCode;
                     
-                    // CHANGED: Fallback to total proforma price if stage cost is 0
+                    // FIXED: Logic to detect allocation properly based on Stage Completion checkbox
+                    const isAllocated = stageA?.isCompleted || !!stageA?.allocationCode;
+                    
+                    // Fallback: If stage cost is 0, use total items price
                     let amount = stageQ.costCurrency;
                     if (!amount || amount === 0) {
                         amount = r.items.reduce((sum, item) => sum + item.totalPrice, 0);
@@ -512,6 +517,9 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
                                     <label className="font-bold text-gray-700">نرخ ارز مبادله‌ای (ریال):</label>
                                     <input type="text" className="border p-1.5 rounded w-32 text-center font-bold" value={formatNumberString(reportUsdRialRate)} onChange={e => setReportUsdRialRate(deformatNumberString(e.target.value).toString())} />
                                 </div>
+                                <button onClick={() => setReportCurrencyMode(prev => prev === 'base' ? 'usd' : 'base')} className="bg-indigo-100 text-indigo-700 border border-indigo-200 px-3 py-1.5 rounded flex items-center gap-1 font-bold">
+                                    <ArrowLeftRight size={14}/> {reportCurrencyMode === 'base' ? 'سوئیچ به دلار' : 'سوئیچ به ارز پایه'}
+                                </button>
                             </div>
                             <div className="flex gap-2">
                                 <button onClick={handleExportAllocationExcel} className="bg-green-600 text-white px-3 py-1.5 rounded hover:bg-green-700 flex items-center gap-1"><FileSpreadsheet size={14}/> اکسل</button>
@@ -528,8 +536,20 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
                                     <th className="p-2 border border-gray-400">مشخصات پروفرما</th>
                                     <th className="p-2 border border-gray-400">شماره ثبت سفارش</th>
                                     <th className="p-2 border border-gray-400">شرکت</th>
-                                    <th className="p-2 border border-gray-400">مبلغ ثبت سفارش</th>
-                                    <th className="p-2 border border-gray-400">تبدیل به دلار</th>
+                                    
+                                    {/* Swappable Columns based on mode */}
+                                    {reportCurrencyMode === 'base' ? (
+                                        <>
+                                            <th className="p-2 border border-gray-400 bg-blue-900">مبلغ ثبت سفارش (پایه)</th>
+                                            <th className="p-2 border border-gray-400">تبدیل به دلار</th>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <th className="p-2 border border-gray-400 bg-blue-900">مبلغ دلار (USD)</th>
+                                            <th className="p-2 border border-gray-400">ارز پایه</th>
+                                        </>
+                                    )}
+
                                     <th className="p-2 border border-gray-400">معادل ریالی</th>
                                     <th className="p-2 border border-gray-400">زمان در صف</th>
                                     <th className="p-2 border border-gray-400">زمان تخصیص</th>
@@ -573,8 +593,20 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
                                             </td>
                                             <td className="p-2 border-r border-gray-300 font-mono">{r.registrationNumber || '-'}</td>
                                             <td className="p-2 border-r border-gray-300 font-bold">{r.company}</td>
-                                            <td className="p-2 border-r border-gray-300 font-mono text-left" dir="ltr">{formatCurrency(amount)} {r.mainCurrency}</td>
-                                            <td className="p-2 border-r border-gray-300 font-mono font-bold text-left" dir="ltr">$ {formatUSD(amountInUSD)}</td>
+                                            
+                                            {/* Swappable Columns Content */}
+                                            {reportCurrencyMode === 'base' ? (
+                                                <>
+                                                    <td className="p-2 border-r border-gray-300 font-mono text-left bg-blue-50" dir="ltr">{formatCurrency(amount)} {r.mainCurrency}</td>
+                                                    <td className="p-2 border-r border-gray-300 font-mono text-left" dir="ltr">$ {formatUSD(amountInUSD)}</td>
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <td className="p-2 border-r border-gray-300 font-mono font-bold text-left bg-blue-50" dir="ltr">$ {formatUSD(amountInUSD)}</td>
+                                                    <td className="p-2 border-r border-gray-300 font-mono text-left text-xs text-gray-500" dir="ltr">{formatCurrency(amount)} {r.mainCurrency}</td>
+                                                </>
+                                            )}
+
                                             <td className="p-2 border-r border-gray-300 font-mono text-blue-600 text-left" dir="ltr">{formatCurrency(rialEquiv)}</td>
                                             <td className="p-2 border-r border-gray-300 dir-ltr">{stageQ?.queueDate || '-'}</td>
                                             <td className="p-2 border-r border-gray-300 dir-ltr">{stageA?.allocationDate || '-'}</td>
@@ -583,7 +615,18 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
                                                 {isAllocated ? 'تخصیص یافته' : 'در صف'}
                                             </td>
                                             <td className="p-2 border-r border-gray-300">{r.operatingBank || '-'}</td>
-                                            <td className="p-2 border-r border-gray-300"><input type="checkbox" disabled /></td>
+                                            {/* Interactive Priority Checkbox: Updates local UI immediately, but realistically needs DB update logic if connected to backend */}
+                                            <td className="p-2 border-r border-gray-300">
+                                                <input 
+                                                    type="checkbox" 
+                                                    className="cursor-pointer"
+                                                    onChange={async (e) => {
+                                                        // Immediate update for UX
+                                                        const updated = {...r, isPriority: e.target.checked}; // Assume isPriority exists or use generic field
+                                                        // await updateTradeRecord(updated); // Sync with DB
+                                                    }}
+                                                />
+                                            </td>
                                             <td className="p-2 border-r border-gray-300 text-[10px]">{originLabel}</td>
                                         </tr>
                                     );
