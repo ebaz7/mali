@@ -346,6 +346,7 @@ const Settings: React.FC = () => {
                                         <Loader2 size={40} className="text-blue-500 animate-spin mb-4"/>
                                         <p className="text-gray-500">در حال دریافت وضعیت از سرور...</p>
                                         <p className="text-xs text-gray-400 mt-2">اگر طول کشید، سرور را ریستارت کنید.</p>
+                                        <button type="button" onClick={checkWhatsappStatus} className="mt-4 bg-blue-100 text-blue-600 px-4 py-2 rounded text-xs font-bold hover:bg-blue-200">تلاش مجدد</button>
                                     </div>
                                 )}
                             </div>

@@ -101,10 +101,14 @@ let whatsappUser = null;
 
 // Helper to send WA message internally
 const sendWhatsAppMessageInternal = async (number, message) => {
-    if (!whatsappClient || !isWhatsAppReady) return false;
+    if (!whatsappClient || !isWhatsAppReady) {
+        console.warn('>>> WhatsApp Internal Send Failed: Client not ready.');
+        return false;
+    }
     try {
         let chatId = (number.includes('@')) ? number : `${number.replace(/\D/g, '').replace(/^09/, '989').replace(/^9/, '989')}@c.us`;
         await whatsappClient.sendMessage(chatId, message);
+        console.log(`>>> WhatsApp sent to ${chatId}`);
         return true;
     } catch (e) {
         console.error("WA Send Error:", e);
@@ -324,7 +328,13 @@ async function processN8NRequest(user, messageText, audioData = null, audioMimeT
             timestamp: new Date().toISOString()
         };
 
-        const response = await axios.post(webhookUrl, payload, { timeout: 60000 }); // timeout increased
+        console.log(`>>> Sending request to n8n: ${webhookUrl}`);
+        
+        const response = await axios.post(webhookUrl, payload, { 
+            timeout: 120000, // Increased timeout to 2 minutes for slow AI
+            headers: { 'Content-Type': 'application/json' }
+        });
+        
         let data = response.data;
 
         console.log(">>> Raw n8n response:", JSON.stringify(data, null, 2));
@@ -384,7 +394,16 @@ async function processN8NRequest(user, messageText, audioData = null, audioMimeT
         return `پاسخ نامفهومی از هوش مصنوعی دریافت شد. \n(داده خام: ${JSON.stringify(data)})`;
 
     } catch (error) {
-        console.error(">>> AI Request Error:", error.message);
+        // Detailed error logging for connection issues
+        console.error(`>>> AI Request Error: ${error.message}`);
+        if (error.code === 'ECONNREFUSED') {
+            console.error(`>>> Connection Refused to ${webhookUrl}. Is n8n running?`);
+            return "⚠️ خطا: سرور هوش مصنوعی (n8n) در دسترس نیست. لطفا از روشن بودن سرویس اطمینان حاصل کنید.";
+        }
+        if (error.response) {
+            console.error(`>>> Server responded with status ${error.response.status}`);
+            console.error(error.response.data);
+        }
         
         // --- FALLBACK MODE (OFFLINE AI) ---
         if (systemPrompt && systemPrompt.includes("JSON generator")) {
@@ -406,7 +425,7 @@ async function processN8NRequest(user, messageText, audioData = null, audioMimeT
             return handleToolExecution('get_financial_summary', {}, user);
         }
 
-        return "⚠️ ارتباط با موتور هوشمند (n8n) برقرار نیست.\nلطفا بررسی کنید که:\n۱. کانتینر n8n در حال اجرا باشد.\n۲. اعتبارنامه OpenAI در n8n تنظیم شده باشد.\n۳. آدرس وب‌هوک صحیح باشد.";
+        return `⚠️ ارتباط با موتور هوشمند (n8n) برقرار نیست.\nخطا: ${error.message}`;
     }
 }
 
@@ -750,13 +769,23 @@ const initWhatsApp = async () => {
             return null;
         };
 
+        const execPath = getBrowserPath();
+        const puppeteerConfig = {
+            headless: true,
+            args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu']
+        };
+        
+        // Only set executablePath if found, otherwise let puppeteer use bundled
+        if (execPath) {
+            // @ts-ignore
+            puppeteerConfig.executablePath = execPath;
+        } else {
+            console.log(">>> Chrome not found locally, using bundled Chromium.");
+        }
+
         whatsappClient = new Client({
             authStrategy: new LocalAuth({ dataPath: WAUTH_DIR }),
-            puppeteer: { 
-                headless: true, 
-                executablePath: getBrowserPath(),
-                args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu'] 
-            }
+            puppeteer: puppeteerConfig
         });
 
         whatsappClient.on('qr', (qr) => {
