@@ -19,7 +19,7 @@ const CURRENCIES = [
     { code: 'TRY', label: 'لیر (₺)' },
 ];
 
-// Report Types (Calendar Removed)
+// Report Types
 type ReportType = 'general' | 'allocation_queue' | 'allocated' | 'currency' | 'insurance' | 'shipping' | 'inspection' | 'clearance' | 'green_leaf';
 
 const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
@@ -329,29 +329,40 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
             case 'allocation_queue': 
                 return (
                     <div className="overflow-x-auto" id="allocation-report-table-print-area">
-                        <table className="w-full text-sm text-right">
+                        <table className="w-full text-sm text-right border-collapse border border-gray-300">
                             <thead className="bg-gray-100 text-gray-700">
                                 <tr>
-                                    <th className="p-3">شماره پرونده</th>
-                                    <th className="p-3">شرکت</th>
-                                    <th className="p-3">تاریخ ورود به صف</th>
-                                    <th className="p-3">مبلغ ارزی</th>
-                                    <th className="p-3">نرخ ثبت شده</th>
-                                    <th className="p-3">مدت انتظار</th>
+                                    <th className="p-2 border border-gray-300">ردیف</th>
+                                    <th className="p-2 border border-gray-300">شماره پرونده</th>
+                                    <th className="p-2 border border-gray-300">شماره ثبت سفارش</th>
+                                    <th className="p-2 border border-gray-300">شرکت</th>
+                                    <th className="p-2 border border-gray-300">فروشنده</th>
+                                    <th className="p-2 border border-gray-300">منشا ارز</th>
+                                    <th className="p-2 border border-gray-300">تاریخ ورود به صف</th>
+                                    <th className="p-2 border border-gray-300">مبلغ ارزی</th>
+                                    <th className="p-2 border border-gray-300">مدت انتظار</th>
                                 </tr>
                             </thead>
                             <tbody>
-                                {filteredRecords.filter(r => r.stages[TradeStage.ALLOCATION_QUEUE]?.queueDate).map(r => {
+                                {filteredRecords.filter(r => r.stages[TradeStage.ALLOCATION_QUEUE]?.queueDate).map((r, index) => {
                                     const stage = r.stages[TradeStage.ALLOCATION_QUEUE];
                                     const days = calculateDaysDiff(stage.queueDate || '');
+                                    
+                                    // Origin Label mapping
+                                    const originMap: any = { 'Bank': 'بانکی', 'Export': 'صادرات', 'Free': 'آزاد', 'Nima': 'نیما' };
+                                    const originLabel = originMap[r.currencyAllocationType || ''] || '-';
+
                                     return (
-                                        <tr key={r.id} className="border-b hover:bg-gray-50">
-                                            <td className="p-3 font-mono">{r.fileNumber}</td>
-                                            <td className="p-3">{r.company}</td>
-                                            <td className="p-3">{stage.queueDate}</td>
-                                            <td className="p-3 font-bold text-blue-600">{formatCurrency(stage.costCurrency)} {stage.currencyType}</td>
-                                            <td className="p-3">{formatCurrency(stage.costRial)}</td>
-                                            <td className="p-3 font-bold text-amber-600">{days} روز</td>
+                                        <tr key={r.id} className="hover:bg-gray-50">
+                                            <td className="p-2 border border-gray-300 text-center">{index + 1}</td>
+                                            <td className="p-2 border border-gray-300 font-mono text-center">{r.fileNumber}</td>
+                                            <td className="p-2 border border-gray-300 font-mono text-center">{r.registrationNumber || '-'}</td>
+                                            <td className="p-2 border border-gray-300">{r.company}</td>
+                                            <td className="p-2 border border-gray-300 truncate max-w-[150px]" title={r.sellerName}>{r.sellerName}</td>
+                                            <td className="p-2 border border-gray-300 text-center">{originLabel}</td>
+                                            <td className="p-2 border border-gray-300 text-center dir-ltr">{stage.queueDate}</td>
+                                            <td className="p-2 border border-gray-300 text-center font-bold text-blue-600 dir-ltr">{formatCurrency(stage.costCurrency)} {r.mainCurrency}</td>
+                                            <td className="p-2 border border-gray-300 text-center font-bold text-amber-600">{days} روز</td>
                                         </tr>
                                     );
                                 })}
@@ -904,7 +915,7 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
                                     </div>
                                     <button onClick={handleAddGuarantee} className="w-full bg-orange-600 text-white p-2 rounded-lg font-bold hover:bg-orange-700">ثبت ضمانت‌نامه</button>
                                 </div>
-                                <div className="space-y-2">{greenLeafForm.guarantees?.map(g => (<div key={g.id} className="border p-3 rounded-lg bg-gray-50 flex justify-between items-center"><div className="text-sm space-y-1"><div className="font-bold">شماره: {g.guaranteeNumber}</div><div className="text-xs text-gray-600">چک: {g.chequeNumber} ({g.chequeBank}) - مبلغ: {formatCurrency(g.chequeAmount || 0)}</div><div className="text-xs text-gray-600">سپرده نقدی: {formatCurrency(g.cashAmount || 0)}</div></div><div className="flex gap-2 items-center"><button onClick={() => handleToggleGuaranteeDelivery(g.id)} className={`text-xs px-2 py-1 rounded font-bold ${g.isDelivered ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>{g.isDelivered ? 'عودت شد' : 'نزد سازمان'}</button><button onClick={()=>handleDeleteGuarantee(g.id)} className="text-red-500"><Trash2 size={16}/></button></div></div>))}</div>
+                                <div className="space-y-2">{greenLeafForm.guarantees?.map(g => (<div key={g.id} className="border p-3 rounded-lg bg-gray-50 flex justify-between items-center"><div className="text-sm space-y-1"><div className="font-bold">شماره: {g.guaranteeNumber}</div><div className="text-xs text-gray-600">چک: {g.chequeNumber} ({g.chequeBank}) - مبلغ: {formatCurrency(g.chequeAmount || 0)}</div><div className="text-xs text-gray-600">سپرده نقدی: {formatCurrency(g.cashAmount || 0)}</div></div><div className="flex gap-2 items-center"><button onClick={() => handleToggleGuaranteeDelivery(g.id)} className={`text-xs px-2 py-1 rounded font-bold transition-colors ${g.isDelivered ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>{g.isDelivered ? 'عودت شد' : 'نزد سازمان'}</button><button onClick={()=>handleDeleteGuarantee(g.id)} className="text-red-500"><Trash2 size={16}/></button></div></div>))}</div>
                             </div>
 
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
