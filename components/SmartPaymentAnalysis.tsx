@@ -1,10 +1,10 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { getSettings } from '../services/storageService';
 import { apiCall } from '../services/apiService';
 import { SystemSettings } from '../types';
 import { formatNumberString, deformatNumberString, getCurrentShamsiDate, jalaliToGregorian } from '../constants';
-import { BrainCircuit, Calendar, Calculator, Building2, CheckCircle2, AlertTriangle } from 'lucide-react';
+import { BrainCircuit, Calendar, Calculator, Building2, CheckCircle2, AlertTriangle, Loader2, Server, FileText, Wifi } from 'lucide-react';
 
 const SmartPaymentAnalysis: React.FC = () => {
     const [settings, setSettings] = useState<SystemSettings | null>(null);
@@ -13,15 +13,40 @@ const SmartPaymentAnalysis: React.FC = () => {
     const [date, setDate] = useState(getCurrentShamsiDate());
     const [analysisResult, setAnalysisResult] = useState<any>(null);
     const [loading, setLoading] = useState(false);
+    
+    // Progress State
+    const [progress, setProgress] = useState(0);
+    const [loadingStep, setLoadingStep] = useState('');
+    const progressInterval = useRef<any>(null);
 
     useEffect(() => {
         getSettings().then(setSettings);
+        return () => clearInterval(progressInterval.current);
     }, []);
+
+    const simulateProgress = () => {
+        setProgress(0);
+        setLoadingStep('در حال برقراری ارتباط با سرور...');
+        
+        let current = 0;
+        progressInterval.current = setInterval(() => {
+            current += Math.floor(Math.random() * 5) + 1;
+            if (current > 95) current = 95; // Wait for real response
+            
+            if (current > 10 && current < 40) setLoadingStep('ارسال داده‌ها به موتور هوشمند (n8n)...');
+            if (current > 40 && current < 70) setLoadingStep('بررسی سوابق و نقدینگی...');
+            if (current > 70 && current < 90) setLoadingStep('تحلیل الگوهای پرداخت...');
+            if (current > 90) setLoadingStep('نهایی‌سازی پیشنهاد...');
+            
+            setProgress(current);
+        }, 150);
+    };
 
     const handleAnalyze = async (e: React.FormEvent) => {
         e.preventDefault();
         setLoading(true);
         setAnalysisResult(null);
+        simulateProgress();
 
         // Convert Shamsi to ISO
         const gDate = jalaliToGregorian(date.year, date.month, date.day);
@@ -33,13 +58,21 @@ const SmartPaymentAnalysis: React.FC = () => {
                 date: isoDate,
                 company
             });
-            // Fake delay for effect
+            
+            // Complete Progress
+            clearInterval(progressInterval.current);
+            setProgress(100);
+            setLoadingStep('تکمیل شد.');
+            
             setTimeout(() => {
                 setAnalysisResult(result);
                 setLoading(false);
-            }, 1000);
+            }, 500);
+            
         } catch (error) {
-            alert('خطا در تحلیل. لطفا مطمئن شوید سرور در حال اجراست.');
+            clearInterval(progressInterval.current);
+            setProgress(0);
+            alert('خطا در تحلیل. لطفا مطمئن شوید سرور (و n8n) در حال اجراست.');
             setLoading(false);
         }
     };
@@ -124,10 +157,34 @@ const SmartPaymentAnalysis: React.FC = () => {
                 {/* Result Area */}
                 <div className="flex flex-col justify-center min-h-[300px]">
                     {loading && (
-                        <div className="text-center py-10 opacity-70 animate-pulse">
-                            <div className="text-6xl mb-4">🤔</div>
-                            <h3 className="text-xl font-bold text-gray-700">در حال بررسی شرایط...</h3>
-                            <p className="text-sm text-gray-500">بررسی نقدینگی، تقویم و سوابق</p>
+                        <div className="bg-white p-8 rounded-2xl shadow-lg border border-gray-100 w-full animate-fade-in text-center">
+                            <div className="flex justify-center mb-6">
+                                <div className="relative">
+                                    <div className="w-24 h-24 border-4 border-indigo-100 rounded-full"></div>
+                                    <div className="w-24 h-24 border-4 border-indigo-600 rounded-full border-t-transparent animate-spin absolute top-0 left-0"></div>
+                                    <div className="absolute top-0 left-0 w-24 h-24 flex items-center justify-center font-bold text-indigo-700 text-xl">
+                                        {progress}%
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <h3 className="text-lg font-bold text-gray-800 mb-2">{loadingStep}</h3>
+                            
+                            <div className="w-full bg-gray-100 rounded-full h-2.5 mb-4 overflow-hidden">
+                                <div className="bg-indigo-600 h-2.5 rounded-full transition-all duration-300" style={{ width: `${progress}%` }}></div>
+                            </div>
+
+                            <div className="grid grid-cols-3 gap-2 text-[10px] text-gray-400 mt-4">
+                                <div className={`flex flex-col items-center ${progress > 10 ? 'text-green-600' : ''}`}>
+                                    <Wifi size={16} className="mb-1"/> اتصال
+                                </div>
+                                <div className={`flex flex-col items-center ${progress > 40 ? 'text-green-600' : ''}`}>
+                                    <Server size={16} className="mb-1"/> پردازش
+                                </div>
+                                <div className={`flex flex-col items-center ${progress > 80 ? 'text-green-600' : ''}`}>
+                                    <FileText size={16} className="mb-1"/> نتیجه
+                                </div>
+                            </div>
                         </div>
                     )}
 
@@ -151,7 +208,7 @@ const SmartPaymentAnalysis: React.FC = () => {
                                 <div className={`text-3xl font-black mb-2 ${analysisResult.score > 70 ? 'text-green-600' : analysisResult.score < 50 ? 'text-red-600' : 'text-amber-600'}`}>
                                     {analysisResult.recommendation}
                                 </div>
-                                <p className="text-gray-400 text-sm">بر اساس تحلیل الگوریتم داخلی</p>
+                                <p className="text-gray-400 text-sm">بر اساس تحلیل هوشمند</p>
                             </div>
 
                             <div className="space-y-3 bg-gray-50 p-4 rounded-xl border border-gray-100">

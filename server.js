@@ -90,7 +90,7 @@ const findNextAvailableTrackingNumber = (db) => {
 };
 
 // ==========================================
-// N8N ORCHESTRATOR LOGIC (Restored)
+// N8N ORCHESTRATOR LOGIC (Restored & Enhanced)
 // ==========================================
 
 async function processN8NRequest(user, messageText, audioData = null, audioMimeType = null, systemPrompt = null) {
@@ -113,8 +113,8 @@ async function processN8NRequest(user, messageText, audioData = null, audioMimeT
             timestamp: new Date().toISOString()
         };
 
-        console.log(`Sending to n8n: ${webhookUrl}`);
-        const response = await axios.post(webhookUrl, payload, { timeout: 60000 }); // 60s timeout
+        // console.log(`Sending to n8n: ${webhookUrl}`);
+        const response = await axios.post(webhookUrl, payload, { timeout: 5000 }); // Short timeout for local check
         const data = response.data;
 
         // Ensure data is parsed if n8n returns stringified JSON
@@ -142,11 +142,34 @@ async function processN8NRequest(user, messageText, audioData = null, audioMimeT
         return "پاسخ نامفهومی از هوش مصنوعی دریافت شد.";
 
     } catch (error) {
-        console.error("n8n Error:", error.message);
-        if (error.code === 'ECONNREFUSED') {
-            return "سرور هوش مصنوعی (n8n) خاموش است. لطفا n8n start را اجرا کنید.";
+        // --- FALLBACK MODE (OFFLINE AI) ---
+        console.warn("n8n unavailable, switching to local fallback logic.");
+        
+        if (systemPrompt && systemPrompt.includes("JSON generator")) {
+            // It's an analysis request
+            return null; // Return null to let the caller use its own fallback
         }
-        return "خطا در پردازش هوش مصنوعی.";
+
+        if (audioData) {
+            return "🎤 پیام صوتی دریافت شد (پردازش صدا نیازمند اتصال به n8n است).";
+        }
+
+        // Simple Rule-Based Chatbot
+        const lowerMsg = (messageText || '').toLowerCase();
+        
+        if (lowerMsg.includes('سلام') || lowerMsg.includes('درود')) {
+            return `سلام ${user.fullName} عزیز! چطور می‌توانم کمکتان کنم؟ (حالت آفلاین)`;
+        }
+        
+        if (lowerMsg.includes('وضعیت') || lowerMsg.includes('گزارش')) {
+            return handleToolExecution('get_financial_summary', {}, user);
+        }
+
+        if (lowerMsg.includes('ثبت') && lowerMsg.includes('دستور')) {
+            return "برای ثبت دستور پرداخت، لطفا از منوی 'ثبت دستور' استفاده کنید یا مبلغ و گیرنده را دقیق بفرمایید.";
+        }
+
+        return "⚠️ ارتباط با موتور هوشمند (n8n) برقرار نیست. \nبرای فعال‌سازی کامل، دستور `n8n start` را در سرور اجرا کنید.\n\nمن فعلاً فقط می‌توانم گزارش‌های ساده بدهم.";
     }
 }
 
@@ -242,7 +265,7 @@ app.post('/api/analyze-payment', async (req, res) => {
     );
 
     // Check if n8n returned structured data or string
-    if (typeof aiResponse === 'object' && aiResponse.recommendation) {
+    if (aiResponse && typeof aiResponse === 'object' && aiResponse.recommendation) {
         res.json({ ...aiResponse, analysisId: Date.now() });
     } else {
         // Fallback Logic if n8n is not set up correctly or fails
@@ -250,11 +273,23 @@ app.post('/api/analyze-payment', async (req, res) => {
         
         const amountNum = Number(amount);
         let score = 80;
-        let reasons = ["تحلیل خودکار (عدم ارتباط با هوش مصنوعی)"];
-        let recommendation = "پرداخت کنید";
+        let reasons = ["تحلیل خودکار (حالت آفلاین)"];
+        let recommendation = "پرداخت بلامانع است";
 
-        if (amountNum > 100000000) { score -= 20; reasons.push("مبلغ بالاست"); }
-        if (score < 60) recommendation = "احتیاط";
+        if (amountNum > 1000000000) { 
+            score -= 30; 
+            reasons.push("مبلغ بسیار سنگین است، موجودی چک شود."); 
+            recommendation = "احتیاط";
+        } else if (amountNum > 100000000) {
+            score -= 10;
+            reasons.push("مبلغ قابل توجه است.");
+        }
+
+        const dayOfMonth = new Date().getDate(); // approximate check
+        if (dayOfMonth > 25) {
+            reasons.push("روزهای پایانی ماه (ترافیک پرداخت).");
+            score -= 5;
+        }
 
         res.json({
             recommendation,
@@ -307,11 +342,14 @@ const initTelegram = async () => {
                     const mimeType = msg.voice ? 'audio/ogg' : 'audio/mpeg'; 
                     telegramBot.sendChatAction(chatId, 'typing');
                     const reply = await processN8NRequest(user, null, base64, mimeType);
-                    telegramBot.sendMessage(chatId, typeof reply === 'string' ? reply : JSON.stringify(reply));
+                    // Handle object reply (from tool) vs string
+                    const textReply = typeof reply === 'string' ? reply : JSON.stringify(reply, null, 2);
+                    telegramBot.sendMessage(chatId, textReply);
                 } else if (msg.text) {
                     telegramBot.sendChatAction(chatId, 'typing');
                     const reply = await processN8NRequest(user, msg.text);
-                    telegramBot.sendMessage(chatId, typeof reply === 'string' ? reply : JSON.stringify(reply));
+                    const textReply = typeof reply === 'string' ? reply : JSON.stringify(reply, null, 2);
+                    telegramBot.sendMessage(chatId, textReply);
                 }
             });
             
