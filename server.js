@@ -326,6 +326,12 @@ async function processN8NRequest(user, messageText, audioData = null, audioMimeT
 
         console.log(">>> Raw n8n response:", JSON.stringify(data, null, 2));
 
+        // CRITICAL CHECK: If n8n returns standard success message instead of our JSON
+        if (data && data.message === 'Workflow was started') {
+            console.warn(">>> n8n returned 'Workflow was started'. Check Webhook Node configuration.");
+            return "⚠️ خطا در پیکربندی هوش مصنوعی.\nپاسخ دریافتی: Workflow was started\nلطفا مطمئن شوید نود Webhook در n8n روی حالت 'Respond Using Respond to Webhook Node' تنظیم شده است و سرور را ریستارت کنید.";
+        }
+
         // 1. Handle Array Response (n8n sometimes returns array of items)
         if (Array.isArray(data)) {
             data = data[0];

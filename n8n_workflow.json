@@ -6,6 +6,7 @@
       "parameters": {
         "httpMethod": "POST",
         "path": "ai",
+        "responseMode": "responseNode",
         "options": {}
       },
       "id": "webhook-trigger",
@@ -105,7 +106,7 @@
     {
       "parameters": {
         "respondWith": "json",
-        "responseBody": "={{ $json.message.content }}",
+        "responseBody": "={{ JSON.parse($json.message.content) }}",
         "options": {}
       },
       "id": "webhook-response",
