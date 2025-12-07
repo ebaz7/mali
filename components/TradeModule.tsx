@@ -326,7 +326,39 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
         switch (activeReport) {
             case 'general': return (<div className="overflow-x-auto"><table className="w-full text-sm text-right"><thead className="bg-gray-100 text-gray-700"><tr><th className="p-3">شماره پرونده</th><th className="p-3">فروشنده</th><th className="p-3">کالا</th><th className="p-3">شرکت</th><th className="p-3">مرحله جاری</th><th className="p-3">وضعیت</th></tr></thead><tbody>{filteredRecords.map(r => { const currentStage = STAGES.slice().reverse().find(s => r.stages[s]?.isCompleted) || 'شروع نشده'; return (<tr key={r.id} className="border-b hover:bg-gray-50"><td className="p-3 font-mono">{r.fileNumber}</td><td className="p-3">{r.sellerName}</td><td className="p-3">{r.goodsName}</td><td className="p-3">{r.company}</td><td className="p-3"><span className="bg-blue-100 text-blue-700 px-2 py-1 rounded text-xs">{currentStage}</span></td><td className="p-3">{r.status}</td></tr>); })}</tbody></table></div>);
             case 'currency': return (<div className="overflow-x-auto"><table className="w-full text-sm text-right"><thead className="bg-gray-100 text-gray-700"><tr><th className="p-3">شماره پرونده</th><th className="p-3">ارز</th><th className="p-3">خریداری شده</th><th className="p-3">تحویل شده</th><th className="p-3">باقیمانده</th></tr></thead><tbody>{filteredRecords.map(r => { const d = r.currencyPurchaseData; if (!d) return null; const purchased = d.purchasedAmount || 0; const delivered = d.deliveredAmount || 0; return (<tr key={r.id} className="border-b hover:bg-gray-50"><td className="p-3 font-mono">{r.fileNumber}</td><td className="p-3">{r.mainCurrency}</td><td className="p-3 font-bold text-blue-600">{formatCurrency(purchased)}</td><td className="p-3 font-bold text-green-600">{formatCurrency(delivered)}</td><td className="p-3 font-bold text-red-600">{formatCurrency(purchased - delivered)}</td></tr>); })}</tbody></table></div>);
-            case 'allocation_queue': /* ... (Allocation Queue logic is fine, keeping concise for update) ... */ return (<div></div>);
+            case 'allocation_queue': 
+                return (
+                    <div className="overflow-x-auto" id="allocation-report-table-print-area">
+                        <table className="w-full text-sm text-right">
+                            <thead className="bg-gray-100 text-gray-700">
+                                <tr>
+                                    <th className="p-3">شماره پرونده</th>
+                                    <th className="p-3">شرکت</th>
+                                    <th className="p-3">تاریخ ورود به صف</th>
+                                    <th className="p-3">مبلغ ارزی</th>
+                                    <th className="p-3">نرخ ثبت شده</th>
+                                    <th className="p-3">مدت انتظار</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {filteredRecords.filter(r => r.stages[TradeStage.ALLOCATION_QUEUE]?.queueDate).map(r => {
+                                    const stage = r.stages[TradeStage.ALLOCATION_QUEUE];
+                                    const days = calculateDaysDiff(stage.queueDate || '');
+                                    return (
+                                        <tr key={r.id} className="border-b hover:bg-gray-50">
+                                            <td className="p-3 font-mono">{r.fileNumber}</td>
+                                            <td className="p-3">{r.company}</td>
+                                            <td className="p-3">{stage.queueDate}</td>
+                                            <td className="p-3 font-bold text-blue-600">{formatCurrency(stage.costCurrency)} {stage.currencyType}</td>
+                                            <td className="p-3">{formatCurrency(stage.costRial)}</td>
+                                            <td className="p-3 font-bold text-amber-600">{days} روز</td>
+                                        </tr>
+                                    );
+                                })}
+                            </tbody>
+                        </table>
+                    </div>
+                );
             case 'clearance': return (<div className="overflow-x-auto"><table className="w-full text-sm text-right"><thead className="bg-gray-100 text-gray-700"><tr><th className="p-3">شماره پرونده</th><th className="p-3">قبض انبار(ها)</th><th className="p-3">هزینه ترخیصیه</th><th className="p-3">تعداد پارت</th></tr></thead><tbody>{filteredRecords.filter(r => r.clearanceData?.receipts.length).map(r => { return (<tr key={r.id} className="border-b hover:bg-gray-50"><td className="p-3 font-mono">{r.fileNumber}</td><td className="p-3">{r.clearanceData?.receipts.map(rc => rc.number).join(', ')}</td><td className="p-3">{formatCurrency(r.clearanceData?.payments.reduce((acc,p)=>acc+p.amount,0) || 0)}</td><td className="p-3">{r.clearanceData?.receipts.length}</td></tr>); })}</tbody></table></div>);
             case 'green_leaf': return (<div className="overflow-x-auto"><table className="w-full text-sm text-right"><thead className="bg-gray-100 text-gray-700"><tr><th className="p-3">شماره پرونده</th><th className="p-3">کوتاژها</th><th className="p-3">حقوق گمرکی (بانک)</th><th className="p-3">ضمانت‌نامه‌ها</th><th className="p-3">جمع هزینه‌های گمرکی</th></tr></thead><tbody>{filteredRecords.filter(r => r.greenLeafData?.duties.length).map(r => { const d = r.greenLeafData; if(!d) return null; const total = calculateGreenLeafTotal(d); return (<tr key={r.id} className="border-b hover:bg-gray-50"><td className="p-3 font-mono">{r.fileNumber}</td><td className="p-3">{d.duties.map(x => x.cottageNumber).join(', ')}</td><td className="p-3">{formatCurrency(d.duties.filter(x=>x.paymentMethod==='Bank').reduce((a,b)=>a+b.amount,0))}</td><td className="p-3">{d.guarantees.length} مورد</td><td className="p-3 font-bold">{formatCurrency(total)}</td></tr>); })}</tbody></table></div>);
             default: return <div>گزارش در حال تکمیل است...</div>;
@@ -460,6 +492,20 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
                                     <div className="space-y-1"><label className="text-xs font-bold text-gray-700">ارز پایه</label><select className="w-full border rounded p-2 text-sm" value={selectedRecord.mainCurrency} onChange={e => handleUpdateProforma('mainCurrency', e.target.value)}>{CURRENCIES.map(c => <option key={c.code} value={c.code}>{c.label}</option>)}</select></div>
                                     <div className="space-y-1"><label className="text-xs font-bold text-gray-700">تاریخ ثبت سفارش</label><input className="w-full border rounded p-2 text-sm dir-ltr" placeholder="1403/01/01" value={selectedRecord.registrationDate || ''} onChange={e => handleUpdateProforma('registrationDate', e.target.value)}/></div>
                                     <div className="space-y-1"><label className="text-xs font-bold text-gray-700">تاریخ انقضا</label><input className="w-full border rounded p-2 text-sm dir-ltr" placeholder="1403/06/01" value={selectedRecord.registrationExpiry || ''} onChange={e => handleUpdateProforma('registrationExpiry', e.target.value)}/></div>
+                                    <div className="space-y-1">
+                                        <label className="text-xs font-bold text-gray-700">منشا ارز (نوع ارز)</label>
+                                        <select 
+                                            className="w-full border rounded p-2 text-sm" 
+                                            value={selectedRecord.currencyAllocationType || ''} 
+                                            onChange={e => handleUpdateProforma('currencyAllocationType', e.target.value)}
+                                        >
+                                            <option value="">انتخاب کنید...</option>
+                                            <option value="Bank">بانکی (نیمایی)</option>
+                                            <option value="Export">ارز حاصل از صادرات</option>
+                                            <option value="Free">آزاد / اشخاص</option>
+                                            <option value="Nima">سامانه نیما</option>
+                                        </select>
+                                    </div>
                                 </div>
                             </div>
 
