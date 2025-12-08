@@ -329,7 +329,7 @@ async function processN8NRequest(user, messageText, audioData = null, audioMimeT
             timestamp: new Date().toISOString()
         };
 
-        console.log(`>>> Sending request to n8n: ${webhookUrl}`);
+        console.log(`>>> Sending request to n8n: ${webhookUrl} | User: ${user.fullName}`);
         
         const response = await axios.post(webhookUrl, payload, { 
             timeout: 120000, // Increased timeout to 2 minutes for slow AI
@@ -338,18 +338,18 @@ async function processN8NRequest(user, messageText, audioData = null, audioMimeT
         
         let data = response.data;
 
-        console.log(">>> Raw n8n response:", JSON.stringify(data, null, 2));
+        console.log(">>> Raw n8n response:", typeof data === 'object' ? JSON.stringify(data).substring(0, 200) + '...' : data);
 
         // HANDLE EMPTY RESPONSE (Empty String)
-        if (data === "") {
-            console.warn(">>> n8n returned empty string.");
-            return "⛔ هوش مصنوعی پاسخ خالی داد. لطفاً لاگ‌های n8n را بررسی کنید.";
+        if (data === "" || data === null || data === undefined) {
+            console.warn(">>> n8n returned empty response.");
+            return "⛔ هوش مصنوعی پاسخ خالی داد. (n8n workflow issue)";
         }
 
         // CRITICAL CHECK: If n8n returns standard success message instead of our JSON
-        if (data && data.message === 'Workflow was started') {
+        if (data && (data.message === 'Workflow was started' || data === 'Workflow was started')) {
             console.warn(">>> n8n returned 'Workflow was started'. Check Webhook Node configuration.");
-            return "⚠️ خطا در پیکربندی هوش مصنوعی.\nپاسخ دریافتی: Workflow was started\nلطفا مطمئن شوید نود Webhook در n8n روی حالت 'Respond Using Respond to Webhook Node' تنظیم شده است و سرور را ریستارت کنید.";
+            return "⚠️ خطا: نود Webhook در n8n روی حالت پاسخ‌دهی فوری تنظیم شده است. لطفاً آن را به 'Respond Using Respond to Webhook Node' تغییر دهید.";
         }
 
         // 1. Handle Array Response (n8n sometimes returns array of items)
@@ -359,19 +359,21 @@ async function processN8NRequest(user, messageText, audioData = null, audioMimeT
 
         // 2. Handle String Response (Markdown/JSON string)
         if (typeof data === 'string') {
-            // Remove markdown code blocks if present
+            // Check if it's strictly JSON
             const cleanData = data.replace(/```json\s?|```/g, '').trim();
-            try { 
-                data = JSON.parse(cleanData); 
-            } catch(e) {
-                // If it's a plain string and not JSON, treat it as the message text
-                if (!cleanData.startsWith('{') && !cleanData.startsWith('[')) {
+            if (cleanData.startsWith('{') || cleanData.startsWith('[')) {
+                try { 
+                    data = JSON.parse(cleanData); 
+                } catch(e) {
+                    // It looked like JSON but wasn't
                     return cleanData;
                 }
+            } else {
+                return cleanData;
             }
         }
 
-        // 3. Handle Smart Analysis JSON Response
+        // 3. Handle Smart Analysis JSON Response (Direct)
         if (data.recommendation && data.score) {
             return data;
         }
@@ -388,22 +390,17 @@ async function processN8NRequest(user, messageText, audioData = null, audioMimeT
         // 5. Fallback heuristics for malformed JSON
         if (data.text) return data.text;
         if (data.reply) return data.reply;
-        if (data.message && data.message.content) return data.message.content; // Raw OpenAI structure
         if (data.content) return data.content;
 
         console.warn(">>> Unknown AI Response Format:", data);
-        return `پاسخ نامفهومی از هوش مصنوعی دریافت شد. \n(داده خام: ${JSON.stringify(data)})`;
+        return `پاسخ نامفهومی از هوش مصنوعی دریافت شد.`;
 
     } catch (error) {
         // Detailed error logging for connection issues
         console.error(`>>> AI Request Error: ${error.message}`);
+        
         if (error.code === 'ECONNREFUSED') {
-            console.error(`>>> Connection Refused to ${webhookUrl}. Is n8n running?`);
-            return "⚠️ خطا: سرور هوش مصنوعی (n8n) در دسترس نیست. لطفا از روشن بودن سرویس اطمینان حاصل کنید.";
-        }
-        if (error.response) {
-            console.error(`>>> Server responded with status ${error.response.status}`);
-            console.error(error.response.data);
+            return "⚠️ خطا: سرور هوش مصنوعی (n8n) خاموش است یا در دسترس نیست.";
         }
         
         // --- FALLBACK MODE (OFFLINE AI) ---
@@ -411,27 +408,20 @@ async function processN8NRequest(user, messageText, audioData = null, audioMimeT
             return null; 
         }
 
-        if (audioData) {
-            return "🎤 پیام صوتی دریافت شد اما ارتباط با سرویس هوش مصنوعی (n8n) برقرار نیست.";
-        }
-
         // Simple Rule-Based Chatbot Fallback
         const lowerMsg = (messageText || '').toLowerCase();
-        
-        if (lowerMsg.includes('سلام') || lowerMsg.includes('درود')) {
-            return `سلام ${user.fullName} عزیز! (حالت آفلاین)`;
-        }
         
         if (lowerMsg.includes('وضعیت') || lowerMsg.includes('گزارش') || lowerMsg.includes('کارتابل')) {
             return handleToolExecution('get_financial_summary', {}, user);
         }
 
-        return `⚠️ ارتباط با موتور هوشمند (n8n) برقرار نیست.\nخطا: ${error.message}`;
+        return `⚠️ ارتباط با موتور هوشمند برقرار نیست.\nخطا: ${error.message}`;
     }
 }
 
 function handleToolExecution(toolName, args, user) {
     const db = getDb();
+    console.log(`>>> Executing Tool: ${toolName} for ${user.fullName}`);
     
     if (toolName === 'register_payment_order') {
         const trackingNum = findNextAvailableTrackingNumber(db);
@@ -468,13 +458,13 @@ function handleToolExecution(toolName, args, user) {
 
     if (toolName === 'get_financial_summary') {
         // Personalized Report Logic
-        let reportText = `📊 *گزارش کارتابل شما (${user.fullName})*:\n\n`;
+        let reportText = `📊 *گزارش کارتابل شما (${user.fullName})*:\n`;
         let count = 0;
 
         if (user.role === 'admin' || user.role === 'financial') {
             const pendingFinance = db.orders.filter(o => o.status === 'در انتظار بررسی مالی');
             if (pendingFinance.length > 0) {
-                reportText += `🔸 *منتظر تایید مالی:* ${pendingFinance.length} مورد\n`;
+                reportText += `\n🔸 *منتظر تایید مالی:* ${pendingFinance.length} مورد\n`;
                 pendingFinance.slice(0, 5).forEach(o => {
                     reportText += `   - #${o.trackingNumber} | ${o.payee} | ${Number(o.totalAmount).toLocaleString()} ریال\n`;
                 });
@@ -515,7 +505,7 @@ function handleToolExecution(toolName, args, user) {
         }
 
         if (count === 0) {
-            reportText += "✅ کارتابل شما خالی است.";
+            reportText += "\n✅ کارتابل شما خالی است.";
         } 
 
         return reportText;
