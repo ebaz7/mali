@@ -3,7 +3,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { User, SystemSettings, WarehouseItem, WarehouseTransaction, WarehouseTransactionItem } from '../types';
 import { getWarehouseItems, saveWarehouseItem, deleteWarehouseItem, getWarehouseTransactions, saveWarehouseTransaction, deleteWarehouseTransaction, getNextBijakNumber } from '../services/storageService';
 import { generateUUID, getCurrentShamsiDate, jalaliToGregorian, formatNumberString, deformatNumberString, formatDate } from '../constants';
-import { Package, Plus, Trash2, ArrowDownCircle, ArrowUpCircle, FileText, BarChart3, Eye, Loader2, AlertTriangle, Settings, ChevronLeft } from 'lucide-react';
+import { Package, Plus, Trash2, ArrowDownCircle, ArrowUpCircle, FileText, BarChart3, Eye, Loader2, AlertTriangle, Settings } from 'lucide-react';
 import PrintBijak from './PrintBijak';
 
 interface Props { currentUser: User; settings?: SystemSettings; }
@@ -161,21 +161,12 @@ const WarehouseModule: React.FC<Props> = ({ currentUser, settings }) => {
         ).sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime());
     }, [transactions, reportFilterCompany, reportSearch]);
 
-    // --- RENDER HELPERS ---
-    const DateSelect = () => (
-        <div className="flex gap-1 dir-ltr">
-            <select className="border rounded p-1 text-sm" value={txDate.year} onChange={e=>setTxDate({...txDate, year:Number(e.target.value)})}>{Array.from({length:10},(_,i)=>1400+i).map(y=><option key={y} value={y}>{y}</option>)}</select>
-            <select className="border rounded p-1 text-sm" value={txDate.month} onChange={e=>setTxDate({...txDate, month:Number(e.target.value)})}>{Array.from({length:12},(_,i)=>i+1).map(m=><option key={m} value={m}>{m}</option>)}</select>
-            <select className="border rounded p-1 text-sm" value={txDate.day} onChange={e=>setTxDate({...txDate, day:Number(e.target.value)})}>{Array.from({length:31},(_,i)=>i+1).map(d=><option key={d} value={d}>{d}</option>)}</select>
-        </div>
-    );
-
-    // 1. Loading State Check (CRITICAL FIX FOR CRASH)
+    // 1. Loading State Check
     if (!settings || loadingData) {
         return <div className="flex flex-col items-center justify-center h-[50vh] text-gray-500 gap-2"><Loader2 className="animate-spin text-blue-600" size={32}/><span className="text-sm font-bold">در حال بارگذاری اطلاعات انبار...</span></div>;
     }
 
-    // 2. Missing Configuration Check (Prevents Crash & Guides User)
+    // 2. Missing Configuration Check
     const companyList = settings.companyNames || [];
     if (companyList.length === 0) {
         return (
@@ -194,6 +185,11 @@ const WarehouseModule: React.FC<Props> = ({ currentUser, settings }) => {
             </div>
         );
     }
+
+    // Array Generators for Date
+    const years = Array.from({length:10},(_,i)=>1400+i);
+    const months = Array.from({length:12},(_,i)=>i+1);
+    const days = Array.from({length:31},(_,i)=>i+1);
 
     return (
         <div className="bg-white rounded-2xl shadow-sm border h-[calc(100vh-100px)] flex flex-col overflow-hidden animate-fade-in">
@@ -250,7 +246,14 @@ const WarehouseModule: React.FC<Props> = ({ currentUser, settings }) => {
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
                             <div><label className="block text-xs font-bold mb-1">شرکت مالک</label><select className="w-full border rounded p-2 bg-white" value={selectedCompany} onChange={e=>setSelectedCompany(e.target.value)}><option value="">انتخاب...</option>{companyList.map(c=><option key={c} value={c}>{c}</option>)}</select></div>
                             <div><label className="block text-xs font-bold mb-1">شماره پروفرما / سند</label><input className="w-full border rounded p-2 bg-white" value={proformaNumber} onChange={e=>setProformaNumber(e.target.value)}/></div>
-                            <div><label className="block text-xs font-bold mb-1">تاریخ ورود</label><DateSelect/></div>
+                            <div>
+                                <label className="block text-xs font-bold mb-1">تاریخ ورود</label>
+                                <div className="flex gap-1 dir-ltr">
+                                    <select className="border rounded p-1 text-sm flex-1" value={txDate.year} onChange={e=>setTxDate({...txDate, year:Number(e.target.value)})}>{years.map(y=><option key={y} value={y}>{y}</option>)}</select>
+                                    <select className="border rounded p-1 text-sm flex-1" value={txDate.month} onChange={e=>setTxDate({...txDate, month:Number(e.target.value)})}>{months.map(m=><option key={m} value={m}>{m}</option>)}</select>
+                                    <select className="border rounded p-1 text-sm flex-1" value={txDate.day} onChange={e=>setTxDate({...txDate, day:Number(e.target.value)})}>{days.map(d=><option key={d} value={d}>{d}</option>)}</select>
+                                </div>
+                            </div>
                         </div>
                         <div className="space-y-2 bg-white p-4 rounded-xl border">
                             {txItems.map((row, idx) => (
@@ -274,7 +277,14 @@ const WarehouseModule: React.FC<Props> = ({ currentUser, settings }) => {
                         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
                             <div><label className="block text-xs font-bold mb-1">شرکت فرستنده</label><select className="w-full border rounded p-2 bg-white" value={selectedCompany} onChange={e=>setSelectedCompany(e.target.value)}><option value="">انتخاب...</option>{companyList.map(c=><option key={c} value={c}>{c}</option>)}</select></div>
                             <div><label className="block text-xs font-bold mb-1">شماره بیجک (سیستمی)</label><div className="bg-white p-2 rounded border font-mono text-center text-red-600 font-bold">{nextBijakNum > 0 ? nextBijakNum : '---'}</div></div>
-                            <div><label className="block text-xs font-bold mb-1">تاریخ خروج</label><DateSelect/></div>
+                            <div>
+                                <label className="block text-xs font-bold mb-1">تاریخ خروج</label>
+                                <div className="flex gap-1 dir-ltr">
+                                    <select className="border rounded p-1 text-sm flex-1" value={txDate.year} onChange={e=>setTxDate({...txDate, year:Number(e.target.value)})}>{years.map(y=><option key={y} value={y}>{y}</option>)}</select>
+                                    <select className="border rounded p-1 text-sm flex-1" value={txDate.month} onChange={e=>setTxDate({...txDate, month:Number(e.target.value)})}>{months.map(m=><option key={m} value={m}>{m}</option>)}</select>
+                                    <select className="border rounded p-1 text-sm flex-1" value={txDate.day} onChange={e=>setTxDate({...txDate, day:Number(e.target.value)})}>{days.map(d=><option key={d} value={d}>{d}</option>)}</select>
+                                </div>
+                            </div>
                             <div><label className="block text-xs font-bold mb-1">تحویل گیرنده</label><input className="w-full border rounded p-2 bg-white" value={recipientName} onChange={e=>setRecipientName(e.target.value)}/></div>
                         </div>
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
