@@ -18,14 +18,17 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const DB_FILE = path.join(__dirname, 'database.json');
 const UPLOADS_DIR = path.join(__dirname, 'uploads');
+const AI_UPLOADS_DIR = path.join(__dirname, 'uploads', 'ai'); // Separate folder for AI
 const BACKUPS_DIR = path.join(__dirname, 'backups');
 const WAUTH_DIR = path.join(__dirname, 'wauth');
 
+// Ensure directories exist
 if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR);
+if (!fs.existsSync(AI_UPLOADS_DIR)) fs.mkdirSync(AI_UPLOADS_DIR);
 if (!fs.existsSync(BACKUPS_DIR)) fs.mkdirSync(BACKUPS_DIR);
 if (!fs.existsSync(WAUTH_DIR)) fs.mkdirSync(WAUTH_DIR);
 
-// Increase limit for large backups
+// Increase limit for large backups and audio files
 app.use(cors());
 app.use(express.json({ limit: '500mb' })); 
 app.use(express.urlencoded({ limit: '500mb', extended: true }));
@@ -91,13 +94,14 @@ const findNextAvailableExitPermitNumber = (db) => {
     return next;
 };
 
-// ... (Rest of WhatsApp/Telegram/Backup/Gemini code remains same) ...
-// WHATSAPP & TELEGRAM GLOBALS
+// WHATSAPP GLOBALS
 let whatsappClient = null;
 let MessageMedia = null; 
 let isWhatsAppReady = false;
 let currentQR = null; 
 let whatsappUser = null; 
+
+// TELEGRAM GLOBALS
 let telegramBotInstance = null;
 
 const initTelegramBot = () => {
@@ -105,7 +109,7 @@ const initTelegramBot = () => {
     const token = db.settings?.telegramBotToken;
     if (token && !telegramBotInstance) {
         telegramBotInstance = new TelegramBot(token, { polling: false });
-        console.log(">>> Telegram Bot Initialized for Backups");
+        console.log(">>> Telegram Bot Initialized");
     }
     return telegramBotInstance;
 };
@@ -148,30 +152,134 @@ const performFullBackup = async (isAuto = false, includeFiles = true) => {
 cron.schedule('30 23 * * *', async () => { console.log(">>> Starting Scheduled Full Backup..."); try { await performFullBackup(true, true); } catch (e) { console.error("!!! Backup Failed:", e); } });
 
 const getTenDigits = (p) => { if (!p) return ''; const digits = p.replace(/\D/g, ''); return digits.length >= 10 ? digits.slice(-10) : digits; };
+
 const initWhatsApp = async () => {
     try {
         const wwebjs = await import('whatsapp-web.js');
         const { Client, LocalAuth, MessageMedia: MM } = wwebjs.default || wwebjs;
         MessageMedia = MM; 
         const qrcode = (await import('qrcode-terminal')).default;
-        const getBrowser = () => { if (process.platform === 'win32') { const paths = ['C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe', 'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe', 'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe']; for (const p of paths) if (fs.existsSync(p)) return p; } return null; };
-        whatsappClient = new Client({ authStrategy: new LocalAuth({ dataPath: WAUTH_DIR }), puppeteer: { headless: true, executablePath: getBrowser(), args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu'] } });
-        whatsappClient.on('qr', (qr) => { currentQR = qr; isWhatsAppReady = false; console.log(">>> WA QR"); qrcode.generate(qr, { small: true }); });
-        whatsappClient.on('ready', () => { isWhatsAppReady = true; currentQR = null; whatsappUser = whatsappClient.info.wid.user; console.log(">>> WA Ready"); });
+        
+        const getBrowser = () => { 
+            if (process.platform === 'win32') { 
+                const paths = [
+                    'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe', 
+                    'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe', 
+                    'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe'
+                ]; 
+                for (const p of paths) if (fs.existsSync(p)) return p; 
+            } 
+            return null; 
+        };
+
+        whatsappClient = new Client({ 
+            authStrategy: new LocalAuth({ dataPath: WAUTH_DIR }), 
+            puppeteer: { 
+                headless: true, 
+                executablePath: getBrowser(), 
+                args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu'] 
+            } 
+        });
+
+        whatsappClient.on('qr', (qr) => { 
+            currentQR = qr; 
+            isWhatsAppReady = false; 
+            console.log(">>> WA QR Generated"); 
+            qrcode.generate(qr, { small: true }); 
+        });
+
+        whatsappClient.on('ready', () => { 
+            isWhatsAppReady = true; 
+            currentQR = null; 
+            whatsappUser = whatsappClient.info.wid.user; 
+            console.log(">>> WA Client Ready!"); 
+        });
+
+        whatsappClient.on('disconnected', (reason) => {
+            console.log('>>> WA Disconnected:', reason);
+            isWhatsAppReady = false;
+            // Optionally re-initialize?
+        });
+
         whatsappClient.initialize().catch(e => console.error("WA Init Fail", e.message));
-    } catch (e) { console.error("WA Module Error", e.message); }
+    } catch (e) { 
+        console.error("WA Module Error", e.message); 
+    }
 };
+
+// Start WA after a short delay
 setTimeout(() => { initWhatsApp(); }, 3000);
 
-app.post('/api/send-whatsapp', async (req, res) => { if (!whatsappClient || !isWhatsAppReady) return res.status(503).json({ success: false, message: 'Bot not ready' }); const { number, message, mediaData } = req.body; try { let chatId = number.includes('@') ? number : `98${getTenDigits(number)}@c.us`; if (mediaData && mediaData.data) { const media = new MessageMedia(mediaData.mimeType, mediaData.data, mediaData.filename); await whatsappClient.sendMessage(chatId, media, { caption: message || '' }); } else if (message) { await whatsappClient.sendMessage(chatId, message); } res.json({ success: true }); } catch (e) { res.status(500).json({ success: false, message: e.message }); } });
+// --- WHATSAPP API ---
+app.post('/api/send-whatsapp', async (req, res) => { 
+    if (!whatsappClient || !isWhatsAppReady) {
+        return res.status(503).json({ success: false, message: 'WhatsApp Bot not ready or disconnected' }); 
+    }
+    
+    const { number, message, mediaData } = req.body; 
+    
+    try { 
+        let chatId = number.includes('@') ? number : `98${getTenDigits(number)}@c.us`; 
+        
+        if (mediaData && mediaData.data) { 
+            // Sending Media (Image/PDF)
+            const media = new MessageMedia(mediaData.mimeType, mediaData.data, mediaData.filename); 
+            await whatsappClient.sendMessage(chatId, media, { caption: message || '' }); 
+        } else if (message) { 
+            // Sending Text
+            await whatsappClient.sendMessage(chatId, message); 
+        } 
+        
+        res.json({ success: true }); 
+    } catch (e) { 
+        console.error("WA Send Error:", e);
+        res.status(500).json({ success: false, message: e.message }); 
+    } 
+});
+
 app.get('/api/whatsapp/status', (req, res) => res.json({ ready: isWhatsAppReady, qr: currentQR, user: whatsappUser }));
 app.post('/api/whatsapp/logout', async (req, res) => { if(whatsappClient) await whatsappClient.logout(); res.json({success:true}); });
 app.get('/api/whatsapp/groups', async (req, res) => { if(!whatsappClient || !isWhatsAppReady) return res.status(503).json({success:false}); const chats = await whatsappClient.getChats(); res.json({ success: true, groups: chats.filter(c => c.isGroup).map(c => ({ id: c.id._serialized, name: c.name })) }); });
-app.post('/api/ai-request', async (req, res) => { try { const { message } = req.body; res.json({ reply: `(AI Mock): ${message}` }); } catch (e) { res.status(500).json({ error: e.message }); } });
+
+// --- AI API ---
+app.post('/api/ai-request', async (req, res) => { 
+    try { 
+        const { message, audio, mimeType, username } = req.body;
+        
+        // This logic simulates AI processing. 
+        // In a real scenario, this would forward to OpenAI, n8n, or Google Gemini.
+        // Since user asked not to "mess up" the AI flow, we keep it simple or forward to n8n if url exists.
+        
+        // Example: Saving audio separately as requested
+        if (audio) {
+            const buffer = Buffer.from(audio, 'base64');
+            const ext = mimeType?.includes('mp4') ? 'm4a' : 'webm';
+            const filename = `ai_voice_${Date.now()}_${username}.${ext}`;
+            const filepath = path.join(AI_UPLOADS_DIR, filename);
+            fs.writeFileSync(filepath, buffer);
+            console.log(`>>> AI Audio Saved: ${filename}`);
+        }
+
+        // AI Response Logic (Mock for now, or forward to N8N if you have the URL)
+        // If you want to restore N8N forwarding, uncomment and configure:
+        /*
+        const n8nUrl = 'YOUR_N8N_WEBHOOK_URL';
+        const n8nRes = await axios.post(n8nUrl, req.body);
+        res.json(n8nRes.data);
+        */
+
+        res.json({ reply: `(هوش مصنوعی): پیام شما دریافت شد. (صدا ذخیره شد در پوشه جداگانه)` }); 
+    } catch (e) { 
+        console.error("AI Error:", e);
+        res.status(500).json({ error: e.message }); 
+    } 
+});
+
+// --- BACKUP/RESTORE API ---
 app.get('/api/full-backup', async (req, res) => { try { const includeFiles = req.query.includeFiles !== 'false'; const backupPath = await performFullBackup(false, includeFiles); res.download(backupPath); } catch (e) { res.status(500).send('Backup creation failed: ' + e.message); } });
 app.post('/api/full-restore', (req, res) => { try { const { fileData } = req.body; if (!fileData) return res.status(400).send('No file data'); const buffer = Buffer.from(fileData.split(',')[1], 'base64'); const zip = new AdmZip(buffer); const dbEntry = zip.getEntry("database.json"); if (dbEntry) { fs.writeFileSync(DB_FILE, dbEntry.getData()); } const uploadEntries = zip.getEntries().filter(entry => entry.entryName.startsWith('uploads/') && !entry.isDirectory); uploadEntries.forEach(entry => { const fileName = path.basename(entry.entryName); const targetPath = path.join(UPLOADS_DIR, fileName); fs.writeFileSync(targetPath, entry.getData()); }); res.json({ success: true, message: 'Restore completed' }); } catch (e) { console.error("Restore Error:", e); res.status(500).json({ success: false, message: 'Restore failed: ' + e.message }); } });
 
-// --- ROUTES ---
+// --- DATA ROUTES ---
 app.get('/api/exit-permits', (req, res) => res.json(getDb().exitPermits));
 app.post('/api/exit-permits', (req, res) => { const db = getDb(); const p = req.body; p.updatedAt = Date.now(); if(db.exitPermits.some(x=>x.permitNumber===p.permitNumber)) p.permitNumber = findNextAvailableExitPermitNumber(db); db.exitPermits.unshift(p); saveDb(db); res.json(db.exitPermits); });
 app.put('/api/exit-permits/:id', (req, res) => { const db = getDb(); const i = db.exitPermits.findIndex(x=>x.id===req.params.id); if(i!==-1){ db.exitPermits[i] = req.body; db.exitPermits[i].updatedAt = Date.now(); saveDb(db); res.json(db.exitPermits); } else res.sendStatus(404); });
@@ -197,7 +305,7 @@ app.post('/api/trade', (req, res) => { const db = getDb(); db.tradeRecords.push(
 app.put('/api/trade/:id', (req, res) => { const db = getDb(); const i = db.tradeRecords.findIndex(t => t.id === req.params.id); if(i!==-1){ db.tradeRecords[i] = req.body; saveDb(db); res.json(db.tradeRecords); } });
 app.delete('/api/trade/:id', (req, res) => { const db = getDb(); db.tradeRecords = db.tradeRecords.filter(t => t.id !== req.params.id); saveDb(db); res.json(db.tradeRecords); });
 
-// --- WAREHOUSE ROUTES (ADDED) ---
+// --- WAREHOUSE ROUTES ---
 app.get('/api/warehouse/items', (req, res) => res.json(getDb().warehouseItems));
 app.post('/api/warehouse/items', (req, res) => { const db = getDb(); db.warehouseItems.push(req.body); saveDb(db); res.json(db.warehouseItems); });
 app.delete('/api/warehouse/items/:id', (req, res) => { const db = getDb(); db.warehouseItems = db.warehouseItems.filter(i => i.id !== req.params.id); saveDb(db); res.json(db.warehouseItems); });

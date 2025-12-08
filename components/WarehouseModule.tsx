@@ -3,7 +3,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { User, SystemSettings, WarehouseItem, WarehouseTransaction, WarehouseTransactionItem } from '../types';
 import { getWarehouseItems, saveWarehouseItem, deleteWarehouseItem, getWarehouseTransactions, saveWarehouseTransaction, deleteWarehouseTransaction, getNextBijakNumber } from '../services/storageService';
 import { generateUUID, getCurrentShamsiDate, jalaliToGregorian, formatNumberString, deformatNumberString, formatDate } from '../constants';
-import { Package, Plus, Trash2, ArrowDownCircle, ArrowUpCircle, FileText, BarChart3, Eye, Loader2, AlertTriangle, Settings } from 'lucide-react';
+import { Package, Plus, Trash2, ArrowDownCircle, ArrowUpCircle, FileText, BarChart3, Eye, Loader2, AlertTriangle, Settings, ArrowLeftRight, Search } from 'lucide-react';
 import PrintBijak from './PrintBijak';
 
 interface Props { currentUser: User; settings?: SystemSettings; }
@@ -41,6 +41,7 @@ const WarehouseModule: React.FC<Props> = ({ currentUser, settings }) => {
 
     // Reports State
     const [reportFilterCompany, setReportFilterCompany] = useState('');
+    const [reportFilterItem, setReportFilterItem] = useState('');
     const [reportSearch, setReportSearch] = useState('');
 
     useEffect(() => { loadData(); }, []);
@@ -139,27 +140,69 @@ const WarehouseModule: React.FC<Props> = ({ currentUser, settings }) => {
 
     const handleDeleteTx = async (id: string) => { if(confirm('حذف تراکنش؟')) { await deleteWarehouseTransaction(id); loadData(); } };
 
-    // --- REPORTS (OPTIMIZED WITH USE MEMO) ---
-    const inventoryBalance = useMemo(() => {
-        const bal: Record<string, {name: string, company: string, qty: number, weight: number}> = {};
+    // --- REPORT CALCULATION: KARDEX ---
+    const kardexData = useMemo(() => {
+        let runningBalance = 0;
+        
+        // 1. Flatten transactions to item level movements
+        const movements: {
+            date: string;
+            txId: string;
+            type: 'IN' | 'OUT';
+            company: string;
+            docNumber: number;
+            desc: string;
+            quantity: number;
+            itemId: string;
+            itemName: string;
+        }[] = [];
+
         transactions.forEach(tx => {
             if(reportFilterCompany && tx.company !== reportFilterCompany) return;
-            (tx.items || []).forEach(item => {
-                const key = `${item.itemId}_${tx.company}`;
-                if(!bal[key]) bal[key] = { name: item.itemName, company: tx.company, qty: 0, weight: 0 };
-                if(tx.type === 'IN') { bal[key].qty += item.quantity; bal[key].weight += item.weight; }
-                else { bal[key].qty -= item.quantity; bal[key].weight -= item.weight; }
+            
+            tx.items.forEach(item => {
+                if(reportFilterItem && item.itemId !== reportFilterItem) return;
+                
+                // Text Search Filter
+                if(reportSearch) {
+                    const search = reportSearch.toLowerCase();
+                    const matches = 
+                        item.itemName.toLowerCase().includes(search) || 
+                        tx.number.toString().includes(search) ||
+                        (tx.recipientName && tx.recipientName.toLowerCase().includes(search)) ||
+                        (tx.proformaNumber && tx.proformaNumber.toLowerCase().includes(search));
+                    if(!matches) return;
+                }
+
+                movements.push({
+                    date: tx.date,
+                    txId: tx.id,
+                    type: tx.type,
+                    company: tx.company,
+                    docNumber: tx.number,
+                    desc: tx.type === 'IN' ? `پروفرما: ${tx.proformaNumber || '-'}` : `گیرنده: ${tx.recipientName || '-'}`,
+                    quantity: item.quantity,
+                    itemId: item.itemId,
+                    itemName: item.itemName
+                });
             });
         });
-        return Object.values(bal).filter(b => !reportSearch || b.name.includes(reportSearch));
-    }, [transactions, reportFilterCompany, reportSearch]);
 
-    const kardexList = useMemo(() => {
-        return transactions.filter(t => 
-            (!reportFilterCompany || t.company === reportFilterCompany) &&
-            (!reportSearch || (t.items || []).some(i => i.itemName.includes(reportSearch)) || t.recipientName?.includes(reportSearch))
-        ).sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-    }, [transactions, reportFilterCompany, reportSearch]);
+        // 2. Sort by Date Ascending for Calculation
+        movements.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+        // 3. Calculate Balance
+        const calculated = movements.map(m => {
+            if(m.type === 'IN') runningBalance += m.quantity;
+            else runningBalance -= m.quantity;
+            return { ...m, balance: runningBalance };
+        });
+
+        // 4. Reverse for Display (Newest First) if desired, OR keep chronological.
+        // Usually Kardex is chronological (top to bottom). Let's keep it chronological.
+        return calculated.reverse(); 
+
+    }, [transactions, reportFilterCompany, reportFilterItem, reportSearch]);
 
     // 1. Loading State Check
     if (!settings || loadingData) {
@@ -308,57 +351,79 @@ const WarehouseModule: React.FC<Props> = ({ currentUser, settings }) => {
                     </div>
                 )}
 
-                {/* REPORTS */}
+                {/* REPORTS & KARDEX */}
                 {activeTab === 'reports' && (
                     <div className="space-y-6">
+                        {/* Filters */}
                         <div className="bg-white p-4 rounded-xl border shadow-sm flex flex-col md:flex-row gap-4 items-end">
-                            <div className="flex-1 w-full"><label className="text-xs font-bold block mb-1">جستجو (کالا/گیرنده)</label><input className="w-full border rounded p-2 text-sm" value={reportSearch} onChange={e=>setReportSearch(e.target.value)} placeholder="..."/></div>
-                            <div className="w-full md:w-64"><label className="text-xs font-bold block mb-1">فیلتر شرکت</label><select className="w-full border rounded p-2 text-sm" value={reportFilterCompany} onChange={e=>setReportFilterCompany(e.target.value)}><option value="">همه</option>{companyList.map(c=><option key={c} value={c}>{c}</option>)}</select></div>
+                            <div className="flex-1 w-full"><label className="text-xs font-bold block mb-1">جستجو (کالا/گیرنده/شماره)</label><div className="relative"><input className="w-full border rounded p-2 text-sm pl-8" value={reportSearch} onChange={e=>setReportSearch(e.target.value)} placeholder="..."/><Search size={14} className="absolute left-2 top-2.5 text-gray-400"/></div></div>
+                            <div className="w-full md:w-48"><label className="text-xs font-bold block mb-1">فیلتر شرکت</label><select className="w-full border rounded p-2 text-sm" value={reportFilterCompany} onChange={e=>setReportFilterCompany(e.target.value)}><option value="">همه شرکت‌ها</option>{companyList.map(c=><option key={c} value={c}>{c}</option>)}</select></div>
+                            <div className="w-full md:w-48"><label className="text-xs font-bold block mb-1">فیلتر کالا</label><select className="w-full border rounded p-2 text-sm" value={reportFilterItem} onChange={e=>setReportFilterItem(e.target.value)}><option value="">همه کالاها</option>{items.map(i=><option key={i.id} value={i.id}>{i.name}</option>)}</select></div>
                         </div>
 
-                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                            {/* Balance Report */}
-                            <div className="bg-white rounded-xl border overflow-hidden">
-                                <div className="bg-indigo-50 p-3 font-bold text-indigo-800 border-b border-indigo-100 flex items-center gap-2"><BarChart3 size={18}/> موجودی انبار (مانده)</div>
+                        {/* Beautiful Kardex Table */}
+                        <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
+                            <div className="bg-indigo-50 p-4 border-b border-indigo-100 flex justify-between items-center">
+                                <h3 className="font-bold text-indigo-900 flex items-center gap-2"><ArrowLeftRight size={20}/> کاردکس کالا و گردش انبار</h3>
+                                <span className="text-xs text-indigo-700 bg-white px-2 py-1 rounded border border-indigo-200">{kardexData.length} رکورد</span>
+                            </div>
+                            
+                            <div className="overflow-x-auto">
                                 <table className="w-full text-sm text-right">
-                                    <thead className="bg-gray-100 text-gray-600"><tr><th className="p-3">کالا</th><th className="p-3">شرکت</th><th className="p-3">تعداد</th><th className="p-3">وزن</th></tr></thead>
-                                    <tbody className="divide-y">
-                                        {inventoryBalance.map((row, i) => (
-                                            <tr key={i} className="hover:bg-gray-50">
-                                                <td className="p-3 font-bold">{row.name}</td>
-                                                <td className="p-3 text-xs text-gray-500">{row.company}</td>
-                                                <td className={`p-3 font-mono font-bold ${row.qty < 0 ? 'text-red-500' : 'text-gray-800'}`}>{row.qty}</td>
-                                                <td className="p-3 font-mono text-gray-600">{row.weight}</td>
-                                            </tr>
-                                        ))}
+                                    <thead className="bg-indigo-100 text-indigo-900 font-bold border-b border-indigo-200">
+                                        <tr>
+                                            <th className="p-3 w-32">تاریخ</th>
+                                            <th className="p-3 w-40">نام کالا</th>
+                                            <th className="p-3">شرح عملیات / شرکت</th>
+                                            <th className="p-3 w-20 text-center bg-green-50 text-green-800">وارده</th>
+                                            <th className="p-3 w-20 text-center bg-red-50 text-red-800">صادره</th>
+                                            <th className="p-3 w-24 text-center bg-gray-50 text-gray-800">مانده</th>
+                                            <th className="p-3 w-20 text-center">عملیات</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-gray-100">
+                                        {kardexData.length === 0 ? (
+                                            <tr><td colSpan={7} className="p-8 text-center text-gray-400">هیچ تراکنشی یافت نشد.</td></tr>
+                                        ) : (
+                                            kardexData.map((row, index) => {
+                                                const txRef = transactions.find(t => t.id === row.txId);
+                                                return (
+                                                    <tr key={`${row.txId}_${index}`} className="hover:bg-gray-50 transition-colors">
+                                                        <td className="p-3 font-mono text-gray-600 text-xs">{formatDate(row.date)}</td>
+                                                        <td className="p-3 font-bold text-gray-800">{row.itemName}</td>
+                                                        <td className="p-3">
+                                                            <div className="flex flex-col">
+                                                                <span className="text-xs font-bold text-gray-700">{row.company}</span>
+                                                                <span className="text-[10px] text-gray-500">
+                                                                    {row.type === 'IN' ? 'رسید' : `بیجک ${row.docNumber}`} | {row.desc}
+                                                                </span>
+                                                            </div>
+                                                        </td>
+                                                        <td className={`p-3 text-center font-mono font-bold ${row.type === 'IN' ? 'text-green-600 bg-green-50/50' : 'text-gray-300'}`}>
+                                                            {row.type === 'IN' ? row.quantity : '-'}
+                                                        </td>
+                                                        <td className={`p-3 text-center font-mono font-bold ${row.type === 'OUT' ? 'text-red-600 bg-red-50/50' : 'text-gray-300'}`}>
+                                                            {row.type === 'OUT' ? row.quantity : '-'}
+                                                        </td>
+                                                        <td className="p-3 text-center font-mono font-black text-gray-800 bg-gray-50">
+                                                            {row.balance}
+                                                        </td>
+                                                        <td className="p-3 text-center flex justify-center gap-1">
+                                                            {row.type === 'OUT' && txRef && (
+                                                                <button onClick={() => setViewBijak(txRef)} className="p-1.5 text-blue-600 bg-blue-50 rounded hover:bg-blue-100" title="مشاهده بیجک">
+                                                                    <Eye size={14}/>
+                                                                </button>
+                                                            )}
+                                                            <button onClick={() => handleDeleteTx(row.txId)} className="p-1.5 text-red-600 bg-red-50 rounded hover:bg-red-100" title="حذف">
+                                                                <Trash2 size={14}/>
+                                                            </button>
+                                                        </td>
+                                                    </tr>
+                                                );
+                                            })
+                                        )}
                                     </tbody>
                                 </table>
-                            </div>
-
-                            {/* Kardex / Transactions List */}
-                            <div className="bg-white rounded-xl border overflow-hidden h-[500px] flex flex-col">
-                                <div className="bg-gray-100 p-3 font-bold text-gray-800 border-b flex items-center gap-2"><FileText size={18}/> لیست تراکنش‌ها (کاردکس)</div>
-                                <div className="flex-1 overflow-y-auto">
-                                    <table className="w-full text-sm text-right">
-                                        <thead className="bg-gray-50 text-gray-600 sticky top-0"><tr><th className="p-3">نوع/شماره</th><th className="p-3">تاریخ</th><th className="p-3">شرکت</th><th className="p-3">گیرنده/توضیح</th><th className="p-3">عملیات</th></tr></thead>
-                                        <tbody className="divide-y">
-                                            {kardexList.map((tx) => (
-                                                <tr key={tx.id} className="hover:bg-gray-50">
-                                                    <td className="p-3">
-                                                        <span className={`px-2 py-0.5 rounded text-xs font-bold ${tx.type === 'IN' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>{tx.type === 'IN' ? 'ورود' : `بیجک ${tx.number}`}</span>
-                                                    </td>
-                                                    <td className="p-3 text-xs">{formatDate(tx.date)}</td>
-                                                    <td className="p-3 text-xs text-gray-500">{tx.company}</td>
-                                                    <td className="p-3 text-xs truncate max-w-[150px]">{tx.type === 'IN' ? `پروفرما: ${tx.proformaNumber}` : tx.recipientName}</td>
-                                                    <td className="p-3 flex gap-1">
-                                                        {tx.type === 'OUT' && <button onClick={() => setViewBijak(tx)} className="text-blue-500 hover:bg-blue-50 p-1 rounded"><Eye size={16}/></button>}
-                                                        <button onClick={() => handleDeleteTx(tx.id)} className="text-red-500 hover:bg-red-50 p-1 rounded"><Trash2 size={16}/></button>
-                                                    </td>
-                                                </tr>
-                                            ))}
-                                        </tbody>
-                                    </table>
-                                </div>
                             </div>
                         </div>
                     </div>
