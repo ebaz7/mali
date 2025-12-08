@@ -1,9 +1,10 @@
 
-import React, { useState } from 'react';
-import { WarehouseTransaction, SystemSettings } from '../types';
+import React, { useState, useEffect } from 'react';
+import { WarehouseTransaction, SystemSettings, Contact, User } from '../types';
 import { formatCurrency, formatDate } from '../constants';
-import { X, Printer, Loader2, Share2, Eye, EyeOff } from 'lucide-react';
+import { X, Printer, Loader2, Share2, Eye, EyeOff, Search, Users, Smartphone } from 'lucide-react';
 import { apiCall } from '../services/apiService';
+import { getUsers } from '../services/authService';
 
 interface PrintBijakProps {
   tx: WarehouseTransaction;
@@ -14,6 +15,39 @@ interface PrintBijakProps {
 const PrintBijak: React.FC<PrintBijakProps> = ({ tx, onClose, settings }) => {
   const [processing, setProcessing] = useState(false);
   const [hidePrices, setHidePrices] = useState(false);
+  const [showContactSelect, setShowContactSelect] = useState(false);
+  const [allContacts, setAllContacts] = useState<Contact[]>([]);
+  const [contactSearch, setContactSearch] = useState('');
+
+  // Fetch users and merge with saved contacts
+  useEffect(() => {
+      const loadContacts = async () => {
+          let merged: Contact[] = settings?.savedContacts || [];
+          try {
+              const appUsers = await getUsers();
+              const userContacts: Contact[] = appUsers
+                  .filter(u => u.phoneNumber)
+                  .map(u => ({
+                      id: u.id,
+                      name: u.fullName,
+                      number: u.phoneNumber!,
+                      isGroup: false
+                  }));
+              
+              // Avoid duplicates (simple check by number)
+              const existingNumbers = new Set(merged.map(c => c.number));
+              userContacts.forEach(uc => {
+                  if (!existingNumbers.has(uc.number)) {
+                      merged.push(uc);
+                  }
+              });
+          } catch(e) {
+              console.error("Error loading users for contacts", e);
+          }
+          setAllContacts(merged);
+      };
+      loadContacts();
+  }, [settings]);
 
   // Helper to find logo
   const companyInfo = settings?.companies?.find(c => c.name === tx.company);
@@ -23,6 +57,7 @@ const PrintBijak: React.FC<PrintBijakProps> = ({ tx, onClose, settings }) => {
 
   const generateAndSend = async (target: string, hidePrice: boolean, captionPrefix: string) => {
       setProcessing(true);
+      setShowContactSelect(false);
       const originalHideState = hidePrices;
       
       // Temporarily set hide state for capture
@@ -99,6 +134,12 @@ const PrintBijak: React.FC<PrintBijakProps> = ({ tx, onClose, settings }) => {
       await generateAndSend(mgr, false, "📄 *گزارش خروج کالا (بیجک)*");
   };
 
+  // Filter contacts
+  const filteredContacts = allContacts.filter(c => 
+      c.name.toLowerCase().includes(contactSearch.toLowerCase()) || 
+      c.number.includes(contactSearch)
+  );
+
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4 overflow-y-auto animate-fade-in">
         <div className="bg-white p-3 rounded-xl shadow-lg absolute top-4 left-4 z-50 flex flex-col gap-2 no-print w-64">
@@ -124,6 +165,58 @@ const PrintBijak: React.FC<PrintBijakProps> = ({ tx, onClose, settings }) => {
                 <button onClick={sendToBoth} disabled={processing} className="w-full bg-gray-800 text-white p-2 rounded text-xs hover:bg-gray-900 flex items-center justify-center gap-2 shadow-lg">
                     {processing ? <Loader2 size={14} className="animate-spin"/> : <Share2 size={14}/>} ارسال اتوماتیک به هر دو
                 </button>
+                
+                <div className="relative">
+                    <button onClick={() => setShowContactSelect(!showContactSelect)} className="w-full bg-white border text-gray-700 p-2 rounded text-xs hover:bg-gray-50 flex items-center justify-center gap-2">
+                       <Share2 size={14}/> انتخاب مخاطب و ارسال
+                    </button>
+                    {showContactSelect && (
+                        <div className="absolute bottom-full left-0 mb-2 w-64 bg-white rounded-xl shadow-2xl border border-gray-200 z-[100] animate-fade-in overflow-hidden flex flex-col h-64">
+                            <div className="p-2 border-b bg-gray-50 flex items-center gap-2">
+                                <Search size={14} className="text-gray-400"/>
+                                <input 
+                                    className="bg-transparent text-xs w-full outline-none" 
+                                    placeholder="جستجوی مخاطب..." 
+                                    autoFocus
+                                    value={contactSearch}
+                                    onChange={e => setContactSearch(e.target.value)}
+                                />
+                            </div>
+                            <div className="flex-1 overflow-y-auto">
+                                {filteredContacts.length > 0 ? (
+                                    filteredContacts.map(c => (
+                                        <button 
+                                            key={c.id} 
+                                            onClick={() => generateAndSend(c.number, hidePrices, "📄 *بیجک ارسالی*")}
+                                            className="w-full text-right p-2 hover:bg-blue-50 text-xs border-b last:border-0 flex items-center gap-2"
+                                        >
+                                            <div className={`p-1.5 rounded-full ${c.isGroup ? 'bg-orange-100 text-orange-600' : 'bg-gray-100 text-gray-600'}`}>
+                                                {c.isGroup ? <Users size={12}/> : <Smartphone size={12}/>}
+                                            </div>
+                                            <div className="truncate">
+                                                <div className="font-bold text-gray-800">{c.name}</div>
+                                                <div className="text-[10px] text-gray-500 font-mono">{c.number}</div>
+                                            </div>
+                                        </button>
+                                    ))
+                                ) : (
+                                    <div className="p-4 text-center text-xs text-gray-400">مخاطبی یافت نشد.</div>
+                                )}
+                            </div>
+                            <div className="p-2 border-t bg-gray-50">
+                                <button 
+                                    onClick={() => {
+                                        const num = prompt("شماره را وارد کنید:");
+                                        if(num) generateAndSend(num, hidePrices, "📄 *بیجک ارسالی*");
+                                    }}
+                                    className="w-full text-center text-xs text-blue-600 font-bold hover:underline"
+                                >
+                                    ورود دستی شماره
+                                </button>
+                            </div>
+                        </div>
+                    )}
+                </div>
             </div>
         </div>
 

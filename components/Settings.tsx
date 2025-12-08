@@ -5,6 +5,7 @@ import { SystemSettings, UserRole, RolePermissions, Company, Contact } from '../
 import { Settings as SettingsIcon, Save, Loader2, Database, Bell, Plus, Trash2, Building, ShieldCheck, Landmark, Package, AppWindow, BellRing, BellOff, Send, Image as ImageIcon, Pencil, X, Check, MessageCircle, Calendar, Phone, LogOut, RefreshCw, Users, FolderSync, BrainCircuit, Smartphone, Link, Truck, MessageSquare, DownloadCloud, UploadCloud, Warehouse, FileDigit } from 'lucide-react';
 import { apiCall } from '../services/apiService';
 import { requestNotificationPermission, setNotificationPreference, isNotificationEnabledInApp } from '../services/notificationService';
+import { getUsers } from '../services/authService';
 import { generateUUID } from '../constants';
 
 const Settings: React.FC = () => {
@@ -53,11 +54,15 @@ const Settings: React.FC = () => {
   const [uploadingIcon, setUploadingIcon] = useState(false);
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
   const isSecure = window.isSecureContext;
+  
+  // App Users to merge into contacts list
+  const [appUsers, setAppUsers] = useState<Contact[]>([]);
 
   useEffect(() => { 
       loadSettings(); 
       setNotificationsEnabled(isNotificationEnabledInApp()); 
       checkWhatsappStatus();
+      loadAppUsers();
   }, []);
 
   const loadSettings = async () => { 
@@ -72,6 +77,21 @@ const Settings: React.FC = () => {
           if(!safeData.warehouseSequences) safeData.warehouseSequences = {};
           setSettings(safeData); 
       } catch (e) { console.error("Failed to load settings"); } 
+  };
+
+  const loadAppUsers = async () => {
+      try {
+          const users = await getUsers();
+          const contacts = users
+              .filter(u => u.phoneNumber)
+              .map(u => ({
+                  id: u.id,
+                  name: `(کاربر) ${u.fullName}`,
+                  number: u.phoneNumber!,
+                  isGroup: false
+              }));
+          setAppUsers(contacts);
+      } catch (e) { console.error("Failed to load users"); }
   };
 
   const checkWhatsappStatus = async () => {
@@ -163,6 +183,18 @@ const Settings: React.FC = () => {
       { id: 'canViewWarehouseReports', label: 'مشاهده گزارشات انبار' }
   ];
 
+  // Helper to get merged options for select
+  const getMergedContactOptions = () => {
+      const all = [...(settings.savedContacts || []), ...appUsers];
+      // Deduplicate by number
+      const seen = new Set();
+      return all.filter(c => {
+          if (seen.has(c.number)) return false;
+          seen.add(c.number);
+          return true;
+      });
+  };
+
   return (
     <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden flex flex-col md:flex-row min-h-[600px] mb-20 animate-fade-in">
         
@@ -233,15 +265,21 @@ const Settings: React.FC = () => {
                                     <label className="text-sm font-bold text-gray-700 block mb-1">واتساپ گروه انبار (پیش‌فرض)</label>
                                     <select className="w-full border rounded-lg p-2 text-sm bg-white" value={settings.defaultWarehouseGroup || ''} onChange={e => setSettings({...settings, defaultWarehouseGroup: e.target.value})}>
                                         <option value="">انتخاب کنید...</option>
-                                        {settings.savedContacts?.map(c => <option key={c.number} value={c.number}>{c.name} {c.isGroup ? '(گروه)' : ''}</option>)}
+                                        {getMergedContactOptions().map(c => (
+                                            <option key={c.number} value={c.number}>{c.name} {c.isGroup ? '(گروه)' : ''}</option>
+                                        ))}
                                     </select>
+                                    <p className="text-[10px] text-gray-500 mt-1">شامل مخاطبین ذخیره شده و کاربران نرم‌افزار</p>
                                 </div>
                                 <div>
                                     <label className="text-sm font-bold text-gray-700 block mb-1">واتساپ مدیر فروش (پیش‌فرض)</label>
                                     <select className="w-full border rounded-lg p-2 text-sm bg-white" value={settings.defaultSalesManager || ''} onChange={e => setSettings({...settings, defaultSalesManager: e.target.value})}>
                                         <option value="">انتخاب کنید...</option>
-                                        {settings.savedContacts?.map(c => <option key={c.number} value={c.number}>{c.name} {c.isGroup ? '(گروه)' : ''}</option>)}
+                                        {getMergedContactOptions().map(c => (
+                                            <option key={c.number} value={c.number}>{c.name} {c.isGroup ? '(گروه)' : ''}</option>
+                                        ))}
                                     </select>
+                                    <p className="text-[10px] text-gray-500 mt-1">شامل مخاطبین ذخیره شده و کاربران نرم‌افزار</p>
                                 </div>
                             </div>
 
@@ -352,8 +390,26 @@ const Settings: React.FC = () => {
                             </div>
                         </div>
                         <div className="space-y-4">
-                            <div className="flex justify-between items-center"><h3 className="font-bold text-gray-800">مخاطبین ذخیره شده</h3><div className="flex gap-2"><input className="border rounded px-2 py-1 text-xs w-24" placeholder="نام" value={contactName} onChange={e => setContactName(e.target.value)} /><input className="border rounded px-2 py-1 text-xs w-24 dir-ltr" placeholder="شماره" value={contactNumber} onChange={e => setContactNumber(e.target.value)} /><label className="flex items-center gap-1 text-xs"><input type="checkbox" checked={isGroupContact} onChange={e => setIsGroupContact(e.target.checked)}/> گروه</label><button type="button" onClick={handleAddContact} className="bg-green-600 text-white px-2 py-1 rounded"><Plus size={16}/></button></div></div>
-                            <div className="max-h-60 overflow-y-auto border rounded-lg bg-gray-50">{settings.savedContacts?.map(contact => (<div key={contact.id} className="p-2 flex justify-between items-center hover:bg-white border-b last:border-0"><div className="flex items-center gap-2"><span className={`p-1 rounded-full ${contact.isGroup ? 'bg-orange-100 text-orange-600' : 'bg-gray-200 text-gray-600'}`}>{contact.isGroup ? <Users size={12}/> : <Smartphone size={12}/>}</span><span className="text-sm font-bold">{contact.name}</span><span className="text-xs text-gray-500 font-mono">{contact.number}</span></div><button type="button" onClick={() => handleDeleteContact(contact.id)} className="text-red-400 hover:text-red-600"><Trash2 size={14}/></button></div>))}</div>
+                            <div className="flex justify-between items-center"><h3 className="font-bold text-gray-800">مخاطبین و گروه‌های ذخیره شده</h3><div className="flex gap-2"><input className="border rounded px-2 py-1 text-xs w-24" placeholder="نام" value={contactName} onChange={e => setContactName(e.target.value)} /><input className="border rounded px-2 py-1 text-xs w-24 dir-ltr" placeholder="شماره" value={contactNumber} onChange={e => setContactNumber(e.target.value)} /><label className="flex items-center gap-1 text-xs"><input type="checkbox" checked={isGroupContact} onChange={e => setIsGroupContact(e.target.checked)}/> گروه</label><button type="button" onClick={handleAddContact} className="bg-green-600 text-white px-2 py-1 rounded"><Plus size={16}/></button></div></div>
+                            <div className="max-h-60 overflow-y-auto border rounded-lg bg-gray-50">
+                                {getMergedContactOptions().map(contact => (
+                                    <div key={contact.id} className="p-2 flex justify-between items-center hover:bg-white border-b last:border-0">
+                                        <div className="flex items-center gap-2">
+                                            <span className={`p-1 rounded-full ${contact.isGroup ? 'bg-orange-100 text-orange-600' : 'bg-gray-200 text-gray-600'}`}>
+                                                {contact.isGroup ? <Users size={12}/> : <Smartphone size={12}/>}
+                                            </span>
+                                            <span className="text-sm font-bold">{contact.name}</span>
+                                            <span className="text-xs text-gray-500 font-mono">{contact.number}</span>
+                                        </div>
+                                        {/* Only allow deleting manually added contacts, not system users */}
+                                        {!contact.name.startsWith('(کاربر)') && (
+                                            <button type="button" onClick={() => handleDeleteContact(contact.id)} className="text-red-400 hover:text-red-600">
+                                                <Trash2 size={14}/>
+                                            </button>
+                                        )}
+                                    </div>
+                                ))}
+                            </div>
                         </div>
                     </div>
                 )}
