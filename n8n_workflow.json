@@ -1,6 +1,6 @@
 
 {
-  "name": "AI Financial Agent (Voice Enabled)",
+  "name": "AI Financial Agent (Production)",
   "nodes": [
     {
       "parameters": {
@@ -40,7 +40,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const audioData = $input.item.json.body.audio.data;\nconst binaryData = Buffer.from(audioData, 'base64');\n\nreturn {\n  binary: {\n    data: {\n      data: audioData,\n      mimeType: $input.item.json.body.audio.mimeType || 'audio/ogg',\n      fileName: 'voice_message.ogg'\n    }\n  },\n  json: $input.item.json\n};"
+        "jsCode": "const audioData = $input.item.json.body.audio.data;\n// Only process if data exists\nif (!audioData) return { json: {} };\n\nreturn {\n  binary: {\n    data: {\n      data: audioData,\n      mimeType: $input.item.json.body.audio.mimeType || 'audio/ogg',\n      fileName: 'voice_message.ogg'\n    }\n  },\n  json: $input.item.json\n};"
       },
       "id": "convert-audio",
       "name": "Prepare Audio File",
@@ -48,7 +48,7 @@
       "typeVersion": 2,
       "position": [
         820,
-        240
+        200
       ]
     },
     {
@@ -66,7 +66,7 @@
       "typeVersion": 1,
       "position": [
         1040,
-        240
+        200
       ],
       "credentials": {
         "openAiApi": {
@@ -78,23 +78,40 @@
     },
     {
       "parameters": {
+        "mode": "json",
+        "jsonOutput": "={\n  \"user_message\": \"{{ $json.text ? $json.text : $('Webhook').item.json.body.message }}\",\n  \"user_role\": \"{{ $('Webhook').item.json.body.user.role }}\",\n  \"user_name\": \"{{ $('Webhook').item.json.body.user.fullName }}\"\n}"
+      },
+      "id": "merge-data",
+      "name": "Merge Context",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [
+        1260,
+        340
+      ]
+    },
+    {
+      "parameters": {
         "model": "gpt-4o-mini",
+        "options": {
+          "responseFormat": "json_object",
+          "temperature": 0.3
+        },
         "messages": {
           "values": [
             {
               "role": "system",
-              "content": "You are a smart financial assistant for a company. \nThe user communicates via text or voice. They have a specific role (e.g., admin, financial, manager). \n\nYour goal is to decide what action to take based on the user's intent and return a RAW JSON object. \n\nIMPORTANT: \n1. Return ONLY the JSON object. \n2. Do NOT use markdown code blocks (like ```json). \n3. Do NOT add any conversational text outside the JSON.\n\n### Report / Cartable Requests\nIf the user asks for 'report', 'status', 'cartable', 'my tasks', or 'summary':\nCall the `get_financial_summary` tool. The server will handle filtering the report based on the user's role automatically.\nExample output:\n{\n  \"type\": \"tool_call\",\n  \"tool\": \"get_financial_summary\",\n  \"args\": {}\n}\n\n### Approve / Reject Order\nIf the user wants to approve or reject an order (e.g., \"approve 1605\", \"reject 1602 because...\"):\n{\n  \"type\": \"tool_call\",\n  \"tool\": \"manage_order\",\n  \"args\": {\n    \"trackingNumber\": 1605,\n    \"action\": \"approve\" (or \"reject\"),\n    \"reason\": \"Optional reason if rejected\"\n  }\n}\n\n### Register Payment\nIf the user wants to register a payment:\n{\n  \"type\": \"tool_call\",\n  \"tool\": \"register_payment_order\",\n  \"args\": {\n    \"payee\": \"Name\",\n    \"amount\": 100000,\n    \"description\": \"Reason\",\n    \"company\": \"Optional\"\n  }\n}\n\n### Search Files\nIf searching for trade/import files:\n{\n  \"type\": \"tool_call\",\n  \"tool\": \"search_trade_file\",\n  \"args\": { \"query\": \"search term\" }\n}\n\n### General Chat\nIf no tool matches, reply helpfully in Persian:\n{\n  \"type\": \"message\",\n  \"text\": \"Response in Persian...\"\n}\n\nUser Message: {{ $json.text ? $json.text : $json.body.message }}\nUser Role: {{ $json.body ? $json.body.user.role : $('Webhook').item.json.body.user.role }}"
+              "content": "You are a highly capable Financial Assistant Agent. \nYour output MUST be a valid JSON object. No markdown, no pre-text.\n\n### SCHEMAS\n\n1. **General Chat / Unknown:**\n{\n  \"type\": \"message\",\n  \"text\": \"Your response in Persian\"\n}\n\n2. **Tool Call (Actions):**\n{\n  \"type\": \"tool_call\",\n  \"tool\": \"TOOL_NAME\",\n  \"args\": { ... }\n}\n\n### TOOLS DEFINITIONS\n\n- `get_financial_summary`\n  - Triggers: report, status, cartable, what is pending, summary.\n  - Args: {} (empty)\n\n- `manage_order`\n  - Triggers: approve order X, reject order Y.\n  - Args: \n    - trackingNumber: number\n    - action: \"approve\" | \"reject\"\n    - reason: string (optional, mainly for rejection)\n\n- `register_payment_order`\n  - Triggers: pay X to Y, register payment, new order.\n  - Args:\n    - payee: string\n    - amount: number (extract numeric value)\n    - description: string\n    - company: string (optional)\n\n- `search_trade_file`\n  - Triggers: search file X, status of import Y.\n  - Args: { query: string }\n\n### CONTEXT\nUser: {{ $json.user_name }} (Role: {{ $json.user_role }})\nMessage: {{ $json.user_message }}"
             }
           ]
-        },
-        "jsonOutput": false
+        }
       },
       "id": "openai-chat",
-      "name": "OpenAI Chat",
+      "name": "OpenAI Chat (Agent)",
       "type": "n8n-nodes-base.openAi",
       "typeVersion": 1,
       "position": [
-        1260,
+        1480,
         340
       ],
       "credentials": {
@@ -102,19 +119,18 @@
           "id": "YOUR_OPENAI_CREDENTIAL_ID",
           "name": "OpenAI account"
         }
-      },
-      "continueOnFail": true
+      }
     },
     {
       "parameters": {
-        "jsCode": "// Robust Output Sanitization\nconst inputItem = $input.item.json;\nlet content = \"\";\n\n// 1. Check for AI Errors\nif (inputItem.error) {\n    return { json: { type: 'message', text: `خطا در پردازش هوش مصنوعی: ${JSON.stringify(inputItem.error)}` } };\n}\n\n// 2. Extract Content\nif (inputItem.message && inputItem.message.content) {\n    content = inputItem.message.content;\n} else if (inputItem.text) {\n    content = inputItem.text;\n} else if (typeof inputItem === 'string') {\n    content = inputItem;\n} else {\n    content = JSON.stringify(inputItem);\n}\n\n// 3. Attempt Parsing JSON\ntry {\n    let clean = content.replace(/```json\\s?|```/g, '').trim();\n    // Find JSON boundaries to ignore conversational noise\n    const first = clean.indexOf('{');\n    const last = clean.lastIndexOf('}');\n    if (first !== -1 && last !== -1) {\n        clean = clean.substring(first, last + 1);\n        const parsed = JSON.parse(clean);\n        return { json: parsed };\n    }\n    // If parsing fails or no brackets, treat as plain text message\n    return { json: { type: 'message', text: content } };\n} catch (e) {\n    // 4. Fallback for Parsing Errors\n    return { json: { type: 'message', text: content } };\n}"
+        "jsCode": "try {\n    // 1. Get raw content from OpenAI\n    // In JSON Mode, it's usually inside message.content\n    let raw = $input.item.json.message?.content || $input.item.json.text;\n    \n    // 2. Parse it\n    if (typeof raw === 'string') {\n        raw = JSON.parse(raw);\n    }\n    \n    // 3. Validation: Ensure 'type' exists\n    if (!raw.type) {\n        // Fallback if AI hallucinated a bad format\n        return {\n            json: {\n                type: 'message',\n                text: typeof raw === 'string' ? raw : JSON.stringify(raw)\n            }\n        };\n    }\n\n    return { json: raw };\n    \n} catch (error) {\n    // 4. Catastrophic Failure Handler\n    // If OpenAI returns invalid JSON or something breaks, return a safe error message\n    return {\n        json: {\n            type: 'message',\n            text: \"خطا در پردازش هوش مصنوعی. لطفاً دوباره تلاش کنید.\"\n        }\n    };\n}"
       },
-      "id": "sanitize-output",
-      "name": "Sanitize JSON",
+      "id": "sanitize-json",
+      "name": "Sanitize Output",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1480,
+        1700,
         340
       ]
     },
@@ -125,11 +141,11 @@
         "options": {}
       },
       "id": "webhook-response",
-      "name": "Respond to App",
+      "name": "Respond to Webhook",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1,
       "position": [
-        1700,
+        1920,
         340
       ]
     }
@@ -157,7 +173,7 @@
         ],
         [
           {
-            "node": "OpenAI Chat",
+            "node": "Merge Context",
             "type": "main",
             "index": 0
           }
@@ -179,29 +195,40 @@
       "main": [
         [
           {
-            "node": "OpenAI Chat",
+            "node": "Merge Context",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "OpenAI Chat": {
+    "Merge Context": {
       "main": [
         [
           {
-            "node": "Sanitize JSON",
+            "node": "OpenAI Chat (Agent)",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Sanitize JSON": {
+    "OpenAI Chat (Agent)": {
       "main": [
         [
           {
-            "node": "Respond to App",
+            "node": "Sanitize Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sanitize Output": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
             "type": "main",
             "index": 0
           }

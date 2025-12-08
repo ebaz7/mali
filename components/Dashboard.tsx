@@ -127,15 +127,21 @@ const Dashboard: React.FC<DashboardProps> = ({ orders, settings, onViewArchive, 
               }
           }
 
-          await apiCall('/send-whatsapp', 'POST', { 
+          const response = await apiCall<{success: boolean, message?: string}>('/send-whatsapp', 'POST', { 
               number: whatsAppTarget, 
               message: whatsAppMessage,
               mediaData: mediaData 
           });
-          alert('پیام با موفقیت در صف ارسال سرور قرار گرفت.');
+          
+          if (response.success) {
+              alert(response.message || 'پیام با موفقیت ارسال شد.');
+          } else {
+              alert(response.message || 'خطا در ارسال پیام');
+          }
           setShowWhatsAppModal(false);
       } catch (e: any) {
-          alert(`خطا در ارسال خودکار: ${e.message || 'سرور پاسخگو نیست'}.`);
+          console.error("WhatsApp Send Error:", e);
+          alert(`خطا: ${e.message || 'مشکل در ارتباط با سرور'}`);
       } finally {
           setSendingReport(false);
       }

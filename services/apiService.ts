@@ -36,7 +36,7 @@ const setLocalData = (key: string, data: any) => {
 export const apiCall = async <T>(endpoint: string, method: string = 'GET', body?: any): Promise<T> => {
     try {
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 5000);
+        const timeoutId = setTimeout(() => controller.abort(), 15000); // 15s timeout for AI/WA
 
         const response = await fetch(`${API_BASE_URL}${endpoint}`, {
             method,
@@ -50,9 +50,16 @@ export const apiCall = async <T>(endpoint: string, method: string = 'GET', body?
         if (response.ok && contentType && contentType.includes("application/json")) {
             return await response.json();
         }
-        throw new Error("Server response invalid or not found");
+        
+        // If response is OK but not JSON (e.g. 200 OK from some proxies), treat as success if body was empty
+        if (response.ok && (!contentType || !contentType.includes("application/json"))) {
+             return { success: true } as unknown as T;
+        }
+
+        throw new Error(`Server Error: ${response.status}`);
     } catch (error) {
-        await delay(200);
+        console.warn(`API Fallback (Mock) triggered for: ${endpoint}`, error);
+        await delay(500);
         
         // --- AUTH ---
         if (endpoint === '/login' && method === 'POST') {
@@ -114,11 +121,11 @@ export const apiCall = async <T>(endpoint: string, method: string = 'GET', body?
         
         // --- SETTINGS ---
         if (endpoint === '/settings') {
-            if (method === 'GET') return getLocalData<SystemSettings>(LS_KEYS.SETTINGS, { currentTrackingNumber: 1000, companyNames: [], defaultCompany: '', bankNames: [], commodityGroups: [], rolePermissions: {} }) as unknown as T;
+            if (method === 'GET') return getLocalData<SystemSettings>(LS_KEYS.SETTINGS, { currentTrackingNumber: 1000, companyNames: [], companies: [], defaultCompany: '', bankNames: [], commodityGroups: [], rolePermissions: {} } as any) as unknown as T;
             if (method === 'POST') { setLocalData(LS_KEYS.SETTINGS, body); return body as unknown as T; }
         }
 
-        // --- CHAT MESSAGES (UPDATED) ---
+        // --- CHAT MESSAGES ---
         if (endpoint === '/chat') {
             if (method === 'GET') return getLocalData<ChatMessage[]>(LS_KEYS.CHAT, []) as unknown as T;
             if (method === 'POST') {
@@ -144,38 +151,49 @@ export const apiCall = async <T>(endpoint: string, method: string = 'GET', body?
             }
         }
 
-        // --- CHAT GROUPS ---
-        if (endpoint === '/groups' && method === 'GET') {
-            return getLocalData<ChatGroup[]>(LS_KEYS.GROUPS, []) as unknown as T;
+        // --- GROUPS & TASKS ---
+        if (endpoint === '/groups' || endpoint.startsWith('/groups/')) return [] as unknown as T;
+        if (endpoint === '/tasks' || endpoint.startsWith('/tasks/')) return [] as unknown as T;
+        if (endpoint === '/users' && method === 'GET') return getLocalData<User[]>(LS_KEYS.USERS, MOCK_USERS) as unknown as T;
+
+        // --- WHATSAPP & AI (Mock Responses for Offline Mode) ---
+        // FIX: Added missing mock for /send-whatsapp
+        if (endpoint === '/send-whatsapp') {
+            return { success: true, message: 'Mock: پیام واتساپ (شبیه‌سازی شده) ارسال شد (سرور قطع است).' } as unknown as T;
         }
-        if (endpoint === '/groups' && method === 'POST') {
-            const groups = getLocalData<ChatGroup[]>(LS_KEYS.GROUPS, []);
-            groups.push(body);
-            setLocalData(LS_KEYS.GROUPS, groups);
-            return groups as unknown as T;
+        if (endpoint === '/whatsapp/status') {
+            return { ready: false, qr: null, user: null } as unknown as T;
         }
-        if (endpoint.startsWith('/groups/')) {
-            const id = endpoint.split('/').pop();
-            let groups = getLocalData<ChatGroup[]>(LS_KEYS.GROUPS, []);
-            if (method === 'PUT') {
-                const idx = groups.findIndex(g => g.id === id);
-                if (idx !== -1) { groups[idx] = body; setLocalData(LS_KEYS.GROUPS, groups); }
-                return groups as unknown as T;
-            }
-            if (method === 'DELETE') {
-                groups = groups.filter(g => g.id !== id);
-                setLocalData(LS_KEYS.GROUPS, groups);
-                // Clean up related data (optional but good practice)
-                return groups as unknown as T;
-            }
+        if (endpoint === '/whatsapp/groups') {
+            return { success: true, groups: [] } as unknown as T;
+        }
+        if (endpoint === '/whatsapp/logout') {
+            return { success: true } as unknown as T;
+        }
+        if (endpoint === '/ai-request') {
+            return { reply: "این یک پاسخ شبیه‌سازی شده از هوش مصنوعی است (ارتباط با سرور برقرار نیست)." } as unknown as T;
+        }
+        if (endpoint === '/analyze-payment') {
+            return { 
+                recommendation: "پرداخت عادی", 
+                score: 80, 
+                reasons: ["تحلیل آفلاین: تاریخ مناسب است.", "مبلغ در محدوده مجاز است."],
+                isOffline: true 
+            } as unknown as T;
         }
 
-
-        // --- UPLOAD (Mock) ---
+        // --- UPLOAD ---
         if (endpoint === '/upload' && method === 'POST') {
+            // Return the Base64 data directly as 'url' for offline preview
             return { fileName: body.fileName, url: body.fileData } as unknown as T;
         }
+        
+        if (endpoint === '/next-tracking-number') {
+            const settings = getLocalData<SystemSettings>(LS_KEYS.SETTINGS, { currentTrackingNumber: 1000 } as any);
+            return { nextTrackingNumber: settings.currentTrackingNumber + 1 } as unknown as T;
+        }
 
+        console.error(`Mock endpoint not found: ${endpoint}`);
         throw new Error(`Mock endpoint not found: ${endpoint}`);
     }
 };

@@ -332,18 +332,19 @@ async function processN8NRequest(user, messageText, audioData = null, audioMimeT
         console.log(`>>> Sending request to n8n: ${webhookUrl} | User: ${user.fullName}`);
         
         const response = await axios.post(webhookUrl, payload, { 
-            timeout: 120000, // Increased timeout to 2 minutes for slow AI
+            timeout: 180000, // 3 Minutes timeout to prevent early cut-off
             headers: { 'Content-Type': 'application/json' }
         });
         
         let data = response.data;
 
-        console.log(">>> Raw n8n response:", typeof data === 'object' ? JSON.stringify(data).substring(0, 200) + '...' : data);
+        // DEBUG:
+        // console.log("RAW N8N:", JSON.stringify(data));
 
         // HANDLE EMPTY RESPONSE (Empty String)
         if (data === "" || data === null || data === undefined) {
             console.warn(">>> n8n returned empty response.");
-            return "⛔ هوش مصنوعی پاسخ خالی داد. (n8n workflow issue)";
+            return "⛔ هوش مصنوعی پاسخ نداد. (ورک‌فلو پاسخ خالی فرستاد)";
         }
 
         // CRITICAL CHECK: If n8n returns standard success message instead of our JSON
@@ -357,50 +358,51 @@ async function processN8NRequest(user, messageText, audioData = null, audioMimeT
             data = data[0];
         }
 
-        // 2. Handle String Response (Markdown/JSON string)
+        // 2. Handle Text Response that might be JSON
         if (typeof data === 'string') {
-            // Check if it's strictly JSON
-            const cleanData = data.replace(/```json\s?|```/g, '').trim();
-            if (cleanData.startsWith('{') || cleanData.startsWith('[')) {
-                try { 
-                    data = JSON.parse(cleanData); 
-                } catch(e) {
-                    // It looked like JSON but wasn't
-                    return cleanData;
+            try {
+                // Try parsing it if it looks like JSON
+                const trimmed = data.trim();
+                if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+                    data = JSON.parse(trimmed);
+                } else {
+                    // It's just a text message from sanitizer fallback
+                    return data;
                 }
-            } else {
-                return cleanData;
+            } catch(e) {
+                return data; // Return as text
             }
         }
 
-        // 3. Handle Smart Analysis JSON Response (Direct)
-        if (data.recommendation && data.score) {
-            return data;
+        // 3. Handle Structured JSON Response (Agent Style)
+        if (data && typeof data === 'object') {
+            if (data.type === 'message') {
+                return data.text || "پیام خالی";
+            }
+            if (data.type === 'tool_call') {
+                return handleToolExecution(data.tool, data.args, user);
+            }
+            // Smart Analysis Fallback
+            if (data.recommendation) {
+                return data;
+            }
         }
 
-        // 4. Handle Standard Tool/Message Response
-        if (data.type === 'message') {
-            return data.text;
-        } 
-        
-        if (data.type === 'tool_call') {
-            return handleToolExecution(data.tool, data.args, user);
-        }
-
-        // 5. Fallback heuristics for malformed JSON
+        // 4. Fallback heuristics
         if (data.text) return data.text;
         if (data.reply) return data.reply;
-        if (data.content) return data.content;
-
+        
         console.warn(">>> Unknown AI Response Format:", data);
-        return `پاسخ نامفهومی از هوش مصنوعی دریافت شد.`;
+        return typeof data === 'object' ? JSON.stringify(data) : String(data);
 
     } catch (error) {
-        // Detailed error logging for connection issues
         console.error(`>>> AI Request Error: ${error.message}`);
         
         if (error.code === 'ECONNREFUSED') {
             return "⚠️ خطا: سرور هوش مصنوعی (n8n) خاموش است یا در دسترس نیست.";
+        }
+        if (error.code === 'ECONNABORTED') {
+            return "⚠️ خطا: پاسخ‌دهی هوش مصنوعی بیش از حد طول کشید.";
         }
         
         // --- FALLBACK MODE (OFFLINE AI) ---
@@ -410,7 +412,6 @@ async function processN8NRequest(user, messageText, audioData = null, audioMimeT
 
         // Simple Rule-Based Chatbot Fallback
         const lowerMsg = (messageText || '').toLowerCase();
-        
         if (lowerMsg.includes('وضعیت') || lowerMsg.includes('گزارش') || lowerMsg.includes('کارتابل')) {
             return handleToolExecution('get_financial_summary', {}, user);
         }
@@ -423,158 +424,163 @@ function handleToolExecution(toolName, args, user) {
     const db = getDb();
     console.log(`>>> Executing Tool: ${toolName} for ${user.fullName}`);
     
-    if (toolName === 'register_payment_order') {
-        const trackingNum = findNextAvailableTrackingNumber(db);
-        const newOrder = {
-            id: Date.now().toString(36),
-            trackingNumber: trackingNum,
-            date: new Date().toISOString().split('T')[0],
-            payee: args.payee,
-            totalAmount: Number(args.amount),
-            description: args.description,
-            status: 'در انتظار بررسی مالی',
-            requester: user.fullName,
-            paymentDetails: [{
-                id: Date.now().toString(36) + 'd',
-                method: 'حواله بانکی',
-                amount: Number(args.amount),
-                description: 'ثبت شده توسط هوش مصنوعی'
-            }],
-            payingCompany: args.company || db.settings.defaultCompany,
-            createdAt: Date.now()
-        };
-        db.orders.unshift(newOrder);
-        saveDb(db);
-        
-        // Notify Financial Managers
-        const financeUsers = db.users.filter(u => u.role === 'financial');
-        financeUsers.forEach(fu => {
-            if(fu.phoneNumber) sendWhatsAppMessageInternal(fu.phoneNumber, `🔔 *دستور پرداخت جدید*\nشماره: ${trackingNum}\nمبلغ: ${Number(args.amount).toLocaleString('fa-IR')}\nدرخواست‌کننده: ${user.fullName}`);
-            if(fu.telegramChatId) sendTelegramMessageInternal(fu.telegramChatId, `🔔 دستور پرداخت جدید\nشماره: ${trackingNum}\nمبلغ: ${Number(args.amount).toLocaleString('fa-IR')}`);
-        });
-
-        return `دستور پرداخت با موفقیت ثبت شد.\nشماره: ${trackingNum}\nمبلغ: ${Number(args.amount).toLocaleString('fa-IR')} ریال\nگیرنده: ${args.payee}`;
-    }
-
-    if (toolName === 'get_financial_summary') {
-        // Personalized Report Logic
-        let reportText = `📊 *گزارش کارتابل شما (${user.fullName})*:\n`;
-        let count = 0;
-
-        if (user.role === 'admin' || user.role === 'financial') {
-            const pendingFinance = db.orders.filter(o => o.status === 'در انتظار بررسی مالی');
-            if (pendingFinance.length > 0) {
-                reportText += `\n🔸 *منتظر تایید مالی:* ${pendingFinance.length} مورد\n`;
-                pendingFinance.slice(0, 5).forEach(o => {
-                    reportText += `   - #${o.trackingNumber} | ${o.payee} | ${Number(o.totalAmount).toLocaleString()} ریال\n`;
-                });
-                count += pendingFinance.length;
-            }
-        }
-
-        if (user.role === 'admin' || user.role === 'manager') {
-            const pendingManager = db.orders.filter(o => o.status === 'تایید مالی / در انتظار مدیریت');
-            if (pendingManager.length > 0) {
-                reportText += `\n🔸 *منتظر تایید مدیریت:* ${pendingManager.length} مورد\n`;
-                pendingManager.slice(0, 5).forEach(o => {
-                    reportText += `   - #${o.trackingNumber} | ${o.payee} | ${Number(o.totalAmount).toLocaleString()} ریال\n`;
-                });
-                count += pendingManager.length;
-            }
-        }
-
-        if (user.role === 'admin' || user.role === 'ceo') {
-            const pendingCeo = db.orders.filter(o => o.status === 'تایید مدیریت / در انتظار مدیرعامل');
-            if (pendingCeo.length > 0) {
-                reportText += `\n🔸 *منتظر تایید مدیرعامل:* ${pendingCeo.length} مورد\n`;
-                pendingCeo.slice(0, 5).forEach(o => {
-                    reportText += `   - #${o.trackingNumber} | ${o.payee} | ${Number(o.totalAmount).toLocaleString()} ریال\n`;
-                });
-                count += pendingCeo.length;
-            }
-        }
-
-        // If regular user, show their own pending requests
-        const myPending = db.orders.filter(o => o.requester === user.fullName && o.status !== 'تایید نهایی' && o.status !== 'رد شده');
-        if (myPending.length > 0) {
-             reportText += `\n🔹 *درخواست‌های جاری شما:* ${myPending.length} مورد\n`;
-             myPending.slice(0, 3).forEach(o => {
-                reportText += `   - #${o.trackingNumber}: ${o.status}\n`;
-             });
-             count += myPending.length;
-        }
-
-        if (count === 0) {
-            reportText += "\n✅ کارتابل شما خالی است.";
-        } 
-
-        return reportText;
-    }
-
-    // NEW TOOL: Manage Order (Approve/Reject)
-    if (toolName === 'manage_order') {
-        const { trackingNumber, action, reason } = args; // action: 'approve' | 'reject'
-        const orderIndex = db.orders.findIndex(o => o.trackingNumber == trackingNumber);
-        
-        if (orderIndex === -1) return `دستور پرداخت با شماره ${trackingNumber} یافت نشد.`;
-        
-        const order = db.orders[orderIndex];
-        let nextStatus = null;
-        let successMessage = "";
-
-        if (action === 'reject') {
-            nextStatus = 'رد شده';
-            order.status = nextStatus;
-            order.rejectionReason = reason || 'رد شده توسط ربات';
-            order.rejectedBy = user.fullName;
-            successMessage = `❌ دستور #${trackingNumber} رد شد.`;
-        } else {
-            // Approval Logic based on Role and Current Status
-            if (order.status === 'در انتظار بررسی مالی' && (user.role === 'financial' || user.role === 'admin')) {
-                nextStatus = 'تایید مالی / در انتظار مدیریت';
-                order.approverFinancial = user.fullName;
-            } else if (order.status === 'تایید مالی / در انتظار مدیریت' && (user.role === 'manager' || user.role === 'admin')) {
-                nextStatus = 'تایید مدیریت / در انتظار مدیرعامل';
-                order.approverManager = user.fullName;
-            } else if (order.status === 'تایید مدیریت / در انتظار مدیرعامل' && (user.role === 'ceo' || user.role === 'admin')) {
-                nextStatus = 'تایید نهایی';
-                order.approverCeo = user.fullName;
-            } else {
-                return `⛔ شما دسترسی لازم برای تایید این مرحله را ندارید یا وضعیت دستور (${order.status}) نیازی به تایید شما ندارد.`;
-            }
+    try {
+        if (toolName === 'register_payment_order') {
+            const trackingNum = findNextAvailableTrackingNumber(db);
+            const newOrder = {
+                id: Date.now().toString(36),
+                trackingNumber: trackingNum,
+                date: new Date().toISOString().split('T')[0],
+                payee: args.payee || "نامشخص",
+                totalAmount: Number(args.amount) || 0,
+                description: args.description || "ثبت شده توسط هوش مصنوعی",
+                status: 'در انتظار بررسی مالی',
+                requester: user.fullName,
+                paymentDetails: [{
+                    id: Date.now().toString(36) + 'd',
+                    method: 'حواله بانکی',
+                    amount: Number(args.amount) || 0,
+                    description: 'ثبت شده توسط هوش مصنوعی'
+                }],
+                payingCompany: args.company || db.settings.defaultCompany,
+                createdAt: Date.now()
+            };
+            db.orders.unshift(newOrder);
+            saveDb(db);
             
-            order.status = nextStatus;
-            successMessage = `✅ دستور #${trackingNumber} با موفقیت تایید شد.\nوضعیت جدید: ${nextStatus}`;
+            // Notify Financial Managers
+            const financeUsers = db.users.filter(u => u.role === 'financial');
+            financeUsers.forEach(fu => {
+                if(fu.phoneNumber) sendWhatsAppMessageInternal(fu.phoneNumber, `🔔 *دستور پرداخت جدید*\nشماره: ${trackingNum}\nمبلغ: ${Number(args.amount).toLocaleString('fa-IR')}\nدرخواست‌کننده: ${user.fullName}`);
+                if(fu.telegramChatId) sendTelegramMessageInternal(fu.telegramChatId, `🔔 دستور پرداخت جدید\nشماره: ${trackingNum}\nمبلغ: ${Number(args.amount).toLocaleString('fa-IR')}`);
+            });
+
+            return `دستور پرداخت با موفقیت ثبت شد.\nشماره: ${trackingNum}\nمبلغ: ${Number(args.amount).toLocaleString('fa-IR')} ریال\nگیرنده: ${args.payee}`;
         }
 
-        order.updatedAt = Date.now();
-        db.orders[orderIndex] = order;
-        saveDb(db);
-        
-        // Trigger Proactive Notifications (Similar to PUT route)
-        triggerNotifications(order, db);
+        if (toolName === 'get_financial_summary') {
+            // Personalized Report Logic
+            let reportText = `📊 *گزارش کارتابل شما (${user.fullName})*:\n`;
+            let count = 0;
 
-        return successMessage;
+            if (user.role === 'admin' || user.role === 'financial') {
+                const pendingFinance = db.orders.filter(o => o.status === 'در انتظار بررسی مالی');
+                if (pendingFinance.length > 0) {
+                    reportText += `\n🔸 *منتظر تایید مالی:* ${pendingFinance.length} مورد\n`;
+                    pendingFinance.slice(0, 5).forEach(o => {
+                        reportText += `   - #${o.trackingNumber} | ${o.payee} | ${Number(o.totalAmount).toLocaleString()} ریال\n`;
+                    });
+                    count += pendingFinance.length;
+                }
+            }
+
+            if (user.role === 'admin' || user.role === 'manager') {
+                const pendingManager = db.orders.filter(o => o.status === 'تایید مالی / در انتظار مدیریت');
+                if (pendingManager.length > 0) {
+                    reportText += `\n🔸 *منتظر تایید مدیریت:* ${pendingManager.length} مورد\n`;
+                    pendingManager.slice(0, 5).forEach(o => {
+                        reportText += `   - #${o.trackingNumber} | ${o.payee} | ${Number(o.totalAmount).toLocaleString()} ریال\n`;
+                    });
+                    count += pendingManager.length;
+                }
+            }
+
+            if (user.role === 'admin' || user.role === 'ceo') {
+                const pendingCeo = db.orders.filter(o => o.status === 'تایید مدیریت / در انتظار مدیرعامل');
+                if (pendingCeo.length > 0) {
+                    reportText += `\n🔸 *منتظر تایید مدیرعامل:* ${pendingCeo.length} مورد\n`;
+                    pendingCeo.slice(0, 5).forEach(o => {
+                        reportText += `   - #${o.trackingNumber} | ${o.payee} | ${Number(o.totalAmount).toLocaleString()} ریال\n`;
+                    });
+                    count += pendingCeo.length;
+                }
+            }
+
+            // If regular user, show their own pending requests
+            const myPending = db.orders.filter(o => o.requester === user.fullName && o.status !== 'تایید نهایی' && o.status !== 'رد شده');
+            if (myPending.length > 0) {
+                reportText += `\n🔹 *درخواست‌های جاری شما:* ${myPending.length} مورد\n`;
+                myPending.slice(0, 3).forEach(o => {
+                    reportText += `   - #${o.trackingNumber}: ${o.status}\n`;
+                });
+                count += myPending.length;
+            }
+
+            if (count === 0) {
+                reportText += "\n✅ کارتابل شما خالی است.";
+            } 
+
+            return reportText;
+        }
+
+        // NEW TOOL: Manage Order (Approve/Reject)
+        if (toolName === 'manage_order') {
+            const { trackingNumber, action, reason } = args; // action: 'approve' | 'reject'
+            const orderIndex = db.orders.findIndex(o => o.trackingNumber == trackingNumber);
+            
+            if (orderIndex === -1) return `دستور پرداخت با شماره ${trackingNumber} یافت نشد.`;
+            
+            const order = db.orders[orderIndex];
+            let nextStatus = null;
+            let successMessage = "";
+
+            if (action === 'reject') {
+                nextStatus = 'رد شده';
+                order.status = nextStatus;
+                order.rejectionReason = reason || 'رد شده توسط ربات';
+                order.rejectedBy = user.fullName;
+                successMessage = `❌ دستور #${trackingNumber} رد شد.`;
+            } else {
+                // Approval Logic based on Role and Current Status
+                if (order.status === 'در انتظار بررسی مالی' && (user.role === 'financial' || user.role === 'admin')) {
+                    nextStatus = 'تایید مالی / در انتظار مدیریت';
+                    order.approverFinancial = user.fullName;
+                } else if (order.status === 'تایید مالی / در انتظار مدیریت' && (user.role === 'manager' || user.role === 'admin')) {
+                    nextStatus = 'تایید مدیریت / در انتظار مدیرعامل';
+                    order.approverManager = user.fullName;
+                } else if (order.status === 'تایید مدیریت / در انتظار مدیرعامل' && (user.role === 'ceo' || user.role === 'admin')) {
+                    nextStatus = 'تایید نهایی';
+                    order.approverCeo = user.fullName;
+                } else {
+                    return `⛔ شما دسترسی لازم برای تایید این مرحله را ندارید یا وضعیت دستور (${order.status}) نیازی به تایید شما ندارد.`;
+                }
+                
+                order.status = nextStatus;
+                successMessage = `✅ دستور #${trackingNumber} با موفقیت تایید شد.\nوضعیت جدید: ${nextStatus}`;
+            }
+
+            order.updatedAt = Date.now();
+            db.orders[orderIndex] = order;
+            saveDb(db);
+            
+            // Trigger Proactive Notifications (Similar to PUT route)
+            triggerNotifications(order, db);
+
+            return successMessage;
+        }
+
+        if (toolName === 'search_trade_file') {
+            const term = (args.query || '').toLowerCase();
+            const found = (db.tradeRecords || []).filter(r => 
+                r.fileNumber.includes(term) || 
+                r.goodsName.includes(term) || 
+                r.sellerName.includes(term)
+            ).slice(0, 3);
+            
+            if (found.length === 0) return "هیچ پرونده‌ای با این مشخصات یافت نشد.";
+            
+            let result = "📂 نتایج جستجو:\n";
+            found.forEach(f => {
+                result += `\n- پرونده: ${f.fileNumber}\n  کالا: ${f.goodsName}\n  وضعیت: ${f.status}\n`;
+            });
+            return result;
+        }
+
+        return `دستور ناشناخته: ${toolName}`;
+    } catch (e) {
+        console.error("Tool Execution Error:", e);
+        return `خطا در اجرای دستور: ${e.message}`;
     }
-
-    if (toolName === 'search_trade_file') {
-        const term = (args.query || '').toLowerCase();
-        const found = (db.tradeRecords || []).filter(r => 
-            r.fileNumber.includes(term) || 
-            r.goodsName.includes(term) || 
-            r.sellerName.includes(term)
-        ).slice(0, 3);
-        
-        if (found.length === 0) return "هیچ پرونده‌ای با این مشخصات یافت نشد.";
-        
-        let result = "📂 نتایج جستجو:\n";
-        found.forEach(f => {
-            result += `\n- پرونده: ${f.fileNumber}\n  کالا: ${f.goodsName}\n  وضعیت: ${f.status}\n`;
-        });
-        return result;
-    }
-
-    return `دستور ناشناخته: ${toolName}`;
 }
 
 // Helper for Notifications (Used in Tool Execution & API)
@@ -631,7 +637,7 @@ app.post('/api/analyze-payment', async (req, res) => {
     const prompt = `Analyze: Amount ${amount}, Date ${date}, Company ${company}. JSON: {recommendation, score, reasons}`;
     const aiResponse = await processN8NRequest(
         { fullName: 'Analyzer', role: 'system', id: 'sys' }, 
-        prompt, null, null, "You are a JSON generator."
+        prompt, null, null, "You are a JSON generator. Output valid JSON only."
     );
 
     if (aiResponse && typeof aiResponse === 'object' && aiResponse.recommendation) {
