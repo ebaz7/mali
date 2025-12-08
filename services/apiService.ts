@@ -36,7 +36,8 @@ const setLocalData = (key: string, data: any) => {
 export const apiCall = async <T>(endpoint: string, method: string = 'GET', body?: any): Promise<T> => {
     try {
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 15000); // 15s timeout for AI/WA
+        // INCREASED TIMEOUT: AI operations can take time (transcription + generation)
+        const timeoutId = setTimeout(() => controller.abort(), 45000); 
 
         const response = await fetch(`${API_BASE_URL}${endpoint}`, {
             method,

@@ -6,6 +6,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import axios from 'axios';
 import { spawn } from 'child_process';
+import { GoogleGenAI } from "@google/genai";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -16,6 +17,16 @@ const DB_FILE = path.join(__dirname, 'database.json');
 const UPLOADS_DIR = path.join(__dirname, 'uploads');
 const BACKUPS_DIR = path.join(__dirname, 'backups');
 const WAUTH_DIR = path.join(__dirname, 'wauth');
+
+// --- GEMINI SETUP ---
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY || process.env.API_KEY;
+let geminiClient = null;
+if (GEMINI_API_KEY) {
+    console.log(">>> Gemini API Key found. Initializing AI...");
+    geminiClient = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
+} else {
+    console.warn(">>> ⚠️ No GEMINI_API_KEY found. System will run in LIMITED OFFLINE MODE.");
+}
 
 if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR);
 if (!fs.existsSync(BACKUPS_DIR)) fs.mkdirSync(BACKUPS_DIR);
@@ -99,7 +110,6 @@ let isWhatsAppReady = false;
 let currentQR = null; 
 let whatsappUser = null; 
 
-// Helper to send WA message internally
 const sendWhatsAppMessageInternal = async (number, message) => {
     if (!whatsappClient || !isWhatsAppReady) {
         console.warn('>>> WhatsApp Internal Send Failed: Client not ready.');
@@ -116,7 +126,6 @@ const sendWhatsAppMessageInternal = async (number, message) => {
     }
 };
 
-// Helper to send Telegram message internally
 const sendTelegramMessageInternal = async (chatId, message) => {
     if (!telegramBot) return false;
     try {
@@ -129,266 +138,155 @@ const sendTelegramMessageInternal = async (chatId, message) => {
 };
 
 // ==========================================
-// N8N ORCHESTRATOR & SYNC
+// OFFLINE AI ENGINE (FALLBACK)
 // ==========================================
-let n8nProcess = null;
+const processOfflineAI = (user, text) => {
+    if (!text) return "متوجه نشدم.";
+    const lower = text.toLowerCase();
+    console.log(`>>> ⚠️ Using Offline AI Fallback for: ${text}`);
 
-const syncN8nWorkflow = async () => {
-    const db = getDb();
-    const webhookUrl = process.env.N8N_WEBHOOK_URL || db.settings.n8nWebhookUrl || 'http://localhost:5678/webhook/ai';
-    
-    let apiBase = webhookUrl.split('/webhook')[0];
-    if (!apiBase) apiBase = 'http://localhost:5678';
-
-    const workflowPath = path.join(__dirname, 'n8n_workflow.json');
-    if (!fs.existsSync(workflowPath)) {
-        return;
+    if (lower.includes('گزارش') || lower.includes('وضعیت') || lower.includes('کارتابل') || lower.includes('چک')) {
+        return { type: "tool_call", tool: "get_financial_summary", args: {} };
     }
 
-    const workflowJson = JSON.parse(fs.readFileSync(workflowPath, 'utf8'));
-    
-    const auth = Buffer.from('admin:password').toString('base64');
-    const headers = { 
-        'Authorization': `Basic ${auth}`, 
-        'Content-Type': 'application/json' 
-    };
+    if (lower.includes('ثبت') || lower.includes('پرداخت') || lower.includes('دستور')) {
+        const amountMatch = text.match(/(\d+)/); 
+        const amount = amountMatch ? parseInt(amountMatch[0]) : 0;
+        let payee = "نامشخص";
+        if (text.includes("به")) payee = text.split("به")[1].split(" ")[1]; 
+        return { type: "tool_call", tool: "register_payment_order", args: { payee: payee || "شخص ناشناس (آفلاین)", amount: amount || 1000000, description: text, company: "شرکت پیش‌فرض" } };
+    }
 
-    console.log(`>>> Starting n8n Sync to ${apiBase}...`);
-
-    let attempts = 0;
-    const maxAttempts = 120; // 4 mins
+    if (lower.includes('تایید') || lower.includes('اوکی')) {
+        const numMatch = text.match(/(\d+)/);
+        if (numMatch) return { type: "tool_call", tool: "manage_order", args: { trackingNumber: numMatch[0], action: 'approve' } };
+    }
     
-    const interval = setInterval(async () => {
-        attempts++;
-        if (attempts > maxAttempts) {
-            clearInterval(interval);
-            console.warn('>>> Giving up on n8n sync (n8n might be unreachable).');
-            return;
+    if (lower.includes('رد') || lower.includes('کنسل')) {
+        const numMatch = text.match(/(\d+)/);
+        if (numMatch) return { type: "tool_call", tool: "manage_order", args: { trackingNumber: numMatch[0], action: 'reject', reason: 'رد شده توسط دستور متنی' } };
+    }
+
+    return { type: "message", text: "من در حالت آفلاین هستم (بدون اینترنت یا کلید هوش مصنوعی). اما می‌توانم دستوراتی مثل 'گزارش بده' یا 'ثبت پرداخت مبلغ ۱۰۰۰۰۰' را انجام دهم." };
+};
+
+// ==========================================
+// GEMINI REQUEST LOGIC
+// ==========================================
+
+// Define Tools for Gemini
+const geminiTools = [
+    {
+      functionDeclarations: [
+        {
+          name: 'register_payment_order',
+          description: 'Register a new payment order or request',
+          parameters: {
+            type: 'OBJECT',
+            properties: {
+              payee: { type: 'STRING', description: 'Name of the person or company receiving payment' },
+              amount: { type: 'NUMBER', description: 'Amount in Rial (convert user input to number)' },
+              description: { type: 'STRING', description: 'Reason for payment or description' },
+              company: { type: 'STRING', description: 'Name of the paying company' }
+            },
+            required: ['payee', 'amount']
+          }
+        },
+        {
+          name: 'get_financial_summary',
+          description: 'Get a report of pending orders, status, or cartable',
+          parameters: { type: 'OBJECT', properties: {} }
+        },
+        {
+          name: 'manage_order',
+          description: 'Approve or Reject a payment order by tracking number',
+          parameters: {
+            type: 'OBJECT',
+            properties: {
+              trackingNumber: { type: 'STRING', description: 'The order tracking number' },
+              action: { type: 'STRING', description: 'approve or reject' },
+              reason: { type: 'STRING', description: 'Reason for rejection (if applicable)' }
+            },
+            required: ['trackingNumber', 'action']
+          }
+        },
+        {
+          name: 'search_trade_file',
+          description: 'Search for a trade/import file',
+          parameters: {
+            type: 'OBJECT',
+            properties: {
+              query: { type: 'STRING', description: 'File number, seller name, or goods name' }
+            },
+            required: ['query']
+          }
         }
-
-        try {
-            // 1. Check if n8n API is up
-            const listRes = await axios.get(`${apiBase}/api/v1/workflows`, { headers, timeout: 5000 });
-            const existing = listRes.data.data.find(w => w.name === workflowJson.name);
-            
-            let workflowId;
-            
-            if (existing) {
-                console.log('>>> Deleting old n8n workflow to ensure clean state...');
-                try {
-                    await axios.delete(`${apiBase}/api/v1/workflows/${existing.id}`, { headers });
-                } catch (delErr) {
-                    console.warn('>>> Failed to delete old workflow, trying to update...', delErr.message);
-                }
-            }
-
-            // Create New
-            console.log('>>> Creating new n8n workflow...');
-            const createRes = await axios.post(`${apiBase}/api/v1/workflows`, workflowJson, { headers });
-            workflowId = createRes.data.id;
-
-            // 2. Activate Workflow
-            if (workflowId) {
-                await axios.post(`${apiBase}/api/v1/workflows/${workflowId}/activate`, {}, { headers });
-                console.log('>>> ✅ n8n Workflow synced and ACTIVATED successfully.');
-            }
-            
-            clearInterval(interval);
-        } catch (e) {
-            if (attempts % 10 === 0) console.log(`... waiting for n8n (${attempts}/${maxAttempts})`);
-        }
-    }, 2000);
-};
-
-const checkN8nStatus = async () => {
-    try {
-        await axios.get('http://localhost:5678/healthz', { timeout: 1000 });
-        return true;
-    } catch (e) {
-        if (e.response && (e.response.status === 401 || e.response.status === 200)) return true;
-        return false;
+      ]
     }
-};
-
-const startN8nService = async () => {
-    if (process.env.N8N_WEBHOOK_URL) {
-        console.log('>>> Using external/docker n8n service defined in env.');
-        return;
-    }
-
-    const isRunning = await checkN8nStatus();
-    if (isRunning) {
-        console.log('>>> ⚡ n8n service is ALREADY RUNNING on port 5678. Skipping launch.');
-        return;
-    }
-
-    console.log('>>> Initializing Local AI Engine (n8n)...');
-    
-    // Explicitly pass environment variables to n8n, including OPENAI_API_KEY if present
-    const n8nEnv = {
-        ...process.env,
-        N8N_BASIC_AUTH_ACTIVE: 'true',
-        N8N_BASIC_AUTH_USER: 'admin',
-        N8N_BASIC_AUTH_PASSWORD: 'password',
-        N8N_PORT: '5678',
-        N8N_HOST: 'localhost',
-        N8N_DIAGNOSTICS_ENABLED: 'false',
-        N8N_PERSONALIZATION_ENABLED: 'false',
-        N8N_ENCRYPTION_KEY: 'payment-system-local-key',
-        N8N_USER_FOLDER: path.join(__dirname, 'n8n_data')
-    };
-
-    if (!fs.existsSync(path.join(__dirname, 'n8n_data'))) {
-        fs.mkdirSync(path.join(__dirname, 'n8n_data'), { recursive: true });
-    }
-
-    const isWin = process.platform === 'win32';
-    
-    const localBin = path.join(__dirname, 'node_modules', '.bin', isWin ? 'n8n.cmd' : 'n8n');
-    let command, args;
-
-    if (fs.existsSync(localBin)) {
-        console.log('>>> Found local n8n binary.');
-        command = localBin;
-        args = ['start'];
-    } else {
-        console.log('>>> Local binary not found. Falling back to npx (system cache).');
-        command = isWin ? 'npx.cmd' : 'npx';
-        args = ['n8n', 'start'];
-    }
-
-    try {
-        console.log(`>>> Executing: ${command} ${args.join(' ')}`);
-
-        n8nProcess = spawn(command, args, {
-            env: n8nEnv,
-            stdio: 'pipe', 
-            detached: false,
-            shell: isWin 
-        });
-
-        n8nProcess.stdout.on('data', (data) => {
-            const output = data.toString();
-            if (output.includes('Editor is now accessible')) {
-                console.log('>>> ✅ n8n is active and running locally on port 5678');
-            }
-        });
-
-        n8nProcess.stderr.on('data', (data) => {
-            if (data.toString().includes('crash') || data.toString().includes('Error')) {
-                // console.error('[n8n Error]', data.toString()); 
-            }
-        });
-
-        n8nProcess.on('error', (err) => {
-            console.warn('>>> Local AI Engine failed to start:', err.message);
-        });
-        
-    } catch (e) {
-        console.warn('>>> Could not spawn AI Engine.', e);
-    }
-};
-
-// ==========================================
-// N8N REQUEST LOGIC
-// ==========================================
+];
 
 async function processN8NRequest(user, messageText, audioData = null, audioMimeType = null, systemPrompt = null) {
-    const db = getDb();
-    const webhookUrl = process.env.N8N_WEBHOOK_URL || db.settings.n8nWebhookUrl || 'http://localhost:5678/webhook/ai';
-
-    try {
-        const payload = {
-            user: {
-                fullName: user.fullName,
-                role: user.role,
-                id: user.id
-            },
-            message: messageText,
-            systemPrompt: systemPrompt,
-            audio: audioData ? {
-                data: audioData, 
-                mimeType: audioMimeType
-            } : null,
-            timestamp: new Date().toISOString()
-        };
-
-        // CRITICAL: Explicitly set charset to utf-8
-        const response = await axios.post(webhookUrl, payload, { 
-            timeout: 180000, 
-            headers: { 
-                'Content-Type': 'application/json; charset=utf-8' 
+    // Priority 1: Gemini (Free & Fast)
+    if (geminiClient) {
+        try {
+            const model = "gemini-2.5-flash";
+            const systemInstruction = "You are a smart financial assistant for a company. Respond in Persian (Farsi). Be concise. Use tools when the user asks to perform an action (register, approve, report). Current User: " + user.fullName + " Role: " + user.role;
+            
+            let contents = [];
+            
+            // Handle Audio Input directly in Gemini
+            if (audioData) {
+                contents = [{
+                    role: "user",
+                    parts: [
+                        { inlineData: { mimeType: audioMimeType || 'audio/ogg', data: audioData } },
+                        { text: messageText || "Please listen to this audio and execute the command or answer." }
+                    ]
+                }];
+            } else {
+                contents = [{ role: "user", parts: [{ text: messageText }] }];
             }
-        });
-        
-        let data = response.data;
 
-        if (data === "" || data === null || data === undefined) {
-            console.warn(">>> n8n returned empty response.");
-            return "⛔ هوش مصنوعی پاسخ نداد. (ورک‌فلو پاسخ خالی فرستاد)";
-        }
-
-        if (data && (data.message === 'Workflow was started' || data === 'Workflow was started')) {
-            console.warn(">>> n8n returned 'Workflow was started'. Check Webhook Node configuration.");
-            return "⚠️ خطا: نود Webhook در n8n روی حالت پاسخ‌دهی فوری تنظیم شده است. لطفاً آن را به 'Respond Using Respond to Webhook Node' تغییر دهید.";
-        }
-
-        if (Array.isArray(data)) {
-            data = data[0];
-        }
-
-        if (typeof data === 'string') {
-            try {
-                const trimmed = data.trim();
-                if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
-                    data = JSON.parse(trimmed);
-                } else {
-                    return data;
+            const result = await geminiClient.models.generateContent({
+                model: model,
+                contents: contents,
+                tools: geminiTools,
+                config: {
+                    systemInstruction: systemPrompt || systemInstruction,
+                    temperature: 0.2, // Low temp for accurate tool use
                 }
-            } catch(e) {
-                return data;
+            });
+
+            // Handle Response
+            const response = result.response;
+            const functionCalls = response.functionCalls();
+            
+            if (functionCalls && functionCalls.length > 0) {
+                const call = functionCalls[0];
+                return handleToolExecution(call.name, call.args, user);
             }
-        }
-
-        if (data && typeof data === 'object') {
-            if (data.type === 'message') {
-                return data.text || "پیام خالی";
+            
+            if (response.text) {
+                // Check if the response text looks like JSON (sometimes Gemini outputs JSON string instead of tool call if instructed poorly, but tools usually override)
+                const txt = response.text;
+                if (txt.trim().startsWith('{') && txt.includes("recommendation")) {
+                    return JSON.parse(txt); // For analysis API
+                }
+                return txt;
             }
-            if (data.type === 'tool_call') {
-                return handleToolExecution(data.tool, data.args, user);
-            }
-            if (data.recommendation) {
-                return data;
-            }
-        }
 
-        if (data.text) return data.text;
-        if (data.reply) return data.reply;
-        
-        console.warn(">>> Unknown AI Response Format:", data);
-        return typeof data === 'object' ? JSON.stringify(data) : String(data);
-
-    } catch (error) {
-        console.error(`>>> AI Request Error: ${error.message}`);
-        
-        if (error.code === 'ECONNREFUSED') {
-            return "⚠️ خطا: سرور هوش مصنوعی (n8n) خاموش است یا در دسترس نیست.";
+        } catch (error) {
+            console.error(">>> Gemini Error:", error);
+            // Fallthrough to offline mode
         }
-        if (error.code === 'ECONNABORTED') {
-            return "⚠️ خطا: پاسخ‌دهی هوش مصنوعی بیش از حد طول کشید.";
-        }
-        
-        if (systemPrompt && systemPrompt.includes("JSON generator")) {
-            return null; 
-        }
-
-        const lowerMsg = (messageText || '').toLowerCase();
-        if (lowerMsg.includes('وضعیت') || lowerMsg.includes('گزارش') || lowerMsg.includes('کارتابل')) {
-            return handleToolExecution('get_financial_summary', {}, user);
-        }
-
-        return `⚠️ ارتباط با موتور هوشمند برقرار نیست.\nخطا: ${error.message}`;
     }
+
+    // Priority 2: Offline Fallback (If Gemini fails or no key)
+    const offlineResponse = processOfflineAI(user, messageText);
+    if (offlineResponse.type === 'tool_call') {
+        return handleToolExecution(offlineResponse.tool, offlineResponse.args, user);
+    }
+    return offlineResponse.text;
 }
 
 function handleToolExecution(toolName, args, user) {
@@ -419,10 +317,10 @@ function handleToolExecution(toolName, args, user) {
             db.orders.unshift(newOrder);
             saveDb(db);
             
+            // Notify Financial
             const financeUsers = db.users.filter(u => u.role === 'financial');
             financeUsers.forEach(fu => {
                 if(fu.phoneNumber) sendWhatsAppMessageInternal(fu.phoneNumber, `🔔 *دستور پرداخت جدید*\nشماره: ${trackingNum}\nمبلغ: ${Number(args.amount).toLocaleString('fa-IR')}\nدرخواست‌کننده: ${user.fullName}`);
-                if(fu.telegramChatId) sendTelegramMessageInternal(fu.telegramChatId, `🔔 دستور پرداخت جدید\nشماره: ${trackingNum}\nمبلغ: ${Number(args.amount).toLocaleString('fa-IR')}`);
             });
 
             return `دستور پرداخت با موفقیت ثبت شد.\nشماره: ${trackingNum}\nمبلغ: ${Number(args.amount).toLocaleString('fa-IR')} ریال\nگیرنده: ${args.payee}`;
@@ -433,58 +331,36 @@ function handleToolExecution(toolName, args, user) {
             let count = 0;
 
             if (user.role === 'admin' || user.role === 'financial') {
-                const pendingFinance = db.orders.filter(o => o.status === 'در انتظار بررسی مالی');
-                if (pendingFinance.length > 0) {
-                    reportText += `\n🔸 *منتظر تایید مالی:* ${pendingFinance.length} مورد\n`;
-                    pendingFinance.slice(0, 5).forEach(o => {
-                        reportText += `   - #${o.trackingNumber} | ${o.payee} | ${Number(o.totalAmount).toLocaleString()} ریال\n`;
-                    });
-                    count += pendingFinance.length;
+                const pending = db.orders.filter(o => o.status === 'در انتظار بررسی مالی');
+                if (pending.length > 0) {
+                    reportText += `\n🔸 *منتظر تایید مالی:* ${pending.length} مورد\n`;
+                    pending.slice(0, 5).forEach(o => reportText += `   - #${o.trackingNumber} | ${o.payee} | ${Number(o.totalAmount).toLocaleString()} \n`);
+                    count += pending.length;
                 }
             }
-
             if (user.role === 'admin' || user.role === 'manager') {
-                const pendingManager = db.orders.filter(o => o.status === 'تایید مالی / در انتظار مدیریت');
-                if (pendingManager.length > 0) {
-                    reportText += `\n🔸 *منتظر تایید مدیریت:* ${pendingManager.length} مورد\n`;
-                    pendingManager.slice(0, 5).forEach(o => {
-                        reportText += `   - #${o.trackingNumber} | ${o.payee} | ${Number(o.totalAmount).toLocaleString()} ریال\n`;
-                    });
-                    count += pendingManager.length;
+                const pending = db.orders.filter(o => o.status === 'تایید مالی / در انتظار مدیریت');
+                if (pending.length > 0) {
+                    reportText += `\n🔸 *منتظر تایید مدیریت:* ${pending.length} مورد\n`;
+                    pending.slice(0, 5).forEach(o => reportText += `   - #${o.trackingNumber} | ${o.payee} \n`);
+                    count += pending.length;
                 }
             }
-
             if (user.role === 'admin' || user.role === 'ceo') {
-                const pendingCeo = db.orders.filter(o => o.status === 'تایید مدیریت / در انتظار مدیرعامل');
-                if (pendingCeo.length > 0) {
-                    reportText += `\n🔸 *منتظر تایید مدیرعامل:* ${pendingCeo.length} مورد\n`;
-                    pendingCeo.slice(0, 5).forEach(o => {
-                        reportText += `   - #${o.trackingNumber} | ${o.payee} | ${Number(o.totalAmount).toLocaleString()} ریال\n`;
-                    });
-                    count += pendingCeo.length;
+                const pending = db.orders.filter(o => o.status === 'تایید مدیریت / در انتظار مدیرعامل');
+                if (pending.length > 0) {
+                    reportText += `\n🔸 *منتظر تایید مدیرعامل:* ${pending.length} مورد\n`;
+                    pending.slice(0, 5).forEach(o => reportText += `   - #${o.trackingNumber} | ${o.payee} \n`);
+                    count += pending.length;
                 }
             }
-
-            const myPending = db.orders.filter(o => o.requester === user.fullName && o.status !== 'تایید نهایی' && o.status !== 'رد شده');
-            if (myPending.length > 0) {
-                reportText += `\n🔹 *درخواست‌های جاری شما:* ${myPending.length} مورد\n`;
-                myPending.slice(0, 3).forEach(o => {
-                    reportText += `   - #${o.trackingNumber}: ${o.status}\n`;
-                });
-                count += myPending.length;
-            }
-
-            if (count === 0) {
-                reportText += "\n✅ کارتابل شما خالی است.";
-            } 
-
+            if (count === 0) reportText += "\n✅ کارتابل شما خالی است.";
             return reportText;
         }
 
         if (toolName === 'manage_order') {
             const { trackingNumber, action, reason } = args;
             const orderIndex = db.orders.findIndex(o => o.trackingNumber == trackingNumber);
-            
             if (orderIndex === -1) return `دستور پرداخت با شماره ${trackingNumber} یافت نشد.`;
             
             const order = db.orders[orderIndex];
@@ -494,50 +370,32 @@ function handleToolExecution(toolName, args, user) {
             if (action === 'reject') {
                 nextStatus = 'رد شده';
                 order.status = nextStatus;
-                order.rejectionReason = reason || 'رد شده توسط ربات';
+                order.rejectionReason = reason || 'رد شده توسط هوش مصنوعی';
                 order.rejectedBy = user.fullName;
                 successMessage = `❌ دستور #${trackingNumber} رد شد.`;
             } else {
-                if (order.status === 'در انتظار بررسی مالی' && (user.role === 'financial' || user.role === 'admin')) {
-                    nextStatus = 'تایید مالی / در انتظار مدیریت';
-                    order.approverFinancial = user.fullName;
-                } else if (order.status === 'تایید مالی / در انتظار مدیریت' && (user.role === 'manager' || user.role === 'admin')) {
-                    nextStatus = 'تایید مدیریت / در انتظار مدیرعامل';
-                    order.approverManager = user.fullName;
-                } else if (order.status === 'تایید مدیریت / در انتظار مدیرعامل' && (user.role === 'ceo' || user.role === 'admin')) {
-                    nextStatus = 'تایید نهایی';
-                    order.approverCeo = user.fullName;
-                } else {
-                    return `⛔ شما دسترسی لازم برای تایید این مرحله را ندارید یا وضعیت دستور (${order.status}) نیازی به تایید شما ندارد.`;
-                }
+                if (order.status === 'در انتظار بررسی مالی' && (user.role === 'financial' || user.role === 'admin')) nextStatus = 'تایید مالی / در انتظار مدیریت';
+                else if (order.status === 'تایید مالی / در انتظار مدیریت' && (user.role === 'manager' || user.role === 'admin')) nextStatus = 'تایید مدیریت / در انتظار مدیرعامل';
+                else if (order.status === 'تایید مدیریت / در انتظار مدیرعامل' && (user.role === 'ceo' || user.role === 'admin')) nextStatus = 'تایید نهایی';
+                else return `⛔ وضعیت دستور (${order.status}) نیازی به تایید شما ندارد.`;
                 
                 order.status = nextStatus;
-                successMessage = `✅ دستور #${trackingNumber} با موفقیت تایید شد.\nوضعیت جدید: ${nextStatus}`;
+                successMessage = `✅ دستور #${trackingNumber} تایید شد.\nوضعیت جدید: ${nextStatus}`;
             }
 
             order.updatedAt = Date.now();
             db.orders[orderIndex] = order;
             saveDb(db);
-            
             triggerNotifications(order, db);
-
             return successMessage;
         }
 
         if (toolName === 'search_trade_file') {
             const term = (args.query || '').toLowerCase();
-            const found = (db.tradeRecords || []).filter(r => 
-                r.fileNumber.includes(term) || 
-                r.goodsName.includes(term) || 
-                r.sellerName.includes(term)
-            ).slice(0, 3);
-            
-            if (found.length === 0) return "هیچ پرونده‌ای با این مشخصات یافت نشد.";
-            
+            const found = (db.tradeRecords || []).filter(r => r.fileNumber.includes(term) || r.goodsName.includes(term) || r.sellerName.includes(term)).slice(0, 3);
+            if (found.length === 0) return "هیچ پرونده‌ای یافت نشد.";
             let result = "📂 نتایج جستجو:\n";
-            found.forEach(f => {
-                result += `\n- پرونده: ${f.fileNumber}\n  کالا: ${f.goodsName}\n  وضعیت: ${f.status}\n`;
-            });
+            found.forEach(f => result += `\n- پرونده: ${f.fileNumber}\n  کالا: ${f.goodsName}\n  وضعیت: ${f.status}\n`);
             return result;
         }
 
@@ -552,84 +410,47 @@ function triggerNotifications(order, db) {
     const newStatus = order.status;
     const tracking = order.trackingNumber;
     const amount = Number(order.totalAmount).toLocaleString('fa-IR');
-    
     let targetRole = null;
     let msg = '';
 
-    if (newStatus === 'تایید مالی / در انتظار مدیریت') {
-        targetRole = 'manager';
-        msg = `🔔 *کارتابل شما (مدیریت)*\nدستور پرداخت #${tracking} توسط مالی تایید شد و منتظر تایید شماست.\nمبلغ: ${amount} ریال`;
-    } else if (newStatus === 'تایید مدیریت / در انتظار مدیرعامل') {
-        targetRole = 'ceo';
-        msg = `🔔 *کارتابل شما (مدیرعامل)*\nدستور پرداخت #${tracking} توسط مدیریت تایید شد و منتظر تایید نهایی شماست.\nمبلغ: ${amount} ریال`;
-    } else if (newStatus === 'تایید نهایی') {
-        targetRole = 'financial'; 
-        msg = `✅ *دستور پرداخت نهایی شد*\nدستور #${tracking} تایید نهایی شد. لطفا نسبت به پرداخت اقدام کنید.\nمبلغ: ${amount} ریال`;
-        
-        const requesterUser = db.users.find(u => u.fullName === order.requester);
-        if (requesterUser) {
-            if(requesterUser.phoneNumber) sendWhatsAppMessageInternal(requesterUser.phoneNumber, `✅ *درخواست شما تایید شد*\nدستور پرداخت #${tracking} تایید نهایی شد.`);
-            if(requesterUser.telegramChatId) sendTelegramMessageInternal(requesterUser.telegramChatId, `✅ درخواست شما (#${tracking}) تایید نهایی شد.`);
-        }
-    } else if (newStatus === 'رد شده') {
-        const requesterUser = db.users.find(u => u.fullName === order.requester);
-        if (requesterUser) {
-            const txt = `❌ *درخواست رد شد*\nدستور پرداخت #${tracking} رد شد.\nدلیل: ${order.rejectionReason || 'نامشخص'}`;
-            if(requesterUser.phoneNumber) sendWhatsAppMessageInternal(requesterUser.phoneNumber, txt);
-            if(requesterUser.telegramChatId) sendTelegramMessageInternal(requesterUser.telegramChatId, txt);
-        }
-    }
+    if (newStatus === 'تایید مالی / در انتظار مدیریت') { targetRole = 'manager'; msg = `🔔 *کارتابل شما (مدیریت)*\nدستور #${tracking} توسط مالی تایید شد.`; }
+    else if (newStatus === 'تایید مدیریت / در انتظار مدیرعامل') { targetRole = 'ceo'; msg = `🔔 *کارتابل شما (مدیرعامل)*\nدستور #${tracking} توسط مدیریت تایید شد.`; }
+    else if (newStatus === 'تایید نهایی') { targetRole = 'financial'; msg = `✅ *دستور نهایی شد*\nدستور #${tracking} تایید نهایی شد.`; }
 
     if (targetRole && msg) {
         const targets = db.users.filter(u => u.role === targetRole || u.role === 'admin');
-        targets.forEach(u => {
-            if (u.phoneNumber) sendWhatsAppMessageInternal(u.phoneNumber, msg);
-            if (u.telegramChatId) sendTelegramMessageInternal(u.telegramChatId, msg);
-        });
+        targets.forEach(u => { if (u.phoneNumber) sendWhatsAppMessageInternal(u.phoneNumber, msg); });
     }
 }
 
 app.post('/api/analyze-payment', async (req, res) => {
     const { amount, date, company } = req.body;
     
-    const prompt = `Analyze: Amount ${amount}, Date ${date}, Company ${company}. JSON: {recommendation, score, reasons}`;
-    const aiResponse = await processN8NRequest(
+    // Use Gemini JSON Mode
+    const prompt = `Analyze this payment request: Amount ${amount}, Date ${date}, Company ${company}. Return a JSON object with keys: recommendation (string), score (number 0-100), reasons (array of strings).`;
+    
+    const response = await processN8NRequest(
         { fullName: 'Analyzer', role: 'system', id: 'sys' }, 
-        prompt, null, null, "You are a JSON generator. Output valid JSON only."
+        prompt, null, null, "You are a financial analysis engine. Output ONLY valid JSON."
     );
 
-    if (aiResponse && typeof aiResponse === 'object' && aiResponse.recommendation) {
-        return res.json({ ...aiResponse, analysisId: Date.now() });
+    if (response && typeof response === 'object' && response.recommendation) {
+        return res.json({ ...response, analysisId: Date.now() });
     }
 
+    // Fallback Logic
     console.log("Using fallback analysis logic.");
     const amountNum = Number(amount);
     let score = 85;
     let reasons = [];
     let recommendation = "پرداخت بلامانع";
 
-    if (amountNum > 5000000000) { 
-        score -= 25; 
-        reasons.push("مبلغ کلان است، نیاز به بررسی نقدینگی."); 
-        recommendation = "احتیاط";
-    } else if (amountNum > 1000000000) {
-        score -= 10;
-        reasons.push("مبلغ قابل توجه است.");
-    }
-
-    const d = new Date(date);
-    const day = d.getDate();
-    if (day > 25) {
-        reasons.push("ترافیک پرداخت آخر ماه.");
-        score -= 5;
-    }
-
-    if (company && company.includes("بازرگانی")) {
-        reasons.push("اولویت پرداخت‌های بازرگانی بالاست.");
-        score += 5;
-    }
-
-    if (reasons.length === 0) reasons.push("شرایط نرمال ارزیابی شد.");
+    if (amountNum > 5000000000) { score -= 25; reasons.push("مبلغ کلان است."); recommendation = "احتیاط"; }
+    else if (amountNum > 1000000000) { score -= 10; reasons.push("مبلغ قابل توجه است."); }
+    
+    if (new Date(date).getDate() > 25) { reasons.push("ترافیک پرداخت آخر ماه."); score -= 5; }
+    if (company && company.includes("بازرگانی")) { reasons.push("اولویت پرداخت‌های بازرگانی."); score += 5; }
+    if (reasons.length === 0) reasons.push("شرایط نرمال است.");
 
     res.json({
         recommendation,
@@ -670,28 +491,18 @@ const initTelegram = async () => {
                         const response = await axios.get(fileLink, { responseType: 'arraybuffer' });
                         audioData = Buffer.from(response.data).toString('base64');
                     } catch (e) {
-                        telegramBot.sendMessage(chatId, "خطا در پردازش صوت.");
+                        telegramBot.sendMessage(chatId, "خطا در دانلود صوت.");
                         return;
                     }
                 }
 
                 if (messageText || audioData) {
                     const reply = await processN8NRequest(user, messageText, audioData);
-                    
-                    if (reply && typeof reply === 'string' && reply.trim() !== '') {
-                        telegramBot.sendMessage(chatId, reply);
-                    } else if (typeof reply === 'object') {
-                        telegramBot.sendMessage(chatId, JSON.stringify(reply, null, 2));
-                    }
+                    if (reply) telegramBot.sendMessage(chatId, typeof reply === 'string' ? reply : JSON.stringify(reply));
                 }
             });
-            
-            telegramBot.on('polling_error', (e) => console.error("TG Poll Error:", e.code));
-            telegramBot.on('error', (e) => console.error("TG Error:", e.message));
         }
-    } catch (e) {
-        console.warn('Telegram Bot Init Failed:', e.message);
-    }
+    } catch (e) { console.warn('Telegram Bot Error:', e.message); }
 };
 
 const initWhatsApp = async () => {
@@ -745,7 +556,6 @@ const initWhatsApp = async () => {
 
             let messageText = msg.body;
             let audioData = null;
-            let audioMimeType = null;
 
             if (msg.hasMedia) {
                 try {
@@ -753,20 +563,16 @@ const initWhatsApp = async () => {
                     if (media.mimetype.includes('audio') || media.mimetype.includes('ogg')) {
                         console.log('>>> Voice message received from', user.fullName);
                         audioData = media.data; 
-                        audioMimeType = media.mimetype;
                     }
                 } catch (err) {
                     console.error('Failed to download media:', err);
-                    msg.reply("خطا در دانلود پیام صوتی.");
                     return;
                 }
             }
 
             if (messageText || audioData) {
-                const reply = await processN8NRequest(user, messageText, audioData, audioMimeType);
-                if (reply) {
-                    msg.reply(typeof reply === 'string' ? reply : JSON.stringify(reply));
-                }
+                const reply = await processN8NRequest(user, messageText, audioData);
+                if (reply) msg.reply(typeof reply === 'string' ? reply : JSON.stringify(reply));
             }
         });
 
@@ -781,8 +587,6 @@ const initWhatsApp = async () => {
 };
 
 setTimeout(() => {
-    startN8nService(); 
-    syncN8nWorkflow(); 
     initWhatsApp();
     initTelegram();
 }, 3000);
@@ -849,17 +653,12 @@ app.post('/api/orders', (req, res) => { const db = getDb(); const o = req.body; 
 app.put('/api/orders/:id', (req, res) => { 
     const db = getDb(); 
     const i = db.orders.findIndex(x=>x.id===req.params.id); 
-    
     if(i!==-1){ 
         const oldStatus = db.orders[i].status;
         db.orders[i] = req.body; 
         db.orders[i].updatedAt = Date.now(); 
         saveDb(db); 
-        
-        if (oldStatus !== db.orders[i].status) {
-            triggerNotifications(db.orders[i], db);
-        }
-
+        if (oldStatus !== db.orders[i].status) triggerNotifications(db.orders[i], db);
         res.json(db.orders); 
     } else {
         res.sendStatus(404);

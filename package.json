@@ -22,7 +22,8 @@
     "qrcode-terminal": "^0.12.0",
     "node-telegram-bot-api": "^0.66.0",
     "axios": "^1.6.0",
-    "n8n": "^1.0.0"
+    "n8n": "^1.0.0",
+    "@google/genai": "^0.1.1"
   },
   "devDependencies": {
     "@types/react": "^18.2.64",
