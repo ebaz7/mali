@@ -160,7 +160,7 @@ async function processUserCommand(user, text, isVoice = false) {
         }
     }
 
-    // 2. REPORT LOGIC (Simple & Fast)
+    // 2. REPORT LOGIC (Detailed & Complete)
     if (cleanText.includes('گزارش') || cleanText.includes('کارتابل')) {
         let pending = [];
         if (user.role === 'financial') pending = db.orders.filter(o => o.status === 'در انتظار بررسی مالی');
@@ -169,9 +169,37 @@ async function processUserCommand(user, text, isVoice = false) {
         else if (user.role === 'admin') pending = db.orders.filter(o => o.status !== 'تایید نهایی' && o.status !== 'رد شده');
 
         if (pending.length === 0) return "✅ کارتابل شما خالی است.";
-        let rep = `📊 *کارتابل جاری (${user.fullName})*:\n`;
-        pending.slice(0, 8).forEach(o => { rep += `\n🔹 *#${o.trackingNumber}* | ${Number(o.totalAmount).toLocaleString()} ریال\n   بابت: ${o.description}\n`; });
-        return rep + `\n💡 برای تایید، شماره دستور را ارسال کنید.`;
+        
+        let rep = `📊 *کارتابل تفصیلی (${user.fullName})*\n📅 زمان: ${new Date().toLocaleTimeString('fa-IR')}\n`;
+        
+        pending.forEach((o) => {
+            const total = Number(o.totalAmount).toLocaleString();
+            
+            rep += `\n➖➖➖➖➖➖➖➖➖➖➖\n`;
+            rep += `📄 *سند شماره #${o.trackingNumber}*\n`;
+            rep += `👤 *درخواست کننده:* ${o.requester}\n`;
+            rep += `📅 *تاریخ سند:* ${o.date}\n`;
+            rep += `👤 *ذینفع (گیرنده):* ${o.payee}\n`;
+            rep += `📝 *شرح:* ${o.description}\n`;
+            
+            // Payment Sources Details
+            if (o.paymentDetails && o.paymentDetails.length > 0) {
+                rep += `🏦 *منابع پرداخت:*`;
+                o.paymentDetails.forEach((d, idx) => {
+                    const bank = d.bankName || 'نامشخص';
+                    const method = d.method || 'حواله';
+                    const amt = Number(d.amount).toLocaleString();
+                    rep += `\n   ${idx+1}. ${bank} (${method}): ${amt}`;
+                });
+                rep += `\n`;
+            }
+            
+            if (o.payingCompany) rep += `🏢 *شرکت:* ${o.payingCompany}\n`;
+            rep += `💰 *مبلغ کل:* ${total} ریال\n`;
+        });
+        
+        rep += `\n💡 برای تایید هر مورد، *شماره دستور* را ارسال کنید.`;
+        return rep;
     }
 
     // 3. HELP LOGIC
@@ -190,7 +218,7 @@ _(در مثال دوم، سیستم دو ردیف پرداخت جداگانه ا
 مثال: "1001" یا "تایید 1001"
 
 3️⃣ *گزارش کارتابل*
-کلمه *"گزارش"* یا *"کارتابل"* را ارسال کنید تا لیست کارهای منتظر تایید خود را ببینید.
+کلمه *"گزارش"* یا *"کارتابل"* را ارسال کنید تا لیست کارهای منتظر تایید خود را با جزئیات کامل ببینید.
 
 4️⃣ *وضعیت سیستم*
 کلمه *"وضعیت"* را بفرستید تا وضعیت سرور چک شود.
@@ -343,19 +371,24 @@ async function transcribe(buffer, mimeType) {
     const ai = getGeminiClient();
     if (!ai) return null;
     try {
+        // Standardize MIME type for WhatsApp Audio
+        let cleanMime = mimeType.split(';')[0];
+        if (cleanMime === 'audio/ogg' || cleanMime === 'application/ogg') cleanMime = 'audio/ogg';
+        if (cleanMime === 'audio/mp4' || cleanMime === 'video/mp4') cleanMime = 'audio/mp3'; // Fallback mapping
+
         const result = await ai.models.generateContent({
             model: 'gemini-2.5-flash',
             contents: [{
                 role: 'user',
                 parts: [
-                    { inlineData: { mimeType: mimeType, data: buffer.toString('base64') } },
-                    { text: "Transcribe audio to Persian text exactly." }
+                    { inlineData: { mimeType: cleanMime, data: buffer.toString('base64') } },
+                    { text: "Transcribe this audio file to Persian (Farsi) text. Output ONLY the transcribed text." }
                 ]
             }]
         });
         return result.response.text().trim();
     } catch (e) {
-        console.error(">>> Transcribe Error:", e.message);
+        console.error(">>> Transcribe Error Details:", e.message, mimeType);
         return null;
     }
 }
@@ -452,7 +485,7 @@ const initWhatsApp = async () => {
                             // Feedback to user that voice was understood
                             await msg.reply(`🎤 متن تشخیص داده شده:\n"${text}"`);
                         } else {
-                            await msg.reply("متاسفانه نتوانستم صدا را تشخیص دهم.");
+                            await msg.reply("متاسفانه نتوانستم صدا را تشخیص دهم. لطفا واضح‌تر صحبت کنید یا تایپ کنید.");
                             return;
                         }
                     }
