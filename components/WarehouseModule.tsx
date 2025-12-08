@@ -211,7 +211,7 @@ const WarehouseModule: React.FC<Props> = ({ currentUser, settings }) => {
                     <div className="max-w-4xl mx-auto bg-green-50 p-6 rounded-2xl border border-green-200">
                         <h3 className="font-bold text-green-800 mb-4 flex items-center gap-2"><ArrowDownCircle/> ثبت ورود کالا (رسید انبار)</h3>
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-                            <div><label className="block text-xs font-bold mb-1">شرکت مالک</label><select className="w-full border rounded p-2 bg-white" value={selectedCompany} onChange={e=>setSelectedCompany(e.target.value)}><option value="">انتخاب...</option>{settings?.companyNames.map(c=><option key={c} value={c}>{c}</option>)}</select></div>
+                            <div><label className="block text-xs font-bold mb-1">شرکت مالک</label><select className="w-full border rounded p-2 bg-white" value={selectedCompany} onChange={e=>setSelectedCompany(e.target.value)}><option value="">انتخاب...</option>{(settings?.companyNames || []).map(c=><option key={c} value={c}>{c}</option>)}</select></div>
                             <div><label className="block text-xs font-bold mb-1">شماره پروفرما / سند</label><input className="w-full border rounded p-2 bg-white" value={proformaNumber} onChange={e=>setProformaNumber(e.target.value)}/></div>
                             <div><label className="block text-xs font-bold mb-1">تاریخ ورود</label><DateSelect/></div>
                         </div>
@@ -235,7 +235,7 @@ const WarehouseModule: React.FC<Props> = ({ currentUser, settings }) => {
                     <div className="max-w-4xl mx-auto bg-red-50 p-6 rounded-2xl border border-red-200">
                         <h3 className="font-bold text-red-800 mb-4 flex items-center gap-2"><ArrowUpCircle/> ثبت خروج کالا (صدور بیجک)</h3>
                         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
-                            <div><label className="block text-xs font-bold mb-1">شرکت فرستنده</label><select className="w-full border rounded p-2 bg-white" value={selectedCompany} onChange={e=>setSelectedCompany(e.target.value)}><option value="">انتخاب...</option>{settings?.companyNames.map(c=><option key={c} value={c}>{c}</option>)}</select></div>
+                            <div><label className="block text-xs font-bold mb-1">شرکت فرستنده</label><select className="w-full border rounded p-2 bg-white" value={selectedCompany} onChange={e=>setSelectedCompany(e.target.value)}><option value="">انتخاب...</option>{(settings?.companyNames || []).map(c=><option key={c} value={c}>{c}</option>)}</select></div>
                             <div><label className="block text-xs font-bold mb-1">شماره بیجک (سیستمی)</label><div className="bg-white p-2 rounded border font-mono text-center text-red-600 font-bold">{nextBijakNum > 0 ? nextBijakNum : '---'}</div></div>
                             <div><label className="block text-xs font-bold mb-1">تاریخ خروج</label><DateSelect/></div>
                             <div><label className="block text-xs font-bold mb-1">تحویل گیرنده</label><input className="w-full border rounded p-2 bg-white" value={recipientName} onChange={e=>setRecipientName(e.target.value)}/></div>
@@ -266,7 +266,7 @@ const WarehouseModule: React.FC<Props> = ({ currentUser, settings }) => {
                     <div className="space-y-6">
                         <div className="bg-white p-4 rounded-xl border shadow-sm flex flex-col md:flex-row gap-4 items-end">
                             <div className="flex-1 w-full"><label className="text-xs font-bold block mb-1">جستجو (کالا/گیرنده)</label><input className="w-full border rounded p-2 text-sm" value={reportSearch} onChange={e=>setReportSearch(e.target.value)} placeholder="..."/></div>
-                            <div className="w-full md:w-64"><label className="text-xs font-bold block mb-1">فیلتر شرکت</label><select className="w-full border rounded p-2 text-sm" value={reportFilterCompany} onChange={e=>setReportFilterCompany(e.target.value)}><option value="">همه</option>{settings?.companyNames.map(c=><option key={c} value={c}>{c}</option>)}</select></div>
+                            <div className="w-full md:w-64"><label className="text-xs font-bold block mb-1">فیلتر شرکت</label><select className="w-full border rounded p-2 text-sm" value={reportFilterCompany} onChange={e=>setReportFilterCompany(e.target.value)}><option value="">همه</option>{(settings?.companyNames || []).map(c=><option key={c} value={c}>{c}</option>)}</select></div>
                         </div>
 
                         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
