@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { User, SystemSettings, WarehouseItem, WarehouseTransaction, WarehouseTransactionItem } from '../types';
 import { getWarehouseItems, saveWarehouseItem, deleteWarehouseItem, getWarehouseTransactions, saveWarehouseTransaction, deleteWarehouseTransaction, getNextBijakNumber } from '../services/storageService';
 import { generateUUID, getCurrentShamsiDate, jalaliToGregorian, formatNumberString, deformatNumberString, formatDate } from '../constants';
-import { Package, Plus, Search, Trash2, ArrowDownCircle, ArrowUpCircle, FileText, Printer, BarChart3, Filter, X, Check, Eye } from 'lucide-react';
+import { Package, Plus, Search, Trash2, ArrowDownCircle, ArrowUpCircle, FileText, Printer, BarChart3, Filter, X, Check, Eye, Loader2 } from 'lucide-react';
 import PrintBijak from './PrintBijak';
 
 interface Props { currentUser: User; settings?: SystemSettings; }
@@ -46,8 +46,8 @@ const WarehouseModule: React.FC<Props> = ({ currentUser, settings }) => {
 
     const loadData = async () => {
         const [i, t] = await Promise.all([getWarehouseItems(), getWarehouseTransactions()]);
-        setItems(i);
-        setTransactions(t);
+        setItems(i || []);
+        setTransactions(t || []);
     };
 
     const updateNextBijak = async () => {
@@ -117,7 +117,7 @@ const WarehouseModule: React.FC<Props> = ({ currentUser, settings }) => {
             if(result) {
                 // Find the newly created tx to show print dialog immediately
                 // In mock env, it's at index 0
-                setViewBijak(result[0] || tx);
+                setViewBijak(result && result.length > 0 ? result[0] : tx);
             }
         } else {
             setProformaNumber('');
@@ -132,7 +132,7 @@ const WarehouseModule: React.FC<Props> = ({ currentUser, settings }) => {
         const bal: Record<string, {name: string, company: string, qty: number, weight: number}> = {};
         transactions.forEach(tx => {
             if(reportFilterCompany && tx.company !== reportFilterCompany) return;
-            tx.items.forEach(item => {
+            (tx.items || []).forEach(item => {
                 const key = `${item.itemId}_${tx.company}`;
                 if(!bal[key]) bal[key] = { name: item.itemName, company: tx.company, qty: 0, weight: 0 };
                 if(tx.type === 'IN') { bal[key].qty += item.quantity; bal[key].weight += item.weight; }
@@ -145,7 +145,7 @@ const WarehouseModule: React.FC<Props> = ({ currentUser, settings }) => {
     const getKardex = () => {
         return transactions.filter(t => 
             (!reportFilterCompany || t.company === reportFilterCompany) &&
-            (!reportSearch || t.items.some(i => i.itemName.includes(reportSearch)) || t.recipientName?.includes(reportSearch))
+            (!reportSearch || (t.items || []).some(i => i.itemName.includes(reportSearch)) || t.recipientName?.includes(reportSearch))
         ).sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime());
     };
 
@@ -157,6 +157,10 @@ const WarehouseModule: React.FC<Props> = ({ currentUser, settings }) => {
             <select className="border rounded p-1 text-sm" value={txDate.day} onChange={e=>setTxDate({...txDate, day:Number(e.target.value)})}>{Array.from({length:31},(_,i)=>i+1).map(d=><option key={d} value={d}>{d}</option>)}</select>
         </div>
     );
+
+    if (!settings) {
+        return <div className="flex items-center justify-center h-[50vh] text-gray-500"><Loader2 className="animate-spin mr-2"/> در حال بارگذاری اطلاعات...</div>;
+    }
 
     return (
         <div className="bg-white rounded-2xl shadow-sm border h-[calc(100vh-100px)] flex flex-col overflow-hidden animate-fade-in">
