@@ -119,9 +119,10 @@ const initTelegramBot = () => {
     return telegramBotInstance;
 };
 
-const performFullBackup = async (isAuto = false) => {
+const performFullBackup = async (isAuto = false, includeFiles = true) => {
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-    const backupFileName = `backup-${timestamp}.zip`;
+    const type = includeFiles ? 'full' : 'db-only';
+    const backupFileName = `backup-${type}-${timestamp}.zip`;
     const backupPath = path.join(BACKUPS_DIR, backupFileName);
     
     return new Promise((resolve, reject) => {
@@ -159,8 +160,8 @@ const performFullBackup = async (isAuto = false) => {
             archive.file(DB_FILE, { name: 'database.json' });
         }
         
-        // Add Uploads Directory
-        if (fs.existsSync(UPLOADS_DIR)) {
+        // Add Uploads Directory only if requested
+        if (includeFiles && fs.existsSync(UPLOADS_DIR)) {
             archive.directory(UPLOADS_DIR, 'uploads');
         }
 
@@ -172,7 +173,7 @@ const performFullBackup = async (isAuto = false) => {
 cron.schedule('30 23 * * *', async () => {
     console.log(">>> Starting Scheduled Full Backup...");
     try {
-        await performFullBackup(true);
+        await performFullBackup(true, true); // Auto backup includes files by default
     } catch (e) {
         console.error("!!! Backup Failed:", e);
     }
@@ -209,7 +210,9 @@ app.post('/api/ai-request', async (req, res) => { try { const { message } = req.
 // --- FULL BACKUP API ---
 app.get('/api/full-backup', async (req, res) => {
     try {
-        const backupPath = await performFullBackup(false);
+        // Query param to decide if files should be included. Default is true.
+        const includeFiles = req.query.includeFiles !== 'false';
+        const backupPath = await performFullBackup(false, includeFiles);
         res.download(backupPath);
     } catch (e) {
         res.status(500).send('Backup creation failed: ' + e.message);

@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { getSettings, saveSettings, restoreSystemData, uploadFile } from '../services/storageService';
 import { SystemSettings, UserRole, RolePermissions, Company, Contact } from '../types';
-import { Settings as SettingsIcon, Save, Loader2, Database, Bell, Plus, Trash2, Building, ShieldCheck, Landmark, Package, AppWindow, BellRing, BellOff, Send, Image as ImageIcon, Pencil, X, Check, MessageCircle, Calendar, Phone, LogOut, RefreshCw, Users, FolderSync, BrainCircuit, Smartphone, Link, Truck, MessageSquare, DownloadCloud, UploadCloud, Warehouse } from 'lucide-react';
+import { Settings as SettingsIcon, Save, Loader2, Database, Bell, Plus, Trash2, Building, ShieldCheck, Landmark, Package, AppWindow, BellRing, BellOff, Send, Image as ImageIcon, Pencil, X, Check, MessageCircle, Calendar, Phone, LogOut, RefreshCw, Users, FolderSync, BrainCircuit, Smartphone, Link, Truck, MessageSquare, DownloadCloud, UploadCloud, Warehouse, FileDigit } from 'lucide-react';
 import { apiCall } from '../services/apiService';
 import { requestNotificationPermission, setNotificationPreference, isNotificationEnabledInApp } from '../services/notificationService';
 import { generateUUID } from '../constants';
@@ -135,7 +135,10 @@ const Settings: React.FC = () => {
   const handleIconChange = async (e: React.ChangeEvent<HTMLInputElement>) => { const file = e.target.files?.[0]; if (!file) return; setUploadingIcon(true); const reader = new FileReader(); reader.onload = async (ev) => { try { const res = await uploadFile(file.name, ev.target?.result as string); setSettings({ ...settings, pwaIcon: res.url }); } catch (error) { alert('خطا'); } finally { setUploadingIcon(false); } }; reader.readAsDataURL(file); };
   const handleToggleNotifications = async () => { if (!isSecure) { alert("HTTPS لازم است"); return; } if (notificationsEnabled) { setNotificationPreference(false); setNotificationsEnabled(false); } else { const granted = await requestNotificationPermission(); if (granted) { setNotificationPreference(true); setNotificationsEnabled(true); } } };
 
-  const handleDownloadFullBackup = () => { window.location.href = '/api/full-backup'; };
+  const handleDownloadBackup = (includeFiles: boolean) => { 
+      window.location.href = `/api/full-backup?includeFiles=${includeFiles}`; 
+  };
+  
   const handleRestoreClick = () => { if (confirm('بازگردانی اطلاعات کامل (شامل عکس‌ها)؟ همه اطلاعات فعلی پاک می‌شود.')) fileInputRef.current?.click(); };
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => { const file = e.target.files?.[0]; if (!file) return; setRestoring(true); const reader = new FileReader(); reader.onload = async (ev) => { const base64 = ev.target?.result as string; try { const response = await apiCall<{success: boolean}>('/full-restore', 'POST', { fileData: base64 }); if (response.success) { alert('بازگردانی کامل با موفقیت انجام شد. سیستم رفرش می‌شود.'); window.location.reload(); } } catch (error) { alert('خطا در بازگردانی فایل Zip'); } finally { setRestoring(false); } }; reader.readAsDataURL(file); };
 
@@ -202,12 +205,20 @@ const Settings: React.FC = () => {
                         </div>
 
                         <div className="space-y-4">
-                            <h3 className="font-bold text-gray-800 border-b pb-2">پشتیبان‌گیری کامل (دیتابیس + فایل‌ها)</h3>
-                            <div className="flex gap-4">
-                                <button type="button" onClick={handleDownloadFullBackup} className="bg-indigo-600 text-white px-6 py-3 rounded-xl hover:bg-indigo-700 flex items-center gap-2 shadow-lg shadow-indigo-200 transition-transform hover:scale-105"><DownloadCloud size={20} /> دانلود بک‌آپ کامل (Zip)</button>
-                                <button type="button" onClick={handleRestoreClick} disabled={restoring} className="bg-gray-800 text-white px-6 py-3 rounded-xl hover:bg-gray-900 flex items-center gap-2 shadow-lg shadow-gray-300 transition-transform hover:scale-105 disabled:opacity-70">{restoring ? <Loader2 size={20} className="animate-spin"/> : <UploadCloud size={20} />} بازگردانی فایل Zip</button>
+                            <h3 className="font-bold text-gray-800 border-b pb-2">مدیریت داده‌ها و بک‌آپ</h3>
+                            <div className="flex flex-wrap gap-4 items-center">
+                                <div className="flex flex-col gap-2 w-full md:w-auto">
+                                    <button type="button" onClick={() => handleDownloadBackup(true)} className="bg-indigo-600 text-white px-6 py-3 rounded-xl hover:bg-indigo-700 flex items-center justify-center gap-2 shadow-lg shadow-indigo-200 transition-transform hover:scale-105">
+                                        <DownloadCloud size={20} /> دانلود بک‌آپ کامل (با فایل‌ها)
+                                    </button>
+                                    <button type="button" onClick={() => handleDownloadBackup(false)} className="bg-blue-500 text-white px-6 py-3 rounded-xl hover:bg-blue-600 flex items-center justify-center gap-2 shadow-lg shadow-blue-200 transition-transform hover:scale-105">
+                                        <FileDigit size={20} /> دانلود بک‌آپ سبک (فقط دیتابیس)
+                                    </button>
+                                </div>
+                                <button type="button" onClick={handleRestoreClick} disabled={restoring} className="bg-gray-800 text-white px-6 py-3 rounded-xl hover:bg-gray-900 flex items-center gap-2 shadow-lg shadow-gray-300 transition-transform hover:scale-105 disabled:opacity-70 h-[52px]">{restoring ? <Loader2 size={20} className="animate-spin"/> : <UploadCloud size={20} />} بازگردانی فایل Zip</button>
                                 <input type="file" ref={fileInputRef} className="hidden" accept=".zip" onChange={handleFileChange} />
                             </div>
+                            <p className="text-xs text-gray-500 mt-2">نکته: بک‌آپ کامل شامل تمامی تصاویر و فایل‌های آپلود شده است و ممکن است حجم بالایی داشته باشد. برای انتقال سریع اطلاعات متنی، از بک‌آپ سبک استفاده کنید.</p>
                         </div>
                     </div>
                 )}
