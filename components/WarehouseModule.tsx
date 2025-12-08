@@ -3,7 +3,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { User, SystemSettings, WarehouseItem, WarehouseTransaction, WarehouseTransactionItem } from '../types';
 import { getWarehouseItems, saveWarehouseItem, deleteWarehouseItem, getWarehouseTransactions, saveWarehouseTransaction, deleteWarehouseTransaction, getNextBijakNumber } from '../services/storageService';
 import { generateUUID, getCurrentShamsiDate, jalaliToGregorian, formatNumberString, deformatNumberString, formatDate } from '../constants';
-import { Package, Plus, Trash2, ArrowDownCircle, ArrowUpCircle, FileText, BarChart3, Eye, Loader2, AlertTriangle, Settings, ArrowLeftRight, Search } from 'lucide-react';
+import { Package, Plus, Trash2, ArrowDownCircle, ArrowUpCircle, FileText, BarChart3, Eye, Loader2, AlertTriangle, Settings, ArrowLeftRight, Search, FileClock } from 'lucide-react';
 import PrintBijak from './PrintBijak';
 
 interface Props { currentUser: User; settings?: SystemSettings; }
@@ -143,37 +143,16 @@ const WarehouseModule: React.FC<Props> = ({ currentUser, settings }) => {
     // --- REPORT CALCULATION: KARDEX ---
     const kardexData = useMemo(() => {
         let runningBalance = 0;
-        
-        // 1. Flatten transactions to item level movements
-        const movements: {
-            date: string;
-            txId: string;
-            type: 'IN' | 'OUT';
-            company: string;
-            docNumber: number;
-            desc: string;
-            quantity: number;
-            itemId: string;
-            itemName: string;
-        }[] = [];
-
+        const movements: any[] = [];
         transactions.forEach(tx => {
             if(reportFilterCompany && tx.company !== reportFilterCompany) return;
-            
             tx.items.forEach(item => {
                 if(reportFilterItem && item.itemId !== reportFilterItem) return;
-                
-                // Text Search Filter
                 if(reportSearch) {
                     const search = reportSearch.toLowerCase();
-                    const matches = 
-                        item.itemName.toLowerCase().includes(search) || 
-                        tx.number.toString().includes(search) ||
-                        (tx.recipientName && tx.recipientName.toLowerCase().includes(search)) ||
-                        (tx.proformaNumber && tx.proformaNumber.toLowerCase().includes(search));
+                    const matches = item.itemName.toLowerCase().includes(search) || tx.number.toString().includes(search) || (tx.recipientName && tx.recipientName.toLowerCase().includes(search)) || (tx.proformaNumber && tx.proformaNumber.toLowerCase().includes(search));
                     if(!matches) return;
                 }
-
                 movements.push({
                     date: tx.date,
                     txId: tx.id,
@@ -187,22 +166,18 @@ const WarehouseModule: React.FC<Props> = ({ currentUser, settings }) => {
                 });
             });
         });
-
-        // 2. Sort by Date Ascending for Calculation
         movements.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-
-        // 3. Calculate Balance
         const calculated = movements.map(m => {
-            if(m.type === 'IN') runningBalance += m.quantity;
-            else runningBalance -= m.quantity;
+            if(m.type === 'IN') runningBalance += m.quantity; else runningBalance -= m.quantity;
             return { ...m, balance: runningBalance };
         });
-
-        // 4. Reverse for Display (Newest First) if desired, OR keep chronological.
-        // Usually Kardex is chronological (top to bottom). Let's keep it chronological.
         return calculated.reverse(); 
-
     }, [transactions, reportFilterCompany, reportFilterItem, reportSearch]);
+
+    // Recent Bijaks for Dashboard
+    const recentBijaks = useMemo(() => {
+        return transactions.filter(t => t.type === 'OUT').slice(0, 5);
+    }, [transactions]);
 
     // 1. Loading State Check
     if (!settings || loadingData) {
@@ -216,20 +191,12 @@ const WarehouseModule: React.FC<Props> = ({ currentUser, settings }) => {
             <div className="flex flex-col items-center justify-center h-[60vh] text-center p-6 animate-fade-in">
                 <div className="bg-amber-100 p-4 rounded-full text-amber-600 mb-4 shadow-sm"><AlertTriangle size={48}/></div>
                 <h2 className="text-xl font-bold text-gray-800 mb-2">هنوز شرکتی تعریف نشده است</h2>
-                <p className="text-gray-600 max-w-md mb-6 leading-relaxed">
-                    برای استفاده از سیستم انبار (ثبت رسید و بیجک)، ابتدا باید نام شرکت‌ها را در بخش تنظیمات سیستم وارد کنید.
-                </p>
-                <div className="flex gap-2">
-                    <button onClick={() => window.location.hash = '#settings'} className="bg-blue-600 text-white px-6 py-3 rounded-xl font-bold flex items-center gap-2 hover:bg-blue-700 transition-colors shadow-lg">
-                        <Settings size={20}/>
-                        <span>رفتن به تنظیمات &gt; مدیریت شرکت‌ها</span>
-                    </button>
-                </div>
+                <p className="text-gray-600 max-w-md mb-6 leading-relaxed">برای استفاده از سیستم انبار (ثبت رسید و بیجک)، ابتدا باید نام شرکت‌ها را در بخش تنظیمات سیستم وارد کنید.</p>
+                <div className="flex gap-2"><button onClick={() => window.location.hash = '#settings'} className="bg-blue-600 text-white px-6 py-3 rounded-xl font-bold flex items-center gap-2 hover:bg-blue-700 transition-colors shadow-lg"><Settings size={20}/><span>رفتن به تنظیمات &gt; مدیریت شرکت‌ها</span></button></div>
             </div>
         );
     }
 
-    // Array Generators for Date
     const years = Array.from({length:10},(_,i)=>1400+i);
     const months = Array.from({length:12},(_,i)=>i+1);
     const days = Array.from({length:31},(_,i)=>i+1);
@@ -249,18 +216,46 @@ const WarehouseModule: React.FC<Props> = ({ currentUser, settings }) => {
                 
                 {/* DASHBOARD */}
                 {activeTab === 'dashboard' && (
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                        <div className="bg-blue-50 p-6 rounded-2xl border border-blue-100 flex items-center justify-between">
-                            <div><div className="text-3xl font-black text-blue-700">{items.length}</div><div className="text-sm text-blue-600 font-bold">تعداد کالاها</div></div>
-                            <Package size={40} className="text-blue-300"/>
+                    <div className="space-y-6">
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                            <div onClick={() => setActiveTab('items')} className="bg-blue-50 p-6 rounded-2xl border border-blue-100 flex items-center justify-between cursor-pointer hover:shadow-md transition-all">
+                                <div><div className="text-3xl font-black text-blue-700">{items.length}</div><div className="text-sm text-blue-600 font-bold">تعداد کالاها</div></div>
+                                <Package size={40} className="text-blue-300"/>
+                            </div>
+                            <div onClick={() => setActiveTab('entry')} className="bg-green-50 p-6 rounded-2xl border border-green-100 flex items-center justify-between cursor-pointer hover:shadow-md transition-all">
+                                <div><div className="text-3xl font-black text-green-700">{transactions.filter(t=>t.type==='IN').length}</div><div className="text-sm text-green-600 font-bold">تعداد رسیدها</div></div>
+                                <ArrowDownCircle size={40} className="text-green-300"/>
+                            </div>
+                            <div onClick={() => setActiveTab('exit')} className="bg-red-50 p-6 rounded-2xl border border-red-100 flex items-center justify-between cursor-pointer hover:shadow-md transition-all">
+                                <div><div className="text-3xl font-black text-red-700">{transactions.filter(t=>t.type==='OUT').length}</div><div className="text-sm text-red-600 font-bold">تعداد حواله‌ها (بیجک)</div></div>
+                                <ArrowUpCircle size={40} className="text-red-300"/>
+                            </div>
                         </div>
-                        <div className="bg-green-50 p-6 rounded-2xl border border-green-100 flex items-center justify-between">
-                            <div><div className="text-3xl font-black text-green-700">{transactions.filter(t=>t.type==='IN').length}</div><div className="text-sm text-green-600 font-bold">تعداد رسیدها</div></div>
-                            <ArrowDownCircle size={40} className="text-green-300"/>
-                        </div>
-                        <div className="bg-red-50 p-6 rounded-2xl border border-red-100 flex items-center justify-between">
-                            <div><div className="text-3xl font-black text-red-700">{transactions.filter(t=>t.type==='OUT').length}</div><div className="text-sm text-red-600 font-bold">تعداد حواله‌ها (بیجک)</div></div>
-                            <ArrowUpCircle size={40} className="text-red-300"/>
+
+                        {/* Recent Bijaks Archive */}
+                        <div className="bg-white border rounded-2xl overflow-hidden shadow-sm">
+                            <div className="bg-gray-50 p-4 border-b flex justify-between items-center">
+                                <h3 className="font-bold text-gray-800 flex items-center gap-2"><FileClock size={20}/> آخرین بیجک‌های صادر شده (بایگانی)</h3>
+                                <button onClick={() => setActiveTab('reports')} className="text-xs text-blue-600 hover:underline">مشاهده کامل</button>
+                            </div>
+                            <table className="w-full text-sm text-right">
+                                <thead className="bg-gray-100 text-gray-600"><tr><th className="p-3">شماره</th><th className="p-3">تاریخ</th><th className="p-3">شرکت</th><th className="p-3">گیرنده</th><th className="p-3">عملیات</th></tr></thead>
+                                <tbody className="divide-y">
+                                    {recentBijaks.length === 0 ? (
+                                        <tr><td colSpan={5} className="p-6 text-center text-gray-400">هیچ بیجکی صادر نشده است.</td></tr>
+                                    ) : (
+                                        recentBijaks.map(tx => (
+                                            <tr key={tx.id} className="hover:bg-gray-50">
+                                                <td className="p-3 font-mono font-bold text-red-600">#{tx.number}</td>
+                                                <td className="p-3 text-xs">{formatDate(tx.date)}</td>
+                                                <td className="p-3 text-xs font-bold">{tx.company}</td>
+                                                <td className="p-3 text-xs">{tx.recipientName}</td>
+                                                <td className="p-3"><button onClick={() => setViewBijak(tx)} className="text-blue-600 hover:text-blue-800 p-1 flex items-center gap-1"><Eye size={14}/> مشاهده</button></td>
+                                            </tr>
+                                        ))
+                                    )}
+                                </tbody>
+                            </table>
                         </div>
                     </div>
                 )}

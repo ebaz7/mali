@@ -47,7 +47,7 @@ app.use('/uploads', express.static(UPLOADS_DIR));
 // --- DATABASE HELPER ---
 const getDb = () => {
     if (!fs.existsSync(DB_FILE)) {
-        return { 
+        const initial = { 
             settings: { 
                 currentTrackingNumber: 1000, 
                 currentExitPermitNumber: 1000,
@@ -57,6 +57,8 @@ const getDb = () => {
             users: [{ id: '1', username: 'admin', password: '123', fullName: 'مدیر سیستم', role: 'admin', canManageTrade: true }], 
             messages: [], groups: [], tasks: [], tradeRecords: [] 
         };
+        fs.writeFileSync(DB_FILE, JSON.stringify(initial, null, 2));
+        return initial;
     }
     const db = JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
     // Ensure arrays exist
@@ -77,6 +79,14 @@ const findNextAvailableNumber = (arr, key, base) => {
     return next;
 };
 
+// --- STARTUP CHECKS ---
+const db = getDb();
+if (db.settings?.geminiApiKey) {
+    console.log(">>> Gemini AI: API Key detected. Ready.");
+} else {
+    console.log(">>> Gemini AI: No API Key found. AI features will be offline.");
+}
+
 // --- GLOBAL BOTS ---
 let whatsappClient = null;
 let MessageMedia = null; 
@@ -91,14 +101,13 @@ const initTelegramBot = () => {
         const db = getDb();
         const token = db.settings?.telegramBotToken;
         if (token && !telegramBotInstance) {
-            telegramBotInstance = new TelegramBot(token, { polling: false }); // Polling false prevents conflicts if multiple instances run
+            telegramBotInstance = new TelegramBot(token, { polling: false }); 
             console.log(">>> Telegram Bot Initialized ✅");
         }
     } catch (e) {
         console.error("Telegram Init Error:", e.message);
     }
 };
-// Initialize Telegram immediately
 initTelegramBot();
 
 // --- WHATSAPP INIT ---
@@ -147,7 +156,7 @@ const initWhatsApp = async () => {
         whatsappClient.on('disconnected', (reason) => {
             console.log('>>> WhatsApp Disconnected:', reason);
             isWhatsAppReady = false;
-            whatsappClient.initialize(); // Auto reconnect
+            setTimeout(() => { if(whatsappClient) whatsappClient.initialize(); }, 5000);
         });
 
         whatsappClient.initialize().catch(e => console.error("WA Init Fail", e.message));
@@ -155,10 +164,8 @@ const initWhatsApp = async () => {
         console.error("WA Module Error", e.message); 
     }
 };
-// Initialize WhatsApp with a slight delay to allow DB to load
 setTimeout(() => { initWhatsApp(); }, 3000);
 
-// --- HELPER FUNCTIONS ---
 const getTenDigits = (p) => { if (!p) return ''; const digits = p.replace(/\D/g, ''); return digits.length >= 10 ? digits.slice(-10) : digits; };
 
 // --- ROUTES ---
@@ -185,28 +192,21 @@ app.get('/api/whatsapp/status', (req, res) => res.json({ ready: isWhatsAppReady,
 app.post('/api/whatsapp/logout', async (req, res) => { if(whatsappClient) await whatsappClient.logout(); res.json({success:true}); });
 app.get('/api/whatsapp/groups', async (req, res) => { if(!whatsappClient || !isWhatsAppReady) return res.status(503).json({success:false}); const chats = await whatsappClient.getChats(); res.json({ success: true, groups: chats.filter(c => c.isGroup).map(c => ({ id: c.id._serialized, name: c.name })) }); });
 
-// 2. AI (Gemini) Route - RESTORED REAL LOGIC
+// 2. AI (Gemini) Route - CORRECTED FOR @google/genai
 app.post('/api/ai-request', async (req, res) => { 
     try { 
         const { message, audio, mimeType, username } = req.body;
         const db = getDb();
         const apiKey = db.settings?.geminiApiKey;
 
-        // If no API key, return offline message
         if (!apiKey) {
-            return res.json({ reply: "تنظیمات هوش مصنوعی انجام نشده است. لطفاً کلید API را در تنظیمات وارد کنید." });
+            return res.json({ reply: "تنظیمات هوش مصنوعی انجام نشده است. (کد 01: کلید یافت نشد)" });
         }
 
-        // Initialize Gemini
         const ai = new GoogleGenAI({ apiKey });
-        const model = ai.getGenerativeModel({ model: "gemini-2.5-flash" });
-
-        let promptText = message;
+        
+        // Prepare content parts
         let parts = [];
-
-        // If Audio is provided, we need to handle it.
-        // Currently, simplistic approach: Save audio, acknowledge.
-        // For full audio-to-text with Gemini 2.5 Flash, we need to upload the blob.
         if (audio) {
             // Save file
             const buffer = Buffer.from(audio, 'base64');
@@ -215,25 +215,25 @@ app.post('/api/ai-request', async (req, res) => {
             const filepath = path.join(AI_UPLOADS_DIR, filename);
             fs.writeFileSync(filepath, buffer);
             
-            // Construct a prompt that includes the audio data for Gemini
-            // Note: @google/genai SDK supports inlineData for images/audio
             parts.push({
                 inlineData: {
                     mimeType: mimeType || 'audio/webm',
                     data: audio
                 }
             });
-            parts.push({ text: "Please listen to this audio instruction in Persian and extract the intent. If it's a command to register a payment, extract amount, payee, and reason. If it's a chat, reply in Persian." });
+            parts.push({ text: "Please listen to this audio instruction in Persian. If it's a command to register a payment, extract amount, payee, and reason. If it's a chat, reply in Persian." });
         } else {
-            // Text only
             parts.push({ text: message || "Hello" });
         }
 
-        const result = await model.generateContent({
+        // Call Gemini using new SDK method
+        const response = await ai.models.generateContent({
+            model: "gemini-2.5-flash",
             contents: [{ role: 'user', parts }]
         });
 
-        const responseText = result.response.text();
+        // Correct way to get text
+        const responseText = response.text;
         res.json({ reply: responseText }); 
 
     } catch (e) { 
@@ -288,7 +288,6 @@ const handleAdd = (key, idField, numField, nextNumFn) => (req, res) => {
     const item = req.body; 
     item[idField] = item[idField] || Date.now().toString();
     item.updatedAt = Date.now();
-    // Only auto-number if it's a new item or 0
     if (numField && (!item[numField] || item[numField] === 0)) {
         item[numField] = nextNumFn(db);
     }
@@ -304,21 +303,19 @@ const handleUpdate = (key) => (req, res) => {
 };
 const handleDelete = (key) => (req, res) => { const db = getDb(); db[key] = db[key].filter(x => x.id !== req.params.id); saveDb(db); res.json(db[key]); };
 
-// Orders
+// Routes
 app.get('/api/orders', handleList('orders'));
 app.post('/api/orders', handleAdd('orders', 'id', 'trackingNumber', (db) => findNextAvailableNumber(db.orders, 'trackingNumber', db.settings.currentTrackingNumber || 1000)));
 app.put('/api/orders/:id', handleUpdate('orders'));
 app.delete('/api/orders/:id', handleDelete('orders'));
 app.get('/api/next-tracking-number', (req, res) => res.json({ nextTrackingNumber: findNextAvailableNumber(getDb().orders, 'trackingNumber', getDb().settings.currentTrackingNumber || 1000) }));
 
-// Exit Permits
 app.get('/api/exit-permits', handleList('exitPermits'));
 app.post('/api/exit-permits', handleAdd('exitPermits', 'id', 'permitNumber', (db) => findNextAvailableNumber(db.exitPermits, 'permitNumber', db.settings.currentExitPermitNumber || 1000)));
 app.put('/api/exit-permits/:id', handleUpdate('exitPermits'));
 app.delete('/api/exit-permits/:id', handleDelete('exitPermits'));
 app.get('/api/next-exit-permit-number', (req, res) => res.json({ nextNumber: findNextAvailableNumber(getDb().exitPermits, 'permitNumber', getDb().settings.currentExitPermitNumber || 1000) }));
 
-// Warehouse
 app.get('/api/warehouse/items', handleList('warehouseItems'));
 app.post('/api/warehouse/items', handleAdd('warehouseItems', 'id', null, null));
 app.delete('/api/warehouse/items/:id', handleDelete('warehouseItems'));
@@ -327,7 +324,6 @@ app.post('/api/warehouse/transactions', (req, res) => {
     const db = getDb();
     const tx = req.body;
     tx.updatedAt = Date.now();
-    // Handle Bijak Numbering if OUT
     if (tx.type === 'OUT') {
         const currentSeq = db.settings.warehouseSequences?.[tx.company] || 1000;
         const nextSeq = currentSeq + 1;
@@ -340,22 +336,15 @@ app.post('/api/warehouse/transactions', (req, res) => {
 });
 app.delete('/api/warehouse/transactions/:id', handleDelete('warehouseTransactions'));
 
-// Users & Auth
 app.get('/api/users', handleList('users'));
 app.post('/api/users', handleAdd('users', 'id', null, null));
 app.put('/api/users/:id', handleUpdate('users'));
 app.delete('/api/users/:id', handleDelete('users'));
 app.post('/api/login', (req, res) => { const u = getDb().users.find(x => x.username === req.body.username && x.password === req.body.password); u ? res.json(u) : res.status(401).send('Invalid'); });
 
-// Settings
 app.get('/api/settings', (req, res) => res.json(getDb().settings));
-app.post('/api/settings', (req, res) => { const db = getDb(); db.settings = req.body; saveDb(db); 
-    // Re-init bots if settings changed
-    if (req.body.telegramBotToken) initTelegramBot();
-    res.json(db.settings); 
-});
+app.post('/api/settings', (req, res) => { const db = getDb(); db.settings = req.body; saveDb(db); if (req.body.telegramBotToken) initTelegramBot(); res.json(db.settings); });
 
-// Chat & Trade
 app.get('/api/chat', handleList('messages'));
 app.post('/api/chat', handleAdd('messages', 'id', null, null));
 app.put('/api/chat/:id', handleUpdate('messages'));
@@ -365,17 +354,6 @@ app.post('/api/trade', handleAdd('tradeRecords', 'id', null, null));
 app.put('/api/trade/:id', handleUpdate('tradeRecords'));
 app.delete('/api/trade/:id', handleDelete('tradeRecords'));
 
-// Upload
-app.post('/api/upload', (req, res) => { 
-    try { 
-        const { fileName, fileData } = req.body; 
-        const n = Date.now() + '_' + fileName; 
-        fs.writeFileSync(path.join(UPLOADS_DIR, n), Buffer.from(fileData.split(',')[1], 'base64')); 
-        res.json({ url: `/uploads/${n}`, fileName: n }); 
-    } catch (e) { res.status(500).send('Err'); } 
-});
-
-// Groups & Tasks (Simple mock-ish implementation for persistence)
 app.get('/api/groups', handleList('groups'));
 app.post('/api/groups', handleAdd('groups', 'id', null, null));
 app.put('/api/groups/:id', handleUpdate('groups'));
@@ -384,6 +362,15 @@ app.get('/api/tasks', handleList('tasks'));
 app.post('/api/tasks', handleAdd('tasks', 'id', null, null));
 app.put('/api/tasks/:id', handleUpdate('tasks'));
 app.delete('/api/tasks/:id', handleDelete('tasks'));
+
+app.post('/api/upload', (req, res) => { 
+    try { 
+        const { fileName, fileData } = req.body; 
+        const n = Date.now() + '_' + fileName; 
+        fs.writeFileSync(path.join(UPLOADS_DIR, n), Buffer.from(fileData.split(',')[1], 'base64')); 
+        res.json({ url: `/uploads/${n}`, fileName: n }); 
+    } catch (e) { res.status(500).send('Err'); } 
+});
 
 app.get('/api/manifest', (req, res) => res.json({ "name": "PaySys", "short_name": "PaySys", "start_url": "/", "display": "standalone", "icons": [] }));
 app.get('*', (req, res) => { const p = path.join(__dirname, 'dist', 'index.html'); if(fs.existsSync(p)) res.sendFile(p); else res.send('Build first'); });

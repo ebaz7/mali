@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { WarehouseTransaction, SystemSettings, Contact, User } from '../types';
 import { formatCurrency, formatDate } from '../constants';
-import { X, Printer, Loader2, Share2, Eye, EyeOff, Search, Users, Smartphone } from 'lucide-react';
+import { X, Printer, Loader2, Share2, Eye, EyeOff, Search, Users, Smartphone, FileDown } from 'lucide-react';
 import { apiCall } from '../services/apiService';
 import { getUsers } from '../services/authService';
 
@@ -54,6 +54,44 @@ const PrintBijak: React.FC<PrintBijakProps> = ({ tx, onClose, settings }) => {
   const companyLogo = companyInfo?.logo || settings?.pwaIcon;
 
   const handlePrint = () => { window.print(); };
+
+  const handleDownloadPDF = async () => {
+      setProcessing(true);
+      const element = document.getElementById('print-area-bijak');
+      if (!element) { setProcessing(false); return; }
+
+      try {
+          // @ts-ignore
+          const canvas = await window.html2canvas(element, { 
+              scale: 2, 
+              backgroundColor: '#ffffff',
+              onclone: (doc) => {
+                  const el = doc.getElementById('print-area-bijak');
+                  if (el) el.style.direction = 'rtl';
+              }
+          });
+          const imgData = canvas.toDataURL('image/png');
+          
+          // @ts-ignore
+          const { jsPDF } = window.jspdf;
+          const pdf = new jsPDF({
+              orientation: 'portrait',
+              unit: 'mm',
+              format: 'a5'
+          });
+          
+          const pdfWidth = 148;
+          const pdfHeight = 210;
+          
+          pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
+          pdf.save(`Bijak_${tx.number}.pdf`);
+      } catch (e) {
+          alert('خطا در ایجاد PDF');
+          console.error(e);
+      } finally {
+          setProcessing(false);
+      }
+  };
 
   const generateAndSend = async (target: string, hidePrice: boolean, captionPrefix: string) => {
       setProcessing(true);
@@ -150,17 +188,21 @@ const PrintBijak: React.FC<PrintBijakProps> = ({ tx, onClose, settings }) => {
             
             <div className="flex items-center gap-2 text-xs text-gray-600 bg-gray-50 p-2 rounded">
                 <input type="checkbox" checked={hidePrices} onChange={e => setHidePrices(e.target.checked)} id="hidePrice"/>
-                <label htmlFor="hidePrice" className="cursor-pointer">مخفی کردن قیمت‌ها در پیش‌نمایش</label>
+                <label htmlFor="hidePrice" className="cursor-pointer">مخفی کردن قیمت‌ها</label>
             </div>
+
+            <button onClick={handleDownloadPDF} disabled={processing} className="bg-gray-100 text-gray-700 p-2 rounded text-sm hover:bg-gray-200 flex items-center justify-center gap-2">
+                {processing ? <Loader2 size={16} className="animate-spin"/> : <FileDown size={16}/>} دانلود PDF
+            </button>
 
             <button onClick={handlePrint} className="bg-blue-600 text-white p-2 rounded text-sm hover:bg-blue-700 flex items-center justify-center gap-2"><Printer size={16}/> چاپ</button>
             
             <div className="border-t pt-2 mt-1 space-y-2">
                 <button onClick={sendToWarehouse} disabled={processing} className="w-full bg-orange-100 text-orange-700 p-2 rounded text-xs hover:bg-orange-200 flex items-center justify-center gap-2 border border-orange-200">
-                    {processing ? <Loader2 size={14} className="animate-spin"/> : <Share2 size={14}/>} ارسال به انبار (بدون قیمت)
+                    {processing ? <Loader2 size={14} className="animate-spin"/> : <Share2 size={14}/>} ارسال به انبار
                 </button>
                 <button onClick={sendToManager} disabled={processing} className="w-full bg-green-100 text-green-700 p-2 rounded text-xs hover:bg-green-200 flex items-center justify-center gap-2 border border-green-200">
-                    {processing ? <Loader2 size={14} className="animate-spin"/> : <Share2 size={14}/>} ارسال به مدیر (با قیمت)
+                    {processing ? <Loader2 size={14} className="animate-spin"/> : <Share2 size={14}/>} ارسال به مدیر
                 </button>
                 <button onClick={sendToBoth} disabled={processing} className="w-full bg-gray-800 text-white p-2 rounded text-xs hover:bg-gray-900 flex items-center justify-center gap-2 shadow-lg">
                     {processing ? <Loader2 size={14} className="animate-spin"/> : <Share2 size={14}/>} ارسال اتوماتیک به هر دو
