@@ -268,8 +268,28 @@ const initTelegram = async () => {
         const TelegramBot = (await import('node-telegram-bot-api')).default;
         const db = getDb();
         if (db.settings.telegramBotToken) {
-            telegramBot = new TelegramBot(db.settings.telegramBotToken, { polling: true });
+            // Enhanced Polling Options to prevent ETIMEDOUT crashes
+            telegramBot = new TelegramBot(db.settings.telegramBotToken, { 
+                polling: {
+                    interval: 300,
+                    autoStart: true,
+                    params: {
+                        timeout: 10
+                    }
+                } 
+            });
+            
             console.log(">>> Telegram Bot Started");
+
+            // CRITICAL: Handle Polling Errors to stop crashes
+            telegramBot.on('polling_error', (error) => {
+                if (error.code === 'EFATAL' || error.code === 'ETIMEDOUT') {
+                    // Suppress log spam for connectivity issues
+                    if (Math.random() < 0.05) console.warn(">>> ⚠️ Telegram Connection Error (VPN Check Required)");
+                } else {
+                    console.error(">>> TG Poll Error:", error.code || error.message);
+                }
+            });
 
             telegramBot.on('message', async (msg) => {
                 const chatId = msg.chat.id.toString();
@@ -286,7 +306,7 @@ const initTelegram = async () => {
                         text = await transcribe(resp.data, msg.voice ? 'audio/ogg' : 'audio/mp3');
                         if (text) telegramBot.sendMessage(chatId, `🎤: "${text}"`);
                     } catch (e) {
-                        telegramBot.sendMessage(chatId, "خطا در پردازش صدا.");
+                        telegramBot.sendMessage(chatId, "خطا در پردازش صدا (اتصال اینترنت یا هوش مصنوعی را چک کنید).");
                     }
                 }
 
