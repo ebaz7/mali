@@ -73,7 +73,8 @@
           "id": "YOUR_OPENAI_CREDENTIAL_ID",
           "name": "OpenAI account"
         }
-      }
+      },
+      "continueOnFail": true
     },
     {
       "parameters": {
@@ -101,11 +102,12 @@
           "id": "YOUR_OPENAI_CREDENTIAL_ID",
           "name": "OpenAI account"
         }
-      }
+      },
+      "continueOnFail": true
     },
     {
       "parameters": {
-        "jsCode": "// Get raw content safely\nconst inputItem = $input.item.json;\nlet content = \"\";\n\n// OpenAI Node with jsonOutput: false returns message.content\nif (inputItem.message && inputItem.message.content) {\n  content = inputItem.message.content;\n} \n// Fallback if structure changes\nelse if (inputItem.text) {\n  content = inputItem.text; \n} else if (typeof inputItem === 'string') {\n  content = inputItem;\n} else {\n  // Try to find any string property or stringify\n  content = JSON.stringify(inputItem);\n}\n\n// Clean Markdown and Extract JSON\nlet cleanContent = content;\nif (typeof content === 'string') {\n  // Remove code blocks\n  cleanContent = content.replace(/```json\\s?|```/g, '').trim();\n  \n  // Find first { and last } to extract JSON if there is noise around it\n  const firstBrace = cleanContent.indexOf('{');\n  const lastBrace = cleanContent.lastIndexOf('}');\n  if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {\n      cleanContent = cleanContent.substring(firstBrace, lastBrace + 1);\n  }\n}\n\ntry {\n  const parsed = JSON.parse(cleanContent);\n  // Ensure it's not just a random string parsed as token\n  if (typeof parsed === 'object' && parsed !== null) {\n      return { json: parsed };\n  }\n  throw new Error(\"Not an object\");\n} catch (e) {\n  // Fallback: Return as a simple text message\n  return { \n    json: { \n      type: 'message', \n      text: content || \"خطا در دریافت پاسخ معتبر از هوش مصنوعی.\" \n    } \n  };\n}"
+        "jsCode": "// Get raw content safely\nconst inputItem = $input.item.json;\n\n// --- ERROR HANDLING ---\n// If previous node failed (continueOnFail), it typically returns validation errors or error objects\nif (inputItem.error || ($input.item.error)) {\n    const err = inputItem.error || $input.item.error;\n    return { \n        json: { \n            type: 'message', \n            text: `⚠️ خطا در هوش مصنوعی: ${typeof err === 'string' ? err : err.message || 'Unknown Error'}. لطفا اعتبارنامه OpenAI را در n8n بررسی کنید.` \n        } \n    };\n}\n\nlet content = \"\";\n\n// OpenAI Node with jsonOutput: false returns message.content\nif (inputItem.message && inputItem.message.content) {\n  content = inputItem.message.content;\n} \n// Fallback if structure changes\nelse if (inputItem.text) {\n  content = inputItem.text; \n} else if (typeof inputItem === 'string') {\n  content = inputItem;\n} else {\n  // Try to find any string property or stringify\n  content = JSON.stringify(inputItem);\n}\n\n// Clean Markdown and Extract JSON\nlet cleanContent = content;\nif (typeof content === 'string') {\n  // Remove code blocks\n  cleanContent = content.replace(/```json\\s?|```/g, '').trim();\n  \n  // Find first { and last } to extract JSON if there is noise around it\n  const firstBrace = cleanContent.indexOf('{');\n  const lastBrace = cleanContent.lastIndexOf('}');\n  if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {\n      cleanContent = cleanContent.substring(firstBrace, lastBrace + 1);\n  }\n}\n\ntry {\n  const parsed = JSON.parse(cleanContent);\n  // Ensure it's not just a random string parsed as token\n  if (typeof parsed === 'object' && parsed !== null) {\n      return { json: parsed };\n  }\n  throw new Error(\"Not an object\");\n} catch (e) {\n  // Fallback: Return as a simple text message\n  return { \n    json: { \n      type: 'message', \n      text: content || \"خطا در دریافت پاسخ معتبر از هوش مصنوعی.\" \n    } \n  };\n}"
       },
       "id": "sanitize-output",
       "name": "Sanitize JSON",

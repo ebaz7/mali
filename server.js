@@ -157,7 +157,7 @@ const syncN8nWorkflow = async () => {
     console.log(`>>> Starting n8n Sync to ${apiBase}...`);
 
     let attempts = 0;
-    const maxAttempts = 60; // Wait longer for n8n to fully boot
+    const maxAttempts = 120; // Increased to 120 (4 mins) to wait for n8n to fully boot
     
     const interval = setInterval(async () => {
         attempts++;
@@ -169,7 +169,7 @@ const syncN8nWorkflow = async () => {
 
         try {
             // 1. Check if n8n API is up
-            const listRes = await axios.get(`${apiBase}/api/v1/workflows`, { headers, timeout: 2000 });
+            const listRes = await axios.get(`${apiBase}/api/v1/workflows`, { headers, timeout: 5000 });
             const existing = listRes.data.data.find(w => w.name === workflowJson.name);
             
             let workflowId;
@@ -198,6 +198,7 @@ const syncN8nWorkflow = async () => {
             clearInterval(interval);
         } catch (e) {
             // Silent error logging while waiting for startup
+            if (attempts % 10 === 0) console.log(`... waiting for n8n (${attempts}/${maxAttempts})`);
         }
     }, 2000);
 };
@@ -769,23 +770,13 @@ const initWhatsApp = async () => {
             return null;
         };
 
-        const execPath = getBrowserPath();
-        const puppeteerConfig = {
-            headless: true,
-            args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu']
-        };
-        
-        // Only set executablePath if found, otherwise let puppeteer use bundled
-        if (execPath) {
-            // @ts-ignore
-            puppeteerConfig.executablePath = execPath;
-        } else {
-            console.log(">>> Chrome not found locally, using bundled Chromium.");
-        }
-
         whatsappClient = new Client({
             authStrategy: new LocalAuth({ dataPath: WAUTH_DIR }),
-            puppeteer: puppeteerConfig
+            puppeteer: { 
+                headless: true, 
+                executablePath: getBrowserPath(),
+                args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu'] 
+            }
         });
 
         whatsappClient.on('qr', (qr) => {
