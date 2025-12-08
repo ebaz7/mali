@@ -2,13 +2,13 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { getSettings, saveSettings, restoreSystemData, uploadFile } from '../services/storageService';
 import { SystemSettings, UserRole, RolePermissions, Company, Contact } from '../types';
-import { Settings as SettingsIcon, Save, Loader2, Database, Bell, Plus, Trash2, Building, ShieldCheck, Landmark, Package, AppWindow, BellRing, BellOff, Send, Image as ImageIcon, Pencil, X, Check, MessageCircle, Calendar, Phone, LogOut, RefreshCw, Users, FolderSync, BrainCircuit, Smartphone, Link, Truck, MessageSquare, DownloadCloud, UploadCloud } from 'lucide-react';
+import { Settings as SettingsIcon, Save, Loader2, Database, Bell, Plus, Trash2, Building, ShieldCheck, Landmark, Package, AppWindow, BellRing, BellOff, Send, Image as ImageIcon, Pencil, X, Check, MessageCircle, Calendar, Phone, LogOut, RefreshCw, Users, FolderSync, BrainCircuit, Smartphone, Link, Truck, MessageSquare, DownloadCloud, UploadCloud, Warehouse } from 'lucide-react';
 import { apiCall } from '../services/apiService';
 import { requestNotificationPermission, setNotificationPreference, isNotificationEnabledInApp } from '../services/notificationService';
 import { generateUUID } from '../constants';
 
 const Settings: React.FC = () => {
-  const [activeCategory, setActiveCategory] = useState<'system' | 'data' | 'integrations' | 'whatsapp' | 'permissions'>('system');
+  const [activeCategory, setActiveCategory] = useState<'system' | 'data' | 'integrations' | 'whatsapp' | 'permissions' | 'warehouse'>('system');
   const [settings, setSettings] = useState<SystemSettings>({ 
       currentTrackingNumber: 1000, 
       currentExitPermitNumber: 1000, 
@@ -26,13 +26,15 @@ const Settings: React.FC = () => {
       smsSenderNumber: '', 
       googleCalendarId: '', 
       whatsappNumber: '', 
-      geminiApiKey: '' 
+      geminiApiKey: '',
+      warehouseSequences: {},
+      defaultWarehouseGroup: '',
+      defaultSalesManager: ''
   });
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
   const [restoring, setRestoring] = useState(false);
   
-  // ... (Keep existing state variables for Company, WA, Lists, etc.) ...
   const [newCompanyName, setNewCompanyName] = useState('');
   const [newCompanyLogo, setNewCompanyLogo] = useState('');
   const [editingCompanyId, setEditingCompanyId] = useState<string | null>(null);
@@ -67,6 +69,7 @@ const Settings: React.FC = () => {
           if (safeData.companyNames?.length > 0 && safeData.companies.length === 0) {
               safeData.companies = safeData.companyNames.map(name => ({ id: generateUUID(), name }));
           }
+          if(!safeData.warehouseSequences) safeData.warehouseSequences = {};
           setSettings(safeData); 
       } catch (e) { console.error("Failed to load settings"); } 
   };
@@ -118,7 +121,6 @@ const Settings: React.FC = () => {
       } catch (e) { setMessage('خطا ❌'); } finally { setLoading(false); } 
   };
 
-  // Contacts & Companies & Lists Logic (Kept same)
   const handleAddContact = () => { if (!contactName.trim() || !contactNumber.trim()) return; const newContact: Contact = { id: generateUUID(), name: contactName.trim(), number: contactNumber.trim(), isGroup: isGroupContact }; setSettings({ ...settings, savedContacts: [...(settings.savedContacts || []), newContact] }); setContactName(''); setContactNumber(''); setIsGroupContact(false); };
   const handleDeleteContact = (id: string) => { setSettings({ ...settings, savedContacts: (settings.savedContacts || []).filter(c => c.id !== id) }); };
   const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => { const file = e.target.files?.[0]; if (!file) return; setIsUploadingLogo(true); const reader = new FileReader(); reader.onload = async (ev) => { try { const result = await uploadFile(file.name, ev.target?.result as string); setNewCompanyLogo(result.url); } catch (error) { alert('خطا در آپلود'); } finally { setIsUploadingLogo(false); } }; reader.readAsDataURL(file); };
@@ -133,36 +135,9 @@ const Settings: React.FC = () => {
   const handleIconChange = async (e: React.ChangeEvent<HTMLInputElement>) => { const file = e.target.files?.[0]; if (!file) return; setUploadingIcon(true); const reader = new FileReader(); reader.onload = async (ev) => { try { const res = await uploadFile(file.name, ev.target?.result as string); setSettings({ ...settings, pwaIcon: res.url }); } catch (error) { alert('خطا'); } finally { setUploadingIcon(false); } }; reader.readAsDataURL(file); };
   const handleToggleNotifications = async () => { if (!isSecure) { alert("HTTPS لازم است"); return; } if (notificationsEnabled) { setNotificationPreference(false); setNotificationsEnabled(false); } else { const granted = await requestNotificationPermission(); if (granted) { setNotificationPreference(true); setNotificationsEnabled(true); } } };
 
-  // --- NEW BACKUP & RESTORE LOGIC ---
-  const handleDownloadFullBackup = () => {
-      // Direct download link to the new endpoint
-      window.location.href = '/api/full-backup';
-  };
-
+  const handleDownloadFullBackup = () => { window.location.href = '/api/full-backup'; };
   const handleRestoreClick = () => { if (confirm('بازگردانی اطلاعات کامل (شامل عکس‌ها)؟ همه اطلاعات فعلی پاک می‌شود.')) fileInputRef.current?.click(); };
-  
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => { 
-      const file = e.target.files?.[0]; 
-      if (!file) return; 
-      
-      setRestoring(true);
-      const reader = new FileReader(); 
-      reader.onload = async (ev) => { 
-          const base64 = ev.target?.result as string; 
-          try { 
-              const response = await apiCall<{success: boolean}>('/full-restore', 'POST', { fileData: base64 }); 
-              if (response.success) {
-                  alert('بازگردانی کامل با موفقیت انجام شد. سیستم رفرش می‌شود.'); 
-                  window.location.reload(); 
-              }
-          } catch (error) { 
-              alert('خطا در بازگردانی فایل Zip'); 
-          } finally {
-              setRestoring(false);
-          }
-      }; 
-      reader.readAsDataURL(file); 
-  };
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => { const file = e.target.files?.[0]; if (!file) return; setRestoring(true); const reader = new FileReader(); reader.onload = async (ev) => { const base64 = ev.target?.result as string; try { const response = await apiCall<{success: boolean}>('/full-restore', 'POST', { fileData: base64 }); if (response.success) { alert('بازگردانی کامل با موفقیت انجام شد. سیستم رفرش می‌شود.'); window.location.reload(); } } catch (error) { alert('خطا در بازگردانی فایل Zip'); } finally { setRestoring(false); } }; reader.readAsDataURL(file); };
 
   const roles = [ { id: UserRole.USER, label: 'کاربر عادی' }, { id: UserRole.FINANCIAL, label: 'مدیر مالی' }, { id: UserRole.MANAGER, label: 'مدیر داخلی' }, { id: UserRole.CEO, label: 'مدیر عامل' }, { id: UserRole.SALES_MANAGER, label: 'مدیر فروش' }, { id: UserRole.FACTORY_MANAGER, label: 'مدیر کارخانه' }, { id: UserRole.ADMIN, label: 'مدیر سیستم' }, ];
   const permissionsList = [ 
@@ -180,25 +155,26 @@ const Settings: React.FC = () => {
       { id: 'canManageSettings', label: 'دسترسی به تنظیمات سیستم' },
       { id: 'canCreateExitPermit', label: 'ثبت درخواست خروج بار' },
       { id: 'canApproveExitCeo', label: 'تایید خروج بار (مدیرعامل)' },
-      { id: 'canApproveExitFactory', label: 'تایید خروج بار (کارخانه)' }
+      { id: 'canApproveExitFactory', label: 'تایید خروج بار (کارخانه)' },
+      { id: 'canManageWarehouse', label: 'مدیریت انبار (ورود/خروج)' },
+      { id: 'canViewWarehouseReports', label: 'مشاهده گزارشات انبار' }
   ];
 
   return (
     <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden flex flex-col md:flex-row min-h-[600px] mb-20 animate-fade-in">
         
-        {/* Sidebar (Existing) */}
         <div className="w-full md:w-64 bg-gray-50 border-b md:border-b-0 md:border-l border-gray-200 p-4">
             <h2 className="text-xl font-bold text-gray-800 mb-6 flex items-center gap-2 px-2"><SettingsIcon size={24} className="text-blue-600"/> تنظیمات</h2>
             <nav className="space-y-1">
                 <button onClick={() => setActiveCategory('system')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeCategory === 'system' ? 'bg-white shadow text-blue-700 font-bold' : 'text-gray-600 hover:bg-gray-100'}`}><AppWindow size={18}/> عمومی و سیستم</button>
                 <button onClick={() => setActiveCategory('data')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeCategory === 'data' ? 'bg-white shadow text-indigo-700 font-bold' : 'text-gray-600 hover:bg-gray-100'}`}><Database size={18}/> اطلاعات پایه</button>
+                <button onClick={() => setActiveCategory('warehouse')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeCategory === 'warehouse' ? 'bg-white shadow text-orange-700 font-bold' : 'text-gray-600 hover:bg-gray-100'}`}><Warehouse size={18}/> انبار</button>
                 <button onClick={() => setActiveCategory('integrations')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeCategory === 'integrations' ? 'bg-white shadow text-purple-700 font-bold' : 'text-gray-600 hover:bg-gray-100'}`}><Link size={18}/> اتصالات (API)</button>
                 <button onClick={() => setActiveCategory('whatsapp')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeCategory === 'whatsapp' ? 'bg-white shadow text-green-700 font-bold' : 'text-gray-600 hover:bg-gray-100'}`}><MessageCircle size={18}/> مدیریت واتساپ</button>
                 <button onClick={() => setActiveCategory('permissions')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeCategory === 'permissions' ? 'bg-white shadow text-amber-700 font-bold' : 'text-gray-600 hover:bg-gray-100'}`}><ShieldCheck size={18}/> دسترسی‌ها</button>
             </nav>
         </div>
 
-        {/* Content Area */}
         <div className="flex-1 p-6 md:p-8 overflow-y-auto max-h-[calc(100vh-100px)]">
             <form onSubmit={handleSave} className="space-y-8 max-w-4xl mx-auto">
                 
@@ -227,23 +203,67 @@ const Settings: React.FC = () => {
 
                         <div className="space-y-4">
                             <h3 className="font-bold text-gray-800 border-b pb-2">پشتیبان‌گیری کامل (دیتابیس + فایل‌ها)</h3>
-                            <p className="text-sm text-gray-600 bg-blue-50 p-3 rounded-lg border border-blue-100">
-                                ℹ️ سیستم به صورت خودکار هر شب (۲۳:۳۰) بک‌آپ کامل را به تلگرام ارسال می‌کند (در صورت تنظیم ربات). در اینجا می‌توانید به صورت دستی بک‌آپ بگیرید.
-                            </p>
                             <div className="flex gap-4">
-                                <button type="button" onClick={handleDownloadFullBackup} className="bg-indigo-600 text-white px-6 py-3 rounded-xl hover:bg-indigo-700 flex items-center gap-2 shadow-lg shadow-indigo-200 transition-transform hover:scale-105">
-                                    <DownloadCloud size={20} /> دانلود بک‌آپ کامل (Zip)
-                                </button>
-                                <button type="button" onClick={handleRestoreClick} disabled={restoring} className="bg-gray-800 text-white px-6 py-3 rounded-xl hover:bg-gray-900 flex items-center gap-2 shadow-lg shadow-gray-300 transition-transform hover:scale-105 disabled:opacity-70">
-                                    {restoring ? <Loader2 size={20} className="animate-spin"/> : <UploadCloud size={20} />} بازگردانی فایل Zip
-                                </button>
+                                <button type="button" onClick={handleDownloadFullBackup} className="bg-indigo-600 text-white px-6 py-3 rounded-xl hover:bg-indigo-700 flex items-center gap-2 shadow-lg shadow-indigo-200 transition-transform hover:scale-105"><DownloadCloud size={20} /> دانلود بک‌آپ کامل (Zip)</button>
+                                <button type="button" onClick={handleRestoreClick} disabled={restoring} className="bg-gray-800 text-white px-6 py-3 rounded-xl hover:bg-gray-900 flex items-center gap-2 shadow-lg shadow-gray-300 transition-transform hover:scale-105 disabled:opacity-70">{restoring ? <Loader2 size={20} className="animate-spin"/> : <UploadCloud size={20} />} بازگردانی فایل Zip</button>
                                 <input type="file" ref={fileInputRef} className="hidden" accept=".zip" onChange={handleFileChange} />
                             </div>
                         </div>
                     </div>
                 )}
 
-                {/* ... (Keep other categories: data, integrations, whatsapp, permissions same as before) ... */}
+                {activeCategory === 'warehouse' && (
+                    <div className="space-y-8 animate-fade-in">
+                        <div className="space-y-4">
+                            <h3 className="font-bold text-gray-800 border-b pb-2 flex items-center gap-2"><Warehouse size={20}/> تنظیمات انبار</h3>
+                            
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                    <label className="text-sm font-bold text-gray-700 block mb-1">واتساپ گروه انبار (پیش‌فرض)</label>
+                                    <select className="w-full border rounded-lg p-2 text-sm bg-white" value={settings.defaultWarehouseGroup || ''} onChange={e => setSettings({...settings, defaultWarehouseGroup: e.target.value})}>
+                                        <option value="">انتخاب کنید...</option>
+                                        {settings.savedContacts?.map(c => <option key={c.number} value={c.number}>{c.name} {c.isGroup ? '(گروه)' : ''}</option>)}
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="text-sm font-bold text-gray-700 block mb-1">واتساپ مدیر فروش (پیش‌فرض)</label>
+                                    <select className="w-full border rounded-lg p-2 text-sm bg-white" value={settings.defaultSalesManager || ''} onChange={e => setSettings({...settings, defaultSalesManager: e.target.value})}>
+                                        <option value="">انتخاب کنید...</option>
+                                        {settings.savedContacts?.map(c => <option key={c.number} value={c.number}>{c.name} {c.isGroup ? '(گروه)' : ''}</option>)}
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div className="bg-orange-50 p-4 rounded-xl border border-orange-200">
+                                <h4 className="font-bold text-sm text-orange-800 mb-3">شماره آخرین بیجک صادر شده (به تفکیک شرکت)</h4>
+                                <div className="space-y-2">
+                                    {settings.companies?.map(c => (
+                                        <div key={c.id} className="flex justify-between items-center bg-white p-2 rounded border">
+                                            <span className="text-sm font-bold">{c.name}</span>
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-xs text-gray-500">شماره فعلی:</span>
+                                                <input 
+                                                    type="number" 
+                                                    className="border rounded p-1 w-24 text-center dir-ltr" 
+                                                    value={settings.warehouseSequences?.[c.name] || 1000} 
+                                                    onChange={e => setSettings({
+                                                        ...settings, 
+                                                        warehouseSequences: { 
+                                                            ...settings.warehouseSequences, 
+                                                            [c.name]: Number(e.target.value) 
+                                                        }
+                                                    })} 
+                                                />
+                                            </div>
+                                        </div>
+                                    ))}
+                                    {(!settings.companies || settings.companies.length === 0) && <div className="text-sm text-gray-500">شرکتی تعریف نشده است.</div>}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
                 {activeCategory === 'data' && (
                     <div className="space-y-8 animate-fade-in">
                         <div className="space-y-4">

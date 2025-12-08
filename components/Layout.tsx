@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { LayoutDashboard, PlusCircle, ListChecks, FileText, Users, LogOut, User as UserIcon, Settings, Bell, BellOff, MessageSquare, X, Check, Container, KeyRound, Save, Upload, Camera, Download, Share, ChevronRight, Home, Send, BrainCircuit, Mic, StopCircle, Loader2, Truck, ClipboardList } from 'lucide-react';
+import { LayoutDashboard, PlusCircle, ListChecks, FileText, Users, LogOut, User as UserIcon, Settings, Bell, BellOff, MessageSquare, X, Check, Container, KeyRound, Save, Upload, Camera, Download, Share, ChevronRight, Home, Send, BrainCircuit, Mic, StopCircle, Loader2, Truck, ClipboardList, Package } from 'lucide-react';
 import { User, UserRole, AppNotification, SystemSettings } from '../types';
 import { logout, hasPermission, getRolePermissions, updateUser } from '../services/authService';
 import { requestNotificationPermission, setNotificationPreference, isNotificationEnabledInApp } from '../services/notificationService';
@@ -136,9 +136,12 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab, curr
   const canCreateExit = perms?.canCreateExitPermit ?? false;
   
   // Specific View Permissions
-  const canViewPayment = perms?.canViewPaymentOrders !== false; // Default true unless explicitly denied
+  const canViewPayment = perms?.canViewPaymentOrders !== false; 
   const canViewExit = perms?.canViewExitPermits || perms?.canCreateExitPermit || perms?.canApproveExitCeo || perms?.canApproveExitFactory;
   
+  // Warehouse Permissions
+  const canManageWarehouse = perms?.canManageWarehouse || currentUser.role === UserRole.ADMIN || currentUser.role === UserRole.FACTORY_MANAGER;
+
   const canSeeSettings = currentUser.role === UserRole.ADMIN || (perms?.canManageSettings ?? false);
 
   const navItems = [
@@ -155,6 +158,10 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab, curr
   }
   if (canViewExit) {
       navItems.push({ id: 'manage-exit', label: 'کارتابل خروج بار', icon: ClipboardList });
+  }
+
+  if (canManageWarehouse) {
+      navItems.push({ id: 'warehouse', label: 'مدیریت انبار', icon: Package });
   }
 
   navItems.push({ id: 'chat', label: 'گفتگو', icon: MessageSquare });

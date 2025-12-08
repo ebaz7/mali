@@ -9,8 +9,9 @@ import ManageUsers from './components/ManageUsers';
 import Settings from './components/Settings';
 import ChatRoom from './components/ChatRoom';
 import TradeModule from './components/TradeModule';
-import CreateExitPermit from './components/CreateExitPermit'; // NEW
-import ManageExitPermits from './components/ManageExitPermits'; // NEW
+import CreateExitPermit from './components/CreateExitPermit'; 
+import ManageExitPermits from './components/ManageExitPermits'; 
+import WarehouseModule from './components/WarehouseModule'; // NEW
 import { getOrders, getSettings } from './services/storageService';
 import { getCurrentUser } from './services/authService';
 import { PaymentOrder, User, OrderStatus, UserRole, AppNotification, SystemSettings, PaymentMethod } from './types';
@@ -32,14 +33,13 @@ function App() {
   const IDLE_LIMIT = 60 * 60 * 1000; 
   const NOTIFICATION_CHECK_KEY = 'last_notification_check';
 
-  // History API Management
   const safePushState = (state: any, title: string, url?: string) => { try { if (url) window.history.pushState(state, title, url); else window.history.pushState(state, title); } catch (e) { try { window.history.pushState(state, title); } catch(e2) {} } };
   const safeReplaceState = (state: any, title: string, url?: string) => { try { if (url) window.history.replaceState(state, title, url); else window.history.replaceState(state, title); } catch (e) { try { window.history.replaceState(state, title); } catch(e2) {} } };
   const setActiveTab = (tab: string, addToHistory = true) => { setActiveTabState(tab); if (addToHistory) safePushState({ tab }, '', `#${tab}`); };
 
   useEffect(() => {
     const hash = window.location.hash.replace('#', '');
-    if (hash && ['dashboard', 'create', 'manage', 'chat', 'trade', 'users', 'settings', 'create-exit', 'manage-exit'].includes(hash)) {
+    if (hash && ['dashboard', 'create', 'manage', 'chat', 'trade', 'users', 'settings', 'create-exit', 'manage-exit', 'warehouse'].includes(hash)) {
         setActiveTabState(hash);
         safeReplaceState({ tab: hash }, '', `#${hash}`);
     } else {
@@ -138,6 +138,7 @@ function App() {
             {activeTab === 'create-exit' && <CreateExitPermit onSuccess={() => setActiveTab('manage-exit')} currentUser={currentUser} />}
             {activeTab === 'manage-exit' && <ManageExitPermits currentUser={currentUser} settings={settings} />}
             {activeTab === 'trade' && <TradeModule currentUser={currentUser} />}
+            {activeTab === 'warehouse' && <WarehouseModule currentUser={currentUser} settings={settings} />}
             {activeTab === 'users' && <ManageUsers />}
             {activeTab === 'settings' && <Settings />}
             {activeTab === 'chat' && <ChatRoom currentUser={currentUser} onNotification={addAppNotification} />}

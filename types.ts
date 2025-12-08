@@ -38,7 +38,7 @@ export interface User {
   fullName: string;
   role: UserRole;
   canManageTrade?: boolean; 
-  receiveNotifications?: boolean; // New Field: Control WhatsApp/Telegram alerts
+  receiveNotifications?: boolean; 
   avatar?: string; 
   telegramChatId?: string; 
   phoneNumber?: string; 
@@ -75,7 +75,7 @@ export interface PaymentOrder {
   updatedAt?: number; 
 }
 
-// New Interfaces for Multi-row support
+// Exit Permit Types
 export interface ExitPermitItem {
   id: string;
   goodsName: string;
@@ -94,61 +94,86 @@ export interface ExitPermit {
   id: string;
   permitNumber: number;
   date: string;
-  requester: string; // Sales Manager
-  
-  // New Multi-row structures
+  requester: string; 
   items: ExitPermitItem[];
   destinations: ExitPermitDestination[];
-
-  // Legacy fields (kept optional for backward compatibility)
   goodsName?: string;
   cartonCount?: number;
   weight?: number; 
   recipientName?: string;
   destinationAddress?: string;
-
-  plateNumber?: string; // Optional: Truck Plate
-  driverName?: string; // Optional: Driver Name
+  plateNumber?: string; 
+  driverName?: string; 
   description?: string;
-
   status: ExitPermitStatus;
-  
-  // Approvers
   approverCeo?: string;
   approverFactory?: string;
-  
   rejectionReason?: string;
   rejectedBy?: string;
-
   createdAt: number;
   updatedAt?: number;
 }
 
-export interface RolePermissions {
-    // Visibility
-    canViewAll: boolean;
-    canViewPaymentOrders: boolean; // New: Access to Payment Dashboard
-    canViewExitPermits: boolean;   // New: Access to Exit Permit Dashboard
+// --- WAREHOUSE MODULE TYPES ---
+export interface WarehouseItem {
+    id: string;
+    code: string;
+    name: string;
+    unit: string; // e.g., Kg, Carton, Pcs
+    description?: string;
+}
 
-    // Payment Workflow
+export interface WarehouseTransactionItem {
+    itemId: string;
+    itemName: string; // Cached name
+    quantity: number;
+    weight: number;
+    unitPrice?: number; // Optional, only for OUT (Bijak)
+}
+
+export interface WarehouseTransaction {
+    id: string;
+    type: 'IN' | 'OUT';
+    date: string; // ISO Date
+    company: string; // Owner Company
+    number: number; // Receipt Number or Bijak Number
+    
+    // For IN
+    proformaNumber?: string;
+    
+    // For OUT
+    recipientName?: string;
+    driverName?: string;
+    plateNumber?: string;
+    destination?: string;
+
+    items: WarehouseTransactionItem[];
+    description?: string;
+    
+    createdAt: number;
+    createdBy: string;
+}
+
+export interface RolePermissions {
+    canViewAll: boolean;
+    canViewPaymentOrders: boolean;
+    canViewExitPermits: boolean;
     canApproveFinancial: boolean;
     canApproveManager: boolean;
     canApproveCeo: boolean;
-    
-    // CRUD
     canEditOwn: boolean;
     canEditAll: boolean;
     canDeleteOwn: boolean;
     canDeleteAll: boolean;
-    
-    // Modules
     canManageTrade: boolean; 
     canManageSettings?: boolean; 
+    canCreateExitPermit?: boolean; 
+    canApproveExitCeo?: boolean; 
+    canApproveExitFactory?: boolean;
     
-    // Exit Permit Workflow
-    canCreateExitPermit?: boolean; // Sales
-    canApproveExitCeo?: boolean; // CEO
-    canApproveExitFactory?: boolean; // Factory
+    // Warehouse Permissions
+    canManageWarehouse?: boolean; // Full Access
+    canViewWarehouseReports?: boolean; // Read Only
 }
 
 export interface Company {
@@ -182,6 +207,11 @@ export interface SystemSettings {
   googleCalendarId?: string; 
   whatsappNumber?: string; 
   geminiApiKey?: string; 
+  
+  // Warehouse Settings
+  warehouseSequences?: Record<string, number>; // Company Name -> Next Bijak Number
+  defaultWarehouseGroup?: string; // WhatsApp ID
+  defaultSalesManager?: string; // WhatsApp ID
 }
 
 export interface DashboardStats {
@@ -238,7 +268,7 @@ export interface AppNotification {
     read: boolean;
 }
 
-// --- TRADE MODULE TYPES (Kept as is) ---
+// ... (Trade Module Types kept same for brevity) ...
 export enum TradeStage {
     LICENSES = 'مجوزها و پروفرما',
     INSURANCE = 'بیمه',

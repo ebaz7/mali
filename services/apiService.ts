@@ -1,5 +1,5 @@
 
-import { PaymentOrder, User, UserRole, SystemSettings, ChatMessage, ChatGroup, GroupTask, TradeRecord } from '../types';
+import { PaymentOrder, User, UserRole, SystemSettings, ChatMessage, ChatGroup, GroupTask, TradeRecord, WarehouseItem, WarehouseTransaction } from '../types';
 import { INITIAL_ORDERS } from '../constants';
 
 const API_BASE_URL = '/api';
@@ -15,7 +15,9 @@ const LS_KEYS = {
     CHAT: 'app_data_chat',
     GROUPS: 'app_data_groups',
     TASKS: 'app_data_tasks',
-    TRADE: 'app_data_trade'
+    TRADE: 'app_data_trade',
+    WH_ITEMS: 'app_data_wh_items',
+    WH_TX: 'app_data_wh_tx'
 };
 
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
@@ -36,7 +38,6 @@ const setLocalData = (key: string, data: any) => {
 export const apiCall = async <T>(endpoint: string, method: string = 'GET', body?: any): Promise<T> => {
     try {
         const controller = new AbortController();
-        // INCREASED TIMEOUT: AI operations can take time (transcription + generation)
         const timeoutId = setTimeout(() => controller.abort(), 45000); 
 
         const response = await fetch(`${API_BASE_URL}${endpoint}`, {
@@ -119,9 +120,47 @@ export const apiCall = async <T>(endpoint: string, method: string = 'GET', body?
              }
         }
         
+        // --- WAREHOUSE ---
+        if (endpoint === '/warehouse/items') {
+            if (method === 'GET') return getLocalData<WarehouseItem[]>(LS_KEYS.WH_ITEMS, []) as unknown as T;
+            if (method === 'POST') {
+                const items = getLocalData<WarehouseItem[]>(LS_KEYS.WH_ITEMS, []);
+                items.push(body);
+                setLocalData(LS_KEYS.WH_ITEMS, items);
+                return items as unknown as T;
+            }
+        }
+        if (endpoint.startsWith('/warehouse/items/')) {
+            const id = endpoint.split('/').pop();
+            let items = getLocalData<WarehouseItem[]>(LS_KEYS.WH_ITEMS, []);
+            if (method === 'DELETE') {
+                items = items.filter(i => i.id !== id);
+                setLocalData(LS_KEYS.WH_ITEMS, items);
+                return items as unknown as T;
+            }
+        }
+        if (endpoint === '/warehouse/transactions') {
+            if (method === 'GET') return getLocalData<WarehouseTransaction[]>(LS_KEYS.WH_TX, []) as unknown as T;
+            if (method === 'POST') {
+                const txs = getLocalData<WarehouseTransaction[]>(LS_KEYS.WH_TX, []);
+                txs.unshift(body);
+                setLocalData(LS_KEYS.WH_TX, txs);
+                return txs as unknown as T;
+            }
+        }
+        if (endpoint.startsWith('/warehouse/transactions/')) {
+            const id = endpoint.split('/').pop();
+            let txs = getLocalData<WarehouseTransaction[]>(LS_KEYS.WH_TX, []);
+            if (method === 'DELETE') {
+                txs = txs.filter(t => t.id !== id);
+                setLocalData(LS_KEYS.WH_TX, txs);
+                return txs as unknown as T;
+            }
+        }
+
         // --- SETTINGS ---
         if (endpoint === '/settings') {
-            if (method === 'GET') return getLocalData<SystemSettings>(LS_KEYS.SETTINGS, { currentTrackingNumber: 1000, companyNames: [], companies: [], defaultCompany: '', bankNames: [], commodityGroups: [], rolePermissions: {} } as any) as unknown as T;
+            if (method === 'GET') return getLocalData<SystemSettings>(LS_KEYS.SETTINGS, { currentTrackingNumber: 1000, companyNames: [], companies: [], defaultCompany: '', bankNames: [], commodityGroups: [], rolePermissions: {}, warehouseSequences: {} } as any) as unknown as T;
             if (method === 'POST') { setLocalData(LS_KEYS.SETTINGS, body); return body as unknown as T; }
         }
 
@@ -130,7 +169,7 @@ export const apiCall = async <T>(endpoint: string, method: string = 'GET', body?
             if (method === 'GET') return getLocalData<ChatMessage[]>(LS_KEYS.CHAT, []) as unknown as T;
             if (method === 'POST') {
                 const msgs = getLocalData<ChatMessage[]>(LS_KEYS.CHAT, []);
-                if (msgs.length > 500) msgs.shift(); // keep last 500
+                if (msgs.length > 500) msgs.shift(); 
                 msgs.push(body);
                 setLocalData(LS_KEYS.CHAT, msgs);
                 return msgs as unknown as T;
