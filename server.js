@@ -18,6 +18,7 @@ const BACKUPS_DIR = path.join(__dirname, 'backups');
 const WAUTH_DIR = path.join(__dirname, 'wauth');
 
 // --- GEMINI SETUP ---
+// کلید خود را اینجا نگه داشتم
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || process.env.API_KEY || "AIzaSyAyCu0MyoP82ypvanV9xyM0Vuy2t3owqm8";
 let geminiClient = null;
 
@@ -71,10 +72,9 @@ const findNextAvailableTrackingNumber = (db) => {
 };
 
 // ==========================================
-// WHATSAPP & TELEGRAM GLOBALS
+// WHATSAPP GLOBALS
 // ==========================================
 let whatsappClient = null;
-let telegramBot = null;
 let MessageMedia = null; 
 let isWhatsAppReady = false;
 let currentQR = null; 
@@ -96,51 +96,67 @@ const sendWhatsAppMessageInternal = async (number, message) => {
 };
 
 // ==========================================
-// CORE LOGIC: PROCESS COMMANDS (Hybrid)
+// CORE LOGIC: PROCESS COMMANDS
 // ==========================================
+
+// Simple extraction if AI fails completely (Backup)
+function extractOrderWithRegex(text) {
+    try {
+        let amount = 0;
+        const amountMatch = text.match(/(\d+(?:[.,]\d+)?)\s*(میلیون|میلیارد|هزار|تومان|ریال)?/);
+        if (amountMatch) {
+            let val = parseFloat(amountMatch[1].replace(/,/g, ''));
+            const unit = amountMatch[2];
+            if (unit === 'میلیارد') val *= 10000000000;
+            else if (unit === 'میلیون') val *= 10000000; 
+            else if (unit === 'هزار') val *= 10000; 
+            else if (unit === 'ریال') val *= 1;
+            else val *= 10; 
+            amount = Math.floor(val);
+        }
+        let payee = "نامشخص";
+        const payeeMatch = text.match(/(?:به|برای|وجه)\s+([^0-9\.\,\،]+)/);
+        if (payeeMatch && payeeMatch[1]) {
+            payee = payeeMatch[1].trim().split(/\s+/).slice(0, 3).join(' '); 
+        }
+        if (amount > 0) return { payee, amount, description: text };
+        return null;
+    } catch (e) { return null; }
+}
 
 async function processUserCommand(user, text, isVoice = false) {
     if (!text) return "متن پیام خالی است.";
     const db = getDb();
     const cleanText = text.trim().toLowerCase();
 
-    // 1. APPROVAL LOGIC (Rule-Based)
+    // 1. APPROVAL LOGIC
     const numMatch = cleanText.match(/^(\d+)$/) || cleanText.match(/تایید\s*(\d+)/) || cleanText.match(/ok\s*(\d+)/);
-    
     if (numMatch) {
         const trackNum = parseInt(numMatch[1]);
         const orderIdx = db.orders.findIndex(o => o.trackingNumber === trackNum);
-        
         if (orderIdx === -1) return `❌ دستور #${trackNum} یافت نشد.`;
         
         const order = db.orders[orderIdx];
         let nextStatus = null;
-        let roleName = "";
-
-        if (order.status === 'در انتظار بررسی مالی' && (user.role === 'financial' || user.role === 'admin')) {
-            nextStatus = 'تایید مالی / در انتظار مدیریت'; roleName = "مدیر مالی";
-        } else if (order.status === 'تایید مالی / در انتظار مدیریت' && (user.role === 'manager' || user.role === 'admin')) {
-            nextStatus = 'تایید مدیریت / در انتظار مدیرعامل'; roleName = "مدیر داخلی";
-        } else if (order.status === 'تایید مدیریت / در انتظار مدیرعامل' && (user.role === 'ceo' || user.role === 'admin')) {
-            nextStatus = 'تایید نهایی'; roleName = "مدیرعامل";
-        }
+        if (order.status === 'در انتظار بررسی مالی' && (user.role === 'financial' || user.role === 'admin')) nextStatus = 'تایید مالی / در انتظار مدیریت';
+        else if (order.status === 'تایید مالی / در انتظار مدیریت' && (user.role === 'manager' || user.role === 'admin')) nextStatus = 'تایید مدیریت / در انتظار مدیرعامل';
+        else if (order.status === 'تایید مدیریت / در انتظار مدیرعامل' && (user.role === 'ceo' || user.role === 'admin')) nextStatus = 'تایید نهایی';
 
         if (nextStatus) {
             order.status = nextStatus;
             order.updatedAt = Date.now();
-            if (roleName) order[`approver${user.role === 'admin' ? 'Admin' : user.role === 'ceo' ? 'Ceo' : user.role === 'manager' ? 'Manager' : 'Financial'}`] = user.fullName;
-            
+            order[`approver${user.role === 'admin' ? 'Admin' : user.role === 'ceo' ? 'Ceo' : user.role === 'manager' ? 'Manager' : 'Financial'}`] = user.fullName;
             db.orders[orderIdx] = order;
             saveDb(db);
             triggerNotifications(order, db);
-            return `✅ دستور #${trackNum} توسط شما تایید شد.\nوضعیت جدید: ${nextStatus}`;
+            return `✅ دستور #${trackNum} تایید شد.\nوضعیت جدید: ${nextStatus}`;
         } else {
             return `⛔ وضعیت فعلی دستور (${order.status}) منتظر تایید شما نیست.`;
         }
     }
 
-    // 2. REPORT LOGIC (Rule-Based)
-    if (cleanText.includes('گزارش') || cleanText.includes('کارتابل') || cleanText.includes('وضعیت')) {
+    // 2. REPORT LOGIC
+    if (cleanText.includes('گزارش') || cleanText.includes('کارتابل')) {
         let pending = [];
         if (user.role === 'financial') pending = db.orders.filter(o => o.status === 'در انتظار بررسی مالی');
         else if (user.role === 'manager') pending = db.orders.filter(o => o.status === 'تایید مالی / در انتظار مدیریت');
@@ -148,120 +164,89 @@ async function processUserCommand(user, text, isVoice = false) {
         else if (user.role === 'admin') pending = db.orders.filter(o => o.status !== 'تایید نهایی' && o.status !== 'رد شده');
 
         if (pending.length === 0) return "✅ کارتابل شما خالی است.";
-        
         let rep = `📊 *کارتابل جاری (${user.fullName})*:\n`;
-        pending.slice(0, 8).forEach(o => {
-            rep += `\n🔹 *#${o.trackingNumber}* | ${Number(o.totalAmount).toLocaleString()} ریال\n   بابت: ${o.description}\n`;
-        });
-        rep += `\n💡 برای تایید، شماره دستور را ارسال کنید.`;
-        return rep;
+        pending.slice(0, 8).forEach(o => { rep += `\n🔹 *#${o.trackingNumber}* | ${Number(o.totalAmount).toLocaleString()} ریال\n   بابت: ${o.description}\n`; });
+        return rep + `\n💡 برای تایید، شماره دستور را ارسال کنید.`;
     }
 
-    // 3. HELP LOGIC
-    if (cleanText === 'راهنما' || cleanText === 'help' || cleanText === 'start' || cleanText === '/start') {
-        return `🤖 *دستیار هوشمند سیستم مالی*\n\n1️⃣ *تایید دستور:* شماره دستور را بفرستید (مثلا 1602).\n2️⃣ *گزارش:* کلمه "گزارش" یا "کارتابل" را بفرستید.\n3️⃣ *ثبت دستور (فقط واتساپ):* بصورت متنی یا صوتی بگویید: "ثبت دستور پرداخت برای آقای رضایی مبلغ 5 میلیون بابت خرید..."\n4️⃣ *ویس:* می‌توانید همه موارد بالا را بصورت ویس بگویید.`;
-    }
-
-    // 4. CREATION LOGIC (AI-Based)
-    if (geminiClient && (cleanText.includes('ثبت') || cleanText.includes('پرداخت') || cleanText.includes('دستور'))) {
-        try {
-            console.log(">>> Sending text to Gemini for Order Extraction...");
-            // Use a Promise.race to enforce a timeout if network is stuck
-            const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('AI_TIMEOUT')), 15000));
-            
-            const prompt = `Extract payment order details from this text to JSON: "${text}".
-            JSON format: { "payee": string, "amount": number, "description": string }
-            If information is missing, return null. Amount should be in Rials (convert Toman to Rial if needed).`;
-            
-            const aiPromise = geminiClient.models.generateContent({
-                model: 'gemini-2.5-flash',
-                contents: [{ role: 'user', parts: [{ text: prompt }] }],
-                config: { responseMimeType: 'application/json' }
-            });
-
-            const result = await Promise.race([aiPromise, timeoutPromise]);
-            
-            // @ts-ignore
-            const responseText = result.response.text();
-            console.log(">>> Gemini Raw Response:", responseText);
-            
-            const data = JSON.parse(responseText);
-            if (data && data.payee && data.amount) {
-                const num = findNextAvailableTrackingNumber(db);
-                const newOrder = {
-                    id: Date.now().toString(36),
-                    trackingNumber: num,
-                    date: new Date().toISOString().split('T')[0],
-                    payee: data.payee,
-                    totalAmount: data.amount,
-                    description: data.description || 'ثبت شده با هوش مصنوعی',
-                    status: 'در انتظار بررسی مالی',
-                    requester: user.fullName + ' (AI)',
-                    paymentDetails: [{ id: 'ai'+Date.now(), method: 'حواله بانکی', amount: data.amount, description: 'AI Generated' }],
-                    createdAt: Date.now()
-                };
-                db.orders.unshift(newOrder);
-                saveDb(db);
-                triggerNotifications(newOrder, db);
-                return `✅ دستور پرداخت با موفقیت ثبت شد.\nشماره: ${num}\nمبلغ: ${data.amount.toLocaleString()} ریال\nگیرنده: ${data.payee}`;
-            } else {
-                return "مشخصات دستور پرداخت کامل نیست (مبلغ یا گیرنده یافت نشد).";
+    // 3. CREATION LOGIC (Direct Gemini Call - No Timeout Wrappers)
+    if (cleanText.includes('ثبت') || cleanText.includes('پرداخت') || cleanText.includes('دستور')) {
+        let data = null;
+        
+        if (geminiClient) {
+            try {
+                console.log(">>> Sending to Gemini (Direct)...");
+                const prompt = `Extract payment details from: "${text}". JSON: { "payee": string, "amount": number (in Rials), "description": string }. If amount is in Toman/Million, convert to Rial.`;
+                
+                const result = await geminiClient.models.generateContent({
+                    model: 'gemini-2.5-flash',
+                    contents: [{ role: 'user', parts: [{ text: prompt }] }],
+                    config: { responseMimeType: 'application/json' }
+                });
+                
+                const responseText = result.response.text();
+                data = JSON.parse(responseText);
+                console.log(">>> Gemini Response:", data);
+            } catch (e) {
+                console.error(">>> Gemini Error:", e.message);
+                // Fallback to regex if Gemini fails
+                data = extractOrderWithRegex(text);
             }
-        } catch (e) {
-            console.error(">>> ❌ Gemini Extraction Error:", e.message);
-            if (e.message === 'AI_TIMEOUT' || e.message.includes('fetch failed') || e.message.includes('ETIMEDOUT')) {
-                return "❌ خطای اتصال به هوش مصنوعی (فیلترشکن).";
-            }
-            return "خطا در پردازش درخواست هوشمند.";
+        } else {
+            data = extractOrderWithRegex(text);
+        }
+
+        if (data && data.amount > 0) {
+            const num = findNextAvailableTrackingNumber(db);
+            const newOrder = {
+                id: Date.now().toString(36),
+                trackingNumber: num,
+                date: new Date().toISOString().split('T')[0],
+                payee: data.payee || "نامشخص",
+                totalAmount: data.amount,
+                description: data.description || text,
+                status: 'در انتظار بررسی مالی',
+                requester: user.fullName + ' (AI)',
+                paymentDetails: [{ id: 'ai'+Date.now(), method: 'حواله بانکی', amount: data.amount, description: 'Auto Generated' }],
+                createdAt: Date.now()
+            };
+            db.orders.unshift(newOrder);
+            saveDb(db);
+            triggerNotifications(newOrder, db);
+            return `✅ دستور پرداخت ثبت شد (#${num})\nمبلغ: ${data.amount.toLocaleString()} ریال\nگیرنده: ${data.payee}`;
+        } else {
+            return "مشخصات کامل نیست. لطفا مبلغ و گیرنده را ذکر کنید.";
         }
     }
 
-    return "متوجه نشدم. برای راهنمایی کلمه 'راهنما' را بفرستید.";
+    return "دستور نامعتبر. (راهنما: ثبت پرداخت / گزارش / تایید شماره)";
 }
 
-// --- NOTIFICATION SYSTEM ---
+// --- NOTIFICATIONS ---
 function triggerNotifications(order, db) {
     const tracking = order.trackingNumber;
     const amount = Number(order.totalAmount).toLocaleString('fa-IR');
-    const status = order.status;
     let targetRole = null;
     let msg = "";
 
-    if (status === 'در انتظار بررسی مالی') {
-        targetRole = 'financial';
-        msg = `🔔 *درخواست جدید (#${tracking})*\nمبلغ: ${amount} ریال\nذینفع: ${order.payee}\nبابت: ${order.description}\n\n✅ *برای تایید، عدد ${tracking} را ارسال کنید.*`;
-    } 
-    else if (status === 'تایید مالی / در انتظار مدیریت') {
-        targetRole = 'manager';
-        msg = `🔔 *تایید مدیریت لازم است (#${tracking})*\nمبلغ: ${amount} ریال\nتایید شده توسط مالی.\n\n✅ *برای تایید، عدد ${tracking} را ارسال کنید.*`;
-    }
-    else if (status === 'تایید مدیریت / در انتظار مدیرعامل') {
-        targetRole = 'ceo';
-        msg = `🔔 *تایید نهایی مدیرعامل (#${tracking})*\nمبلغ: ${amount} ریال\nتایید شده توسط مدیریت.\n\n✅ *برای تایید، عدد ${tracking} را ارسال کنید.*`;
-    }
-    else if (status === 'تایید نهایی') {
-        targetRole = 'financial';
-        msg = `✅ *دستور #${tracking} نهایی شد.*\nمبلغ: ${amount} ریال\nلطفا نسبت به پرداخت اقدام نمایید.`;
-    }
+    if (order.status === 'در انتظار بررسی مالی') { targetRole = 'financial'; msg = `🔔 *درخواست جدید (#${tracking})*\nمبلغ: ${amount} ریال\nذینفع: ${order.payee}`; } 
+    else if (order.status === 'تایید مالی / در انتظار مدیریت') { targetRole = 'manager'; msg = `🔔 *تایید مدیریت لازم است (#${tracking})*\nمبلغ: ${amount} ریال`; }
+    else if (order.status === 'تایید مدیریت / در انتظار مدیرعامل') { targetRole = 'ceo'; msg = `🔔 *تایید نهایی مدیرعامل (#${tracking})*\nمبلغ: ${amount} ریال`; }
+    else if (order.status === 'تایید نهایی') { targetRole = 'financial'; msg = `✅ *دستور #${tracking} نهایی شد.*\nلطفا پرداخت کنید.`; }
 
     if (targetRole && msg) {
-        const users = db.users.filter(u => u.role === targetRole || u.role === 'admin');
-        users.forEach(u => {
+        db.users.filter(u => u.role === targetRole || u.role === 'admin').forEach(u => {
             if (u.phoneNumber) sendWhatsAppMessageInternal(u.phoneNumber, msg);
         });
     }
 }
 
-// --- VOICE TRANSCRIPTION ---
+// --- VOICE TRANSCRIPTION (Direct) ---
 async function transcribe(buffer, mimeType) {
     if (!geminiClient) return null;
     try {
-        console.log(">>> Sending Audio to Gemini...");
-        
-        // Enforce timeout for voice as well
-        const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('AI_TIMEOUT')), 20000));
-        
-        const aiPromise = geminiClient.models.generateContent({
+        console.log(">>> Transcribing Audio...");
+        const result = await geminiClient.models.generateContent({
             model: 'gemini-2.5-flash',
             contents: [{
                 role: 'user',
@@ -271,66 +256,12 @@ async function transcribe(buffer, mimeType) {
                 ]
             }]
         });
-
-        const result = await Promise.race([aiPromise, timeoutPromise]);
-        // @ts-ignore
-        const text = result.response.text().trim();
-        console.log(">>> Transcribed Text:", text);
-        return text;
+        return result.response.text().trim();
     } catch (e) {
-        console.error(">>> ❌ Gemini Voice Error:", e.message);
+        console.error(">>> Transcribe Error:", e.message);
         return null;
     }
 }
-
-// ==========================================
-// TELEGRAM BOT
-// ==========================================
-const initTelegram = async () => {
-    try {
-        const TelegramBot = (await import('node-telegram-bot-api')).default;
-        const db = getDb();
-        if (db.settings.telegramBotToken) {
-            telegramBot = new TelegramBot(db.settings.telegramBotToken, { 
-                polling: { interval: 300, autoStart: true, params: { timeout: 10 } } 
-            });
-            console.log(">>> Telegram Bot Started");
-
-            // Ignore ETIMEDOUT errors to prevent crash
-            telegramBot.on('polling_error', (error) => {
-                if (error.code !== 'EFATAL' && error.code !== 'ETIMEDOUT') {
-                    console.error(">>> TG Poll Error:", error.message);
-                }
-            });
-
-            telegramBot.on('message', async (msg) => {
-                const chatId = msg.chat.id.toString();
-                const db = getDb();
-                const user = db.users.find(u => u.telegramChatId === chatId);
-                if (!user) { telegramBot.sendMessage(chatId, `⛔ عدم دسترسی. ID: ${chatId}`); return; }
-
-                let text = msg.text;
-                if (msg.voice || msg.audio) {
-                    telegramBot.sendChatAction(chatId, 'typing');
-                    try {
-                        const link = await telegramBot.getFileLink(msg.voice ? msg.voice.file_id : msg.audio.file_id);
-                        const resp = await axios.get(link, { responseType: 'arraybuffer' });
-                        text = await transcribe(resp.data, msg.voice ? 'audio/ogg' : 'audio/mp3');
-                        if (text) telegramBot.sendMessage(chatId, `🎤: "${text}"`);
-                        else telegramBot.sendMessage(chatId, "❌ خطا در تبدیل صدا (فیلترشکن).");
-                    } catch (e) {
-                        telegramBot.sendMessage(chatId, "خطا در دانلود فایل صوتی.");
-                    }
-                }
-
-                if (text) {
-                    const reply = await processUserCommand(user, text);
-                    telegramBot.sendMessage(chatId, reply);
-                }
-            });
-        }
-    } catch (e) { console.log("TG Init Error:", e.message); }
-};
 
 // ==========================================
 // WHATSAPP BOT
@@ -373,13 +304,11 @@ const initWhatsApp = async () => {
                 try {
                     const media = await msg.downloadMedia();
                     if (media.mimetype.includes('audio')) {
-                        console.log(">>> WA Voice Recvd");
                         const buff = Buffer.from(media.data, 'base64');
                         text = await transcribe(buff, media.mimetype);
-                        if(text) msg.reply(`🎤 تشخیص: "${text}"`);
-                        else msg.reply("❌ خطا در اتصال به هوش مصنوعی (فیلترشکن).");
+                        if (text) msg.reply(`🎤: "${text}"`);
                     }
-                } catch (e) { console.error("WA Media Error", e); }
+                } catch (e) { console.error("WA Media Fail", e.message); }
             }
 
             if (text) {
@@ -393,7 +322,8 @@ const initWhatsApp = async () => {
     } catch (e) { console.error("WA Module Error", e.message); }
 };
 
-setTimeout(() => { initWhatsApp(); initTelegram(); }, 3000);
+// Initialize only WhatsApp
+setTimeout(() => { initWhatsApp(); }, 3000);
 
 // ==========================================
 // API ENDPOINTS
@@ -429,56 +359,37 @@ app.post('/api/ai-request', async (req, res) => {
         if (audio) {
             text = await transcribe(Buffer.from(audio, 'base64'), mimeType || 'audio/webm');
         }
-        const user = { fullName: 'User(Web)', role: 'user', id: 'web' }; 
-        const reply = await processUserCommand(user, text || '');
-        res.json({ reply });
+        // Respond simply
+        res.json({ reply: text ? `(تشخیص: ${text})` : "متوجه نشدم." });
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 app.post('/api/analyze-payment', async (req, res) => {
     const { amount, date, company, description } = req.body;
     
-    if (!geminiClient) {
-        return res.json({ 
-            recommendation: "تحلیل آفلاین (هوش مصنوعی خاموش)", 
-            score: 75, 
-            reasons: ["ارتباط با سرور هوش مصنوعی برقرار نیست.", "مبلغ و شرکت بررسی شد."],
-            isOffline: true 
-        });
+    // Direct Gemini Call for Analysis (No explicit timeout wrapping)
+    if (geminiClient) {
+        try {
+            const prompt = `Analyze payment: Company: ${company}, Amount: ${amount} Rials, Date: ${date}, Desc: ${description}. JSON: { "recommendation": string (Persian), "score": number, "reasons": string[] }`;
+            const result = await geminiClient.models.generateContent({
+                model: 'gemini-2.5-flash',
+                contents: [{ role: 'user', parts: [{ text: prompt }] }],
+                config: { responseMimeType: 'application/json' }
+            });
+            const jsonResponse = JSON.parse(result.response.text());
+            return res.json(jsonResponse);
+        } catch (e) {
+            console.error("Analysis Error:", e.message);
+        }
     }
 
-    try {
-        const prompt = `Analyze this payment order strictly for a financial manager.
-        Company/Context: ${company}
-        Amount: ${amount} Rials
-        Date: ${date}
-        Description: ${description || 'No description provided'}
-        
-        Provide a risk assessment in Persian JSON format:
-        {
-            "recommendation": "Short Persian recommendation (e.g., پرداخت بلامانع است, نیاز به بررسی بیشتر, ریسک بالا)",
-            "score": number (0-100, where 100 is completely safe/verified),
-            "reasons": ["Reason 1", "Reason 2"]
-        }`;
-
-        const result = await geminiClient.models.generateContent({
-            model: 'gemini-2.5-flash',
-            contents: [{ role: 'user', parts: [{ text: prompt }] }],
-            config: { responseMimeType: 'application/json' }
-        });
-
-        const jsonResponse = JSON.parse(result.response.text());
-        res.json(jsonResponse);
-
-    } catch (e) {
-        console.error("AI Analysis Error:", e.message);
-        res.json({ 
-            recommendation: "خطا در پردازش هوشمند", 
-            score: 0, 
-            reasons: ["خطای شبکه یا فیلترینگ (VPN سرور را چک کنید)"],
-            isOffline: true 
-        });
-    }
+    // Fallback if no client or error
+    res.json({ 
+        recommendation: "تحلیل آفلاین (هوش مصنوعی در دسترس نیست)", 
+        score: 70, 
+        reasons: ["خطای اتصال به سرویس هوشمند.", "مبلغ و اطلاعات را دستی بررسی کنید."],
+        isOffline: true 
+    });
 });
 
 // CRUD APIs
