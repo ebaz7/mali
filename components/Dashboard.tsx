@@ -3,7 +3,7 @@ import React, { useState, useMemo } from 'react';
 import { PaymentOrder, OrderStatus, PaymentMethod, SystemSettings } from '../types';
 import { formatCurrency, parsePersianDate, formatNumberString, getShamsiDateFromIso } from '../constants';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts';
-import { TrendingUp, Clock, CheckCircle, Archive, Activity, Building2, X, XCircle, AlertCircle, Banknote, Calendar as CalendarIcon, ExternalLink, Share2, Plus, CalendarDays, Loader2, Send, Camera, Users, Trash2, List, TrendingDown, ArrowUpRight } from 'lucide-react';
+import { TrendingUp, Clock, CheckCircle, Archive, Activity, Building2, X, XCircle, AlertCircle, Banknote, Calendar as CalendarIcon, ExternalLink, Share2, Plus, CalendarDays, Loader2, Send, Camera, Users, Trash2, List, TrendingDown, ArrowUpRight, UserCheck, ShieldCheck } from 'lucide-react';
 import { apiCall } from '../services/apiService';
 
 interface DashboardProps {
@@ -32,21 +32,67 @@ const Dashboard: React.FC<DashboardProps> = ({ orders, settings, onViewArchive, 
   // Calendar Internal Logic
   const [calendarMonth, setCalendarMonth] = useState(new Date());
 
-  const pendingOrders = orders.filter(o => o.status !== OrderStatus.APPROVED_CEO && o.status !== OrderStatus.REJECTED);
   const completedOrders = orders.filter(o => o.status === OrderStatus.APPROVED_CEO);
   const totalAmount = completedOrders.reduce((sum, order) => sum + order.totalAmount, 0);
+  
   const countPending = orders.filter(o => o.status === OrderStatus.PENDING).length;
   const countFin = orders.filter(o => o.status === OrderStatus.APPROVED_FINANCE).length;
   const countMgr = orders.filter(o => o.status === OrderStatus.APPROVED_MANAGER).length;
   const countRejected = orders.filter(o => o.status === OrderStatus.REJECTED).length;
 
-  const statusData = [
-    { name: 'در انتظار مالی', value: countPending, color: '#fbbf24' },
-    { name: 'در انتظار مدیریت', value: countFin, color: '#f59e0b' },
-    { name: 'در انتظار مدیرعامل', value: countMgr, color: '#d97706' },
-    { name: 'تایید نهایی', value: completedOrders.length, color: '#10b981' },
-    { name: 'رد شده', value: countRejected, color: '#ef4444' },
-  ].filter(d => d.value > 0);
+  // Status Widgets Data
+  const statusWidgets = [
+    { 
+      key: OrderStatus.PENDING, 
+      label: 'کارتابل مالی', 
+      count: countPending, 
+      icon: Clock, 
+      color: 'text-amber-600', 
+      bg: 'bg-amber-50', 
+      border: 'border-amber-100',
+      barColor: 'bg-amber-500'
+    },
+    { 
+      key: OrderStatus.APPROVED_FINANCE, 
+      label: 'کارتابل مدیریت', 
+      count: countFin, 
+      icon: Activity, 
+      color: 'text-blue-600', 
+      bg: 'bg-blue-50', 
+      border: 'border-blue-100',
+      barColor: 'bg-blue-500'
+    },
+    { 
+      key: OrderStatus.APPROVED_MANAGER, 
+      label: 'کارتابل مدیرعامل', 
+      count: countMgr, 
+      icon: ShieldCheck, 
+      color: 'text-indigo-600', 
+      bg: 'bg-indigo-50', 
+      border: 'border-indigo-100',
+      barColor: 'bg-indigo-500'
+    },
+    { 
+      key: OrderStatus.REJECTED, 
+      label: 'درخواست‌های رد شده', 
+      count: countRejected, 
+      icon: XCircle, 
+      color: 'text-red-600', 
+      bg: 'bg-red-50', 
+      border: 'border-red-100',
+      barColor: 'bg-red-500'
+    },
+    { 
+      key: OrderStatus.APPROVED_CEO, 
+      label: 'تایید نهایی (بایگانی)', 
+      count: completedOrders.length, 
+      icon: CheckCircle, 
+      color: 'text-green-600', 
+      bg: 'bg-green-50', 
+      border: 'border-green-100',
+      barColor: 'bg-green-500'
+    }
+  ];
 
   const methodDataRaw: Record<string, number> = {};
   orders.forEach(order => { order.paymentDetails.forEach(detail => { methodDataRaw[detail.method] = (methodDataRaw[detail.method] || 0) + detail.amount; }); });
@@ -145,7 +191,7 @@ const Dashboard: React.FC<DashboardProps> = ({ orders, settings, onViewArchive, 
       return allCheques.sort((a, b) => a.daysLeft - b.daysLeft);
   }, [orders]);
 
-  const handleOpenWhatsAppModal = () => { /* ... existing code ... */ setWhatsAppMessage(`📊 گزارش مالی...\n💰 کل: ${formatNumberString(totalAmount)}`); setWhatsAppTarget(settings?.whatsappNumber || ''); setSendAsImage(false); setShowWhatsAppModal(true); };
+  const handleOpenWhatsAppModal = () => { setWhatsAppMessage(`📊 گزارش مالی...\n💰 کل: ${formatNumberString(totalAmount)}`); setWhatsAppTarget(settings?.whatsappNumber || ''); setSendAsImage(false); setShowWhatsAppModal(true); };
   const handleSendWhatsApp = async () => { /* ... existing code ... */ };
   const renderInternalCalendar = () => { /* ... existing code ... */ return <div/>; };
 
@@ -155,14 +201,92 @@ const Dashboard: React.FC<DashboardProps> = ({ orders, settings, onViewArchive, 
       {/* ... (Existing WhatsApp Modal & Contacts Modal & Header Buttons) ... */}
       
       <div id="dashboard-content-area">
-          {/* ... (Existing Calendar, Status Widgets) ... */}
-          
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div onClick={() => onFilterByStatus && onFilterByStatus('pending_all')} className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex items-center gap-4 cursor-pointer hover:shadow-md transition-all group relative overflow-hidden"><div className="absolute right-0 top-0 w-1 h-full bg-amber-400 group-hover:w-1.5 transition-all"></div><div className="p-3 bg-amber-100 text-amber-600 rounded-xl"><Clock size={24} /></div><div><p className="text-sm text-gray-500 mb-1">کل سفارشات در جریان</p><p className="text-2xl font-bold text-gray-900">{pendingOrders.length}</p></div></div>
-            <div onClick={() => setShowBankReport(true)} className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex items-center gap-4 cursor-pointer hover:shadow-md hover:border-blue-200 transition-all group relative overflow-hidden"><div className="absolute right-0 top-0 w-1 h-full bg-blue-500 group-hover:w-1.5 transition-all"></div><div className="p-3 bg-blue-100 text-blue-600 rounded-xl group-hover:bg-blue-600 group-hover:text-white transition-colors"><TrendingUp size={24} /></div><div><div className="flex items-center gap-2"><p className="text-sm text-gray-500 mb-1">مجموع پرداختی (نهایی)</p><span className="text-[10px] bg-blue-50 text-blue-600 px-1.5 rounded border border-blue-100">گزارش بانک</span></div><p className="text-2xl font-bold text-gray-900">{formatCurrency(totalAmount)}</p></div></div>
+          {/* Status Widgets Grid */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {statusWidgets.map((widget) => {
+                const Icon = widget.icon;
+                return (
+                    <div 
+                        key={widget.key} 
+                        onClick={() => onFilterByStatus && onFilterByStatus(widget.key)} 
+                        className={`p-5 rounded-2xl shadow-sm border transition-all cursor-pointer group relative overflow-hidden bg-white hover:shadow-md ${widget.border}`}
+                    >
+                        <div className={`absolute right-0 top-0 w-1.5 h-full ${widget.barColor} group-hover:w-2 transition-all`}></div>
+                        <div className="flex justify-between items-start mb-2">
+                            <div className={`p-2.5 rounded-xl ${widget.bg} ${widget.color}`}>
+                                <Icon size={22} />
+                            </div>
+                            <span className="text-2xl font-black text-gray-800">{widget.count}</span>
+                        </div>
+                        <h3 className="text-sm font-bold text-gray-600">{widget.label}</h3>
+                    </div>
+                );
+            })}
+            
+            {/* Special Bank Report Card */}
+            <div 
+                onClick={() => setShowBankReport(true)} 
+                className="p-5 rounded-2xl shadow-sm border border-cyan-100 bg-gradient-to-br from-cyan-50 to-white hover:shadow-md transition-all cursor-pointer group relative overflow-hidden"
+            >
+                <div className="absolute right-0 top-0 w-1.5 h-full bg-cyan-500 group-hover:w-2 transition-all"></div>
+                <div className="flex justify-between items-start mb-2">
+                    <div className="p-2.5 rounded-xl bg-cyan-100 text-cyan-600">
+                        <Building2 size={22} />
+                    </div>
+                    <div className="text-right">
+                        <span className="text-lg font-black text-gray-800 dir-ltr block">{formatNumberString(totalAmount)}</span>
+                        <span className="text-[10px] text-gray-400">ریال (خروجی کل)</span>
+                    </div>
+                </div>
+                <h3 className="text-sm font-bold text-gray-600">گزارش جامع بانکی</h3>
+            </div>
           </div>
 
-          {/* ... (Existing Cheque & Charts) ... */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
+              {/* Payment Methods Chart */}
+              <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+                  <h3 className="font-bold text-gray-800 mb-6 flex items-center gap-2 text-sm"><PieChart size={18}/> روش‌های پرداخت</h3>
+                  <div className="h-[300px]">
+                      <ResponsiveContainer width="100%" height="100%">
+                          <PieChart>
+                              <Pie data={methodData} cx="50%" cy="50%" innerRadius={60} outerRadius={100} paddingAngle={5} dataKey="amount">
+                                  {methodData.map((entry, index) => (<Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />))}
+                              </Pie>
+                              <Tooltip formatter={(value: number) => formatCurrency(value)} />
+                              <Legend />
+                          </PieChart>
+                      </ResponsiveContainer>
+                  </div>
+              </div>
+
+              {/* Upcoming Cheques */}
+              <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex flex-col">
+                  <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2 text-sm"><CalendarDays size={18}/> چک‌های نزدیک سررسید</h3>
+                  <div className="flex-1 overflow-y-auto pr-2 space-y-3 custom-scrollbar max-h-[300px]">
+                      {chequeData.filter(c => !c.isPassed).length === 0 ? (
+                          <div className="text-center text-gray-400 py-10 flex flex-col items-center"><CheckCircle size={32} className="mb-2 opacity-30"/>چک نزدیک به سررسید وجود ندارد.</div>
+                      ) : (
+                          chequeData.filter(c => !c.isPassed).map(cheque => (
+                              <div key={cheque.id} className="flex items-center justify-between p-3 rounded-xl bg-gray-50 border border-gray-100 hover:border-blue-200 transition-colors">
+                                  <div className="flex items-center gap-3">
+                                      <div className={`w-10 h-10 rounded-lg flex flex-col items-center justify-center text-xs font-bold ${cheque.daysLeft <= 2 ? 'bg-red-100 text-red-600' : 'bg-blue-100 text-blue-600'}`}>
+                                          <span>{cheque.daysLeft}</span><span>روز</span>
+                                      </div>
+                                      <div>
+                                          <p className="font-bold text-gray-800 text-sm">{cheque.payee}</p>
+                                          <p className="text-[10px] text-gray-500 mt-0.5">{cheque.bank} - {cheque.number}</p>
+                                      </div>
+                                  </div>
+                                  <div className="text-left">
+                                      <p className="font-bold text-gray-800 font-mono text-sm">{formatNumberString(cheque.amount)}</p>
+                                      <p className="text-[10px] text-gray-400">{cheque.date}</p>
+                                  </div>
+                              </div>
+                          ))
+                      )}
+                  </div>
+              </div>
+          </div>
       </div>
 
       {showBankReport && (

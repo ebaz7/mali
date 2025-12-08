@@ -43,37 +43,7 @@ const PrintExitPermit: React.FC<Props> = ({ permit, onClose, onApprove, onReject
       setProcessing(false);
   };
 
-  const handleSendWhatsApp = async (target: string) => {
-      setSharing(true);
-      setShowContactSelect(false);
-      const element = document.getElementById('print-area-exit');
-      if(!element) return;
-      try {
-          // @ts-ignore
-          const canvas = await window.html2canvas(element, { scale: 2, backgroundColor: '#ffffff' });
-          const base64 = canvas.toDataURL('image/png').split(',')[1];
-          
-          let caption = `🚛 *مجوز خروج بار #${permit.permitNumber}*\n`;
-          
-          // Legacy check or Multi-row check
-          const items = permit.items && permit.items.length > 0 ? permit.items : [{goodsName: permit.goodsName, cartonCount: permit.cartonCount, weight: permit.weight}];
-          const dests = permit.destinations && permit.destinations.length > 0 ? permit.destinations : [{recipientName: permit.recipientName, address: permit.destinationAddress, phone: ''}];
-
-          caption += `📦 اقلام:\n`;
-          items.forEach((i: any) => caption += `- ${i.goodsName} (${i.cartonCount} کارتن)\n`);
-          
-          caption += `📍 مقاصد:\n`;
-          dests.forEach((d: any) => caption += `- ${d.recipientName}: ${d.address}\n`);
-
-          if(permit.plateNumber) caption += `🚚 پلاک: ${permit.plateNumber}\n`;
-          caption += `📅 تاریخ: ${formatDate(permit.date)}`;
-
-          await apiCall('/send-whatsapp', 'POST', { number: target, message: caption, mediaData: { data: base64, mimeType: 'image/png', filename: 'permit.png' } });
-          alert('ارسال شد');
-      } catch(e) { alert('خطا در ارسال'); } finally { setSharing(false); }
-  };
-
-  // Prepare data for rendering (Legacy compatibility)
+  // Prepare data for rendering/text (Legacy compatibility)
   const displayItems = permit.items && permit.items.length > 0 
       ? permit.items 
       : [{ id: 'legacy', goodsName: permit.goodsName || '', cartonCount: permit.cartonCount || 0, weight: permit.weight || 0 }];
@@ -84,6 +54,56 @@ const PrintExitPermit: React.FC<Props> = ({ permit, onClose, onApprove, onReject
 
   const totalCartons = displayItems.reduce((acc, i) => acc + (Number(i.cartonCount) || 0), 0);
   const totalWeight = displayItems.reduce((acc, i) => acc + (Number(i.weight) || 0), 0);
+
+  const handleSendWhatsApp = async (target: string) => {
+      setSharing(true);
+      setShowContactSelect(false);
+      const element = document.getElementById('print-area-exit');
+      if(!element) return;
+      try {
+          // @ts-ignore
+          const canvas = await window.html2canvas(element, { scale: 2, backgroundColor: '#ffffff' });
+          const base64 = canvas.toDataURL('image/png').split(',')[1];
+          
+          let caption = `🚛 *مجوز خروج کالا*\n`;
+          caption += `🔢 شماره: *${permit.permitNumber}*\n`;
+          caption += `📅 تاریخ: ${formatDate(permit.date)}\n`;
+          caption += `--------------------------------\n`;
+          
+          caption += `📦 *مشخصات اقلام:*\n`;
+          displayItems.forEach((i, idx) => {
+              caption += `${idx + 1}. ${i.goodsName}\n`;
+              if(i.cartonCount) caption += `   📦 تعداد: ${i.cartonCount} کارتن\n`;
+              if(i.weight) caption += `   ⚖️ وزن: ${i.weight} کیلوگرم\n`;
+          });
+          
+          caption += `\n📊 *جمع کل:* ${totalCartons} کارتن | ${totalWeight} کیلوگرم\n`;
+          caption += `--------------------------------\n`;
+          
+          caption += `📍 *گیرندگان و مقاصد:*\n`;
+          displayDestinations.forEach((d, idx) => {
+              caption += `${idx + 1}. *${d.recipientName}*\n`;
+              if(d.phone) caption += `   📞 تماس: ${d.phone}\n`;
+              caption += `   📫 آدرس: ${d.address}\n`;
+          });
+          
+          caption += `--------------------------------\n`;
+          if(permit.driverName || permit.plateNumber) {
+              caption += `🚚 *اطلاعات حمل:*\n`;
+              if(permit.driverName) caption += `👤 راننده: ${permit.driverName}\n`;
+              if(permit.plateNumber) caption += `🔢 پلاک: ${permit.plateNumber}\n`;
+          }
+          if(permit.description) caption += `📝 توضیحات: ${permit.description}\n`;
+
+          caption += `\n✅ *تاییدات:*\n`;
+          caption += `🔸 درخواست کننده: ${permit.requester}\n`;
+          if (permit.approverCeo) caption += `🏆 مدیرعامل: ${permit.approverCeo} (تایید شد)\n`;
+          if (permit.approverFactory) caption += `🏭 خروج از کارخانه: ${permit.approverFactory} (تایید شد)\n`;
+
+          await apiCall('/send-whatsapp', 'POST', { number: target, message: caption, mediaData: { data: base64, mimeType: 'image/png', filename: 'permit.png' } });
+          alert('مجوز با جزئیات کامل ارسال شد.');
+      } catch(e) { alert('خطا در ارسال'); } finally { setSharing(false); }
+  };
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto animate-fade-in">

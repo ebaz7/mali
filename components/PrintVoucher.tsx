@@ -235,29 +235,45 @@ const PrintVoucher: React.FC<PrintVoucherProps> = ({ order, onClose, settings, o
       const element = document.getElementById('print-area');
       if (!element) return;
 
-      // Construct detailed text caption
-      let caption = `📄 *رسید دستور پرداخت #${order.trackingNumber}*\n`;
+      // Construct FULL detailed text caption
+      let caption = `📄 *دستور پرداخت وجه*\n`;
+      caption += `🔢 شماره سند: *${order.trackingNumber}*\n`;
       if (order.payingCompany) caption += `🏢 شرکت: ${order.payingCompany}\n`;
       caption += `📅 تاریخ: ${formatDate(order.date)}\n`;
-      caption += `👤 ذینفع: ${order.payee}\n`;
-      caption += `💰 مبلغ کل: ${formatCurrency(order.totalAmount)}\n`;
-      caption += `📝 شرح: ${order.description}\n`;
+      caption += `--------------------------------\n`;
+      caption += `👤 در وجه: *${order.payee}*\n`;
+      caption += `💰 مبلغ کل: *${formatCurrency(order.totalAmount)}*\n`;
+      caption += `📝 بابت: ${order.description}\n`;
+      caption += `--------------------------------\n`;
       
       if (order.paymentDetails && order.paymentDetails.length > 0) {
-          caption += `\n📋 *جزئیات پرداخت:*`;
-          order.paymentDetails.forEach((d) => {
+          caption += `📋 *ریز اقلام پرداخت:*\n`;
+          order.paymentDetails.forEach((d, index) => {
               const method = d.method;
               const amount = formatCurrency(d.amount);
               let details = '';
               if (d.bankName) details += ` - ${d.bankName}`;
               if (d.chequeNumber) details += ` - چک: ${d.chequeNumber}`;
               if (d.chequeDate) details += ` (سررسید: ${d.chequeDate})`;
+              if (d.description) details += ` (${d.description})`;
               
-              caption += `\n🔹 ${method}: ${amount}${details}`;
+              caption += `${index + 1}. *${method}*: ${amount}${details}\n`;
           });
+          caption += `--------------------------------\n`;
       }
 
-      caption += `\n👤 درخواست کننده: ${order.requester}`;
+      // Add Approvers Info
+      caption += `✅ *وضعیت تاییدات:*\n`;
+      caption += `🔸 درخواست: ${order.requester}\n`;
+      if (order.approverFinancial) caption += `🔹 مدیر مالی: ${order.approverFinancial} (تایید شد)\n`;
+      if (order.approverManager) caption += `🔹 مدیریت: ${order.approverManager} (تایید شد)\n`;
+      if (order.approverCeo) caption += `🏆 مدیرعامل: ${order.approverCeo} (تایید شد)\n`;
+      
+      if (order.status === OrderStatus.REJECTED) {
+          caption += `⛔ *وضعیت: رد شده*\n`;
+          if (order.rejectedBy) caption += `توسط: ${order.rejectedBy}\n`;
+          if (order.rejectionReason) caption += `دلیل: ${order.rejectionReason}`;
+      }
 
       try {
           // @ts-ignore
@@ -281,7 +297,7 @@ const PrintVoucher: React.FC<PrintVoucherProps> = ({ order, onClose, settings, o
                   filename: `voucher_${order.trackingNumber}.png`
               }
           });
-          alert('رسید به همراه متن جزئیات با موفقیت ارسال شد.');
+          alert('رسید به همراه متن جزئیات کامل با موفقیت ارسال شد.');
       } catch (e: any) {
           alert(`خطا در ارسال: ${e.message}`);
       } finally {
