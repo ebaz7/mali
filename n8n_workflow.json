@@ -53,27 +53,42 @@
     },
     {
       "parameters": {
-        "resource": "audio",
-        "operation": "transcribe",
+        "method": "POST",
+        "url": "https://api.openai.com/v1/audio/transcriptions",
+        "sendBinaryData": true,
         "binaryPropertyName": "data",
         "options": {
-          "language": "fa"
+          "bodyContentType": "multipart-form-data"
+        },
+        "bodyParametersUi": {
+          "parameter": [
+            {
+              "name": "model",
+              "value": "whisper-1"
+            },
+            {
+              "name": "language",
+              "value": "fa"
+            }
+          ]
+        },
+        "headerParametersUi": {
+          "parameter": [
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $env.OPENAI_API_KEY }}"
+            }
+          ]
         }
       },
-      "id": "openai-whisper",
-      "name": "OpenAI Whisper",
-      "type": "n8n-nodes-base.openAi",
-      "typeVersion": 1,
+      "id": "http-whisper",
+      "name": "OpenAI Whisper (HTTP)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
       "position": [
         1040,
         200
       ],
-      "credentials": {
-        "openAiApi": {
-          "id": "YOUR_OPENAI_CREDENTIAL_ID",
-          "name": "OpenAI account"
-        }
-      },
       "continueOnFail": true
     },
     {
@@ -184,14 +199,14 @@
       "main": [
         [
           {
-            "node": "OpenAI Whisper",
+            "node": "http-whisper",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "OpenAI Whisper": {
+    "http-whisper": {
       "main": [
         [
           {

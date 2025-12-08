@@ -51,7 +51,6 @@ export const apiCall = async <T>(endpoint: string, method: string = 'GET', body?
             return await response.json();
         }
         
-        // If response is OK but not JSON (e.g. 200 OK from some proxies), treat as success if body was empty
         if (response.ok && (!contentType || !contentType.includes("application/json"))) {
              return { success: true } as unknown as T;
         }
@@ -157,7 +156,6 @@ export const apiCall = async <T>(endpoint: string, method: string = 'GET', body?
         if (endpoint === '/users' && method === 'GET') return getLocalData<User[]>(LS_KEYS.USERS, MOCK_USERS) as unknown as T;
 
         // --- WHATSAPP & AI (Mock Responses for Offline Mode) ---
-        // FIX: Added missing mock for /send-whatsapp
         if (endpoint === '/send-whatsapp') {
             return { success: true, message: 'Mock: پیام واتساپ (شبیه‌سازی شده) ارسال شد (سرور قطع است).' } as unknown as T;
         }
@@ -184,7 +182,6 @@ export const apiCall = async <T>(endpoint: string, method: string = 'GET', body?
 
         // --- UPLOAD ---
         if (endpoint === '/upload' && method === 'POST') {
-            // Return the Base64 data directly as 'url' for offline preview
             return { fileName: body.fileName, url: body.fileData } as unknown as T;
         }
         

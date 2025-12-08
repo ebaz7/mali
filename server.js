@@ -133,7 +133,6 @@ const sendTelegramMessageInternal = async (chatId, message) => {
 // ==========================================
 let n8nProcess = null;
 
-// Function to auto-configure n8n (Import Workflow & Activate)
 const syncN8nWorkflow = async () => {
     const db = getDb();
     const webhookUrl = process.env.N8N_WEBHOOK_URL || db.settings.n8nWebhookUrl || 'http://localhost:5678/webhook/ai';
@@ -157,7 +156,7 @@ const syncN8nWorkflow = async () => {
     console.log(`>>> Starting n8n Sync to ${apiBase}...`);
 
     let attempts = 0;
-    const maxAttempts = 120; // Increased to 120 (4 mins) to wait for n8n to fully boot
+    const maxAttempts = 120; // 4 mins
     
     const interval = setInterval(async () => {
         attempts++;
@@ -175,7 +174,6 @@ const syncN8nWorkflow = async () => {
             let workflowId;
             
             if (existing) {
-                // DELETE EXISTING to ensure clean state and correct Response Mode
                 console.log('>>> Deleting old n8n workflow to ensure clean state...');
                 try {
                     await axios.delete(`${apiBase}/api/v1/workflows/${existing.id}`, { headers });
@@ -197,7 +195,6 @@ const syncN8nWorkflow = async () => {
             
             clearInterval(interval);
         } catch (e) {
-            // Silent error logging while waiting for startup
             if (attempts % 10 === 0) console.log(`... waiting for n8n (${attempts}/${maxAttempts})`);
         }
     }, 2000);
@@ -205,14 +202,10 @@ const syncN8nWorkflow = async () => {
 
 const checkN8nStatus = async () => {
     try {
-        // Try pinging n8n default port
-        // Use shorter timeout to fail fast if down
         await axios.get('http://localhost:5678/healthz', { timeout: 1000 });
         return true;
     } catch (e) {
-        // If status code is present (e.g. 401 auth required), it means service IS running
         if (e.response && (e.response.status === 401 || e.response.status === 200)) return true;
-        // ECONNREFUSED means it is definitely down
         return false;
     }
 };
@@ -223,17 +216,15 @@ const startN8nService = async () => {
         return;
     }
 
-    // --- SMART CHECK: IS N8N ALREADY RUNNING? ---
     const isRunning = await checkN8nStatus();
     if (isRunning) {
         console.log('>>> ⚡ n8n service is ALREADY RUNNING on port 5678. Skipping launch.');
         return;
     }
-    // --------------------------------------------
 
     console.log('>>> Initializing Local AI Engine (n8n)...');
     
-    // Prepare Environment
+    // Explicitly pass environment variables to n8n, including OPENAI_API_KEY if present
     const n8nEnv = {
         ...process.env,
         N8N_BASIC_AUTH_ACTIVE: 'true',
@@ -252,10 +243,6 @@ const startN8nService = async () => {
     }
 
     const isWin = process.platform === 'win32';
-    
-    // Strategy:
-    // 1. Try local node_modules/.bin/n8n (Fastest, uses installed package)
-    // 2. Fallback to 'npx n8n start' (Might check internet, but usually uses cache)
     
     const localBin = path.join(__dirname, 'node_modules', '.bin', isWin ? 'n8n.cmd' : 'n8n');
     let command, args;
@@ -277,7 +264,6 @@ const startN8nService = async () => {
             env: n8nEnv,
             stdio: 'pipe', 
             detached: false,
-            // CRITICAL FIX: Shell must be true on Windows to execute .cmd/batch files properly
             shell: isWin 
         });
 
@@ -289,7 +275,6 @@ const startN8nService = async () => {
         });
 
         n8nProcess.stderr.on('data', (data) => {
-            // Keep logs silent unless there's a fatal crash
             if (data.toString().includes('crash') || data.toString().includes('Error')) {
                 // console.error('[n8n Error]', data.toString()); 
             }
@@ -310,7 +295,6 @@ const startN8nService = async () => {
 
 async function processN8NRequest(user, messageText, audioData = null, audioMimeType = null, systemPrompt = null) {
     const db = getDb();
-    // Prioritize Env Var, then DB, then Default Localhost
     const webhookUrl = process.env.N8N_WEBHOOK_URL || db.settings.n8nWebhookUrl || 'http://localhost:5678/webhook/ai';
 
     try {
@@ -323,58 +307,49 @@ async function processN8NRequest(user, messageText, audioData = null, audioMimeT
             message: messageText,
             systemPrompt: systemPrompt,
             audio: audioData ? {
-                data: audioData, // Base64 string without prefix
+                data: audioData, 
                 mimeType: audioMimeType
             } : null,
             timestamp: new Date().toISOString()
         };
 
-        console.log(`>>> Sending request to n8n: ${webhookUrl} | User: ${user.fullName}`);
-        
+        // CRITICAL: Explicitly set charset to utf-8
         const response = await axios.post(webhookUrl, payload, { 
-            timeout: 180000, // 3 Minutes timeout to prevent early cut-off
-            headers: { 'Content-Type': 'application/json' }
+            timeout: 180000, 
+            headers: { 
+                'Content-Type': 'application/json; charset=utf-8' 
+            }
         });
         
         let data = response.data;
 
-        // DEBUG:
-        // console.log("RAW N8N:", JSON.stringify(data));
-
-        // HANDLE EMPTY RESPONSE (Empty String)
         if (data === "" || data === null || data === undefined) {
             console.warn(">>> n8n returned empty response.");
             return "⛔ هوش مصنوعی پاسخ نداد. (ورک‌فلو پاسخ خالی فرستاد)";
         }
 
-        // CRITICAL CHECK: If n8n returns standard success message instead of our JSON
         if (data && (data.message === 'Workflow was started' || data === 'Workflow was started')) {
             console.warn(">>> n8n returned 'Workflow was started'. Check Webhook Node configuration.");
             return "⚠️ خطا: نود Webhook در n8n روی حالت پاسخ‌دهی فوری تنظیم شده است. لطفاً آن را به 'Respond Using Respond to Webhook Node' تغییر دهید.";
         }
 
-        // 1. Handle Array Response (n8n sometimes returns array of items)
         if (Array.isArray(data)) {
             data = data[0];
         }
 
-        // 2. Handle Text Response that might be JSON
         if (typeof data === 'string') {
             try {
-                // Try parsing it if it looks like JSON
                 const trimmed = data.trim();
                 if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
                     data = JSON.parse(trimmed);
                 } else {
-                    // It's just a text message from sanitizer fallback
                     return data;
                 }
             } catch(e) {
-                return data; // Return as text
+                return data;
             }
         }
 
-        // 3. Handle Structured JSON Response (Agent Style)
         if (data && typeof data === 'object') {
             if (data.type === 'message') {
                 return data.text || "پیام خالی";
@@ -382,13 +357,11 @@ async function processN8NRequest(user, messageText, audioData = null, audioMimeT
             if (data.type === 'tool_call') {
                 return handleToolExecution(data.tool, data.args, user);
             }
-            // Smart Analysis Fallback
             if (data.recommendation) {
                 return data;
             }
         }
 
-        // 4. Fallback heuristics
         if (data.text) return data.text;
         if (data.reply) return data.reply;
         
@@ -405,12 +378,10 @@ async function processN8NRequest(user, messageText, audioData = null, audioMimeT
             return "⚠️ خطا: پاسخ‌دهی هوش مصنوعی بیش از حد طول کشید.";
         }
         
-        // --- FALLBACK MODE (OFFLINE AI) ---
         if (systemPrompt && systemPrompt.includes("JSON generator")) {
             return null; 
         }
 
-        // Simple Rule-Based Chatbot Fallback
         const lowerMsg = (messageText || '').toLowerCase();
         if (lowerMsg.includes('وضعیت') || lowerMsg.includes('گزارش') || lowerMsg.includes('کارتابل')) {
             return handleToolExecution('get_financial_summary', {}, user);
@@ -448,7 +419,6 @@ function handleToolExecution(toolName, args, user) {
             db.orders.unshift(newOrder);
             saveDb(db);
             
-            // Notify Financial Managers
             const financeUsers = db.users.filter(u => u.role === 'financial');
             financeUsers.forEach(fu => {
                 if(fu.phoneNumber) sendWhatsAppMessageInternal(fu.phoneNumber, `🔔 *دستور پرداخت جدید*\nشماره: ${trackingNum}\nمبلغ: ${Number(args.amount).toLocaleString('fa-IR')}\nدرخواست‌کننده: ${user.fullName}`);
@@ -459,7 +429,6 @@ function handleToolExecution(toolName, args, user) {
         }
 
         if (toolName === 'get_financial_summary') {
-            // Personalized Report Logic
             let reportText = `📊 *گزارش کارتابل شما (${user.fullName})*:\n`;
             let count = 0;
 
@@ -496,7 +465,6 @@ function handleToolExecution(toolName, args, user) {
                 }
             }
 
-            // If regular user, show their own pending requests
             const myPending = db.orders.filter(o => o.requester === user.fullName && o.status !== 'تایید نهایی' && o.status !== 'رد شده');
             if (myPending.length > 0) {
                 reportText += `\n🔹 *درخواست‌های جاری شما:* ${myPending.length} مورد\n`;
@@ -513,9 +481,8 @@ function handleToolExecution(toolName, args, user) {
             return reportText;
         }
 
-        // NEW TOOL: Manage Order (Approve/Reject)
         if (toolName === 'manage_order') {
-            const { trackingNumber, action, reason } = args; // action: 'approve' | 'reject'
+            const { trackingNumber, action, reason } = args;
             const orderIndex = db.orders.findIndex(o => o.trackingNumber == trackingNumber);
             
             if (orderIndex === -1) return `دستور پرداخت با شماره ${trackingNumber} یافت نشد.`;
@@ -531,7 +498,6 @@ function handleToolExecution(toolName, args, user) {
                 order.rejectedBy = user.fullName;
                 successMessage = `❌ دستور #${trackingNumber} رد شد.`;
             } else {
-                // Approval Logic based on Role and Current Status
                 if (order.status === 'در انتظار بررسی مالی' && (user.role === 'financial' || user.role === 'admin')) {
                     nextStatus = 'تایید مالی / در انتظار مدیریت';
                     order.approverFinancial = user.fullName;
@@ -553,7 +519,6 @@ function handleToolExecution(toolName, args, user) {
             db.orders[orderIndex] = order;
             saveDb(db);
             
-            // Trigger Proactive Notifications (Similar to PUT route)
             triggerNotifications(order, db);
 
             return successMessage;
@@ -583,7 +548,6 @@ function handleToolExecution(toolName, args, user) {
     }
 }
 
-// Helper for Notifications (Used in Tool Execution & API)
 function triggerNotifications(order, db) {
     const newStatus = order.status;
     const tracking = order.trackingNumber;
@@ -599,17 +563,15 @@ function triggerNotifications(order, db) {
         targetRole = 'ceo';
         msg = `🔔 *کارتابل شما (مدیرعامل)*\nدستور پرداخت #${tracking} توسط مدیریت تایید شد و منتظر تایید نهایی شماست.\nمبلغ: ${amount} ریال`;
     } else if (newStatus === 'تایید نهایی') {
-        targetRole = 'financial'; // Notify financial again to pay
+        targetRole = 'financial'; 
         msg = `✅ *دستور پرداخت نهایی شد*\nدستور #${tracking} تایید نهایی شد. لطفا نسبت به پرداخت اقدام کنید.\nمبلغ: ${amount} ریال`;
         
-        // Notify requester too
         const requesterUser = db.users.find(u => u.fullName === order.requester);
         if (requesterUser) {
             if(requesterUser.phoneNumber) sendWhatsAppMessageInternal(requesterUser.phoneNumber, `✅ *درخواست شما تایید شد*\nدستور پرداخت #${tracking} تایید نهایی شد.`);
             if(requesterUser.telegramChatId) sendTelegramMessageInternal(requesterUser.telegramChatId, `✅ درخواست شما (#${tracking}) تایید نهایی شد.`);
         }
     } else if (newStatus === 'رد شده') {
-        // Notify requester
         const requesterUser = db.users.find(u => u.fullName === order.requester);
         if (requesterUser) {
             const txt = `❌ *درخواست رد شد*\nدستور پرداخت #${tracking} رد شد.\nدلیل: ${order.rejectionReason || 'نامشخص'}`;
@@ -627,13 +589,9 @@ function triggerNotifications(order, db) {
     }
 }
 
-// ==========================================
-// SMART ANALYSIS ENDPOINT
-// ==========================================
 app.post('/api/analyze-payment', async (req, res) => {
     const { amount, date, company } = req.body;
     
-    // 1. Try AI Analysis
     const prompt = `Analyze: Amount ${amount}, Date ${date}, Company ${company}. JSON: {recommendation, score, reasons}`;
     const aiResponse = await processN8NRequest(
         { fullName: 'Analyzer', role: 'system', id: 'sys' }, 
@@ -644,7 +602,6 @@ app.post('/api/analyze-payment', async (req, res) => {
         return res.json({ ...aiResponse, analysisId: Date.now() });
     }
 
-    // 2. Fallback Rule-Based Analysis (Offline Mode)
     console.log("Using fallback analysis logic.");
     const amountNum = Number(amount);
     let score = 85;
@@ -683,11 +640,6 @@ app.post('/api/analyze-payment', async (req, res) => {
     });
 });
 
-
-// ==========================================
-// WHATSAPP & TELEGRAM
-// ==========================================
-
 const initTelegram = async () => {
     try {
         const TelegramBot = (await import('node-telegram-bot-api')).default;
@@ -708,7 +660,6 @@ const initTelegram = async () => {
                     return;
                 }
 
-                // Handle Voice/Audio
                 let audioData = null;
                 let messageText = msg.text;
 
@@ -718,7 +669,6 @@ const initTelegram = async () => {
                         const fileLink = await telegramBot.getFileLink(fileId);
                         const response = await axios.get(fileLink, { responseType: 'arraybuffer' });
                         audioData = Buffer.from(response.data).toString('base64');
-                        // Mime type isn't strictly needed for Whisper as long as it's a common format
                     } catch (e) {
                         telegramBot.sendMessage(chatId, "خطا در پردازش صوت.");
                         return;
@@ -728,7 +678,6 @@ const initTelegram = async () => {
                 if (messageText || audioData) {
                     const reply = await processN8NRequest(user, messageText, audioData);
                     
-                    // CRITICAL FIX: Only send if reply is not empty to avoid ETELEGRAM crash
                     if (reply && typeof reply === 'string' && reply.trim() !== '') {
                         telegramBot.sendMessage(chatId, reply);
                     } else if (typeof reply === 'object') {
@@ -792,19 +741,18 @@ const initWhatsApp = async () => {
             const normalize = (n) => n ? n.replace(/^98|^0/, '') : '';
             const user = db.users.find(u => normalize(u.phoneNumber) === normalize(senderNumber));
             
-            if (!user) return; // Ignore unknown numbers
+            if (!user) return; 
 
             let messageText = msg.body;
             let audioData = null;
             let audioMimeType = null;
 
-            // Handle Voice/Audio Messages
             if (msg.hasMedia) {
                 try {
                     const media = await msg.downloadMedia();
                     if (media.mimetype.includes('audio') || media.mimetype.includes('ogg')) {
                         console.log('>>> Voice message received from', user.fullName);
-                        audioData = media.data; // Base64 string
+                        audioData = media.data; 
                         audioMimeType = media.mimetype;
                     }
                 } catch (err) {
@@ -814,7 +762,6 @@ const initWhatsApp = async () => {
                 }
             }
 
-            // If it's a voice message or text message, process it
             if (messageText || audioData) {
                 const reply = await processN8NRequest(user, messageText, audioData, audioMimeType);
                 if (reply) {
@@ -833,7 +780,6 @@ const initWhatsApp = async () => {
     }
 };
 
-// Start Services
 setTimeout(() => {
     startN8nService(); 
     syncN8nWorkflow(); 
@@ -841,7 +787,6 @@ setTimeout(() => {
     initTelegram();
 }, 3000);
 
-// --- ROUTES ---
 app.get('/api/whatsapp/status', (req, res) => { res.json({ ready: isWhatsAppReady, qr: currentQR, user: whatsappUser }); });
 app.get('/api/whatsapp/groups', async (req, res) => {
     if (!whatsappClient || !isWhatsAppReady) return res.status(503).json({ success: false });
@@ -873,7 +818,6 @@ app.get('/api/manifest', (req, res) => {
     res.json({ "name": "PaymentSys", "short_name": "PaySys", "start_url": "/", "display": "standalone", "background_color": "#f3f4f6", "theme_color": "#2563eb", "icons": [ { "src": icon, "sizes": "192x192", "type": "image/png" }, { "src": icon, "sizes": "512x512", "type": "image/png" } ] });
 });
 
-// CRUD Routes
 app.post('/api/login', (req, res) => { const { username, password } = req.body; const db = getDb(); const user = db.users.find(u => u.username === username && u.password === password); if (user) res.json(user); else res.status(401).json({ message: 'Invalid' }); });
 app.get('/api/users', (req, res) => res.json(getDb().users));
 app.post('/api/users', (req, res) => { const db = getDb(); db.users.push(req.body); saveDb(db); res.json(db.users); });
@@ -902,7 +846,6 @@ app.get('/api/next-tracking-number', (req, res) => res.json({ nextTrackingNumber
 app.get('/api/orders', (req, res) => res.json(getDb().orders));
 app.post('/api/orders', (req, res) => { const db = getDb(); const o = req.body; o.updatedAt = Date.now(); if(db.orders.some(x=>x.trackingNumber===o.trackingNumber)) o.trackingNumber = findNextAvailableTrackingNumber(db); db.orders.unshift(o); saveDb(db); res.json(db.orders); });
 
-// Update Order - Includes Proactive Notifications
 app.put('/api/orders/:id', (req, res) => { 
     const db = getDb(); 
     const i = db.orders.findIndex(x=>x.id===req.params.id); 
@@ -913,7 +856,6 @@ app.put('/api/orders/:id', (req, res) => {
         db.orders[i].updatedAt = Date.now(); 
         saveDb(db); 
         
-        // Trigger Notifications on State Change
         if (oldStatus !== db.orders[i].status) {
             triggerNotifications(db.orders[i], db);
         }
