@@ -1,9 +1,9 @@
 
 import React, { useState, useMemo } from 'react';
 import { PaymentOrder, OrderStatus, PaymentMethod, SystemSettings } from '../types';
-import { formatCurrency, parsePersianDate, formatNumberString, getShamsiDateFromIso } from '../constants';
+import { formatCurrency, parsePersianDate, formatNumberString, getShamsiDateFromIso, jalaliToGregorian, getCurrentShamsiDate } from '../constants';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts';
-import { TrendingUp, Clock, CheckCircle, Archive, Activity, Building2, X, XCircle, AlertCircle, Banknote, Calendar as CalendarIcon, ExternalLink, Share2, Plus, CalendarDays, Loader2, Send, Camera, Users, Trash2, List, TrendingDown, ArrowUpRight, UserCheck, ShieldCheck } from 'lucide-react';
+import { TrendingUp, Clock, CheckCircle, Activity, Building2, X, XCircle, Banknote, Calendar as CalendarIcon, Share2, Plus, CalendarDays, Loader2, Send, ShieldCheck, ArrowUpRight, List, ChevronLeft, ChevronRight, Briefcase, Settings } from 'lucide-react';
 import { apiCall } from '../services/apiService';
 
 interface DashboardProps {
@@ -19,18 +19,10 @@ const MONTHS = [ 'فروردین', 'اردیبهشت', 'خرداد', 'تیر', '
 const Dashboard: React.FC<DashboardProps> = ({ orders, settings, onViewArchive, onFilterByStatus }) => {
   const [showBankReport, setShowBankReport] = useState(false);
   const [bankReportTab, setBankReportTab] = useState<'summary' | 'timeline'>('summary');
-  const [showCalendar, setShowCalendar] = useState(false);
-  const [showContactsList, setShowContactsList] = useState(false);
   
-  // WhatsApp Modal State
-  const [showWhatsAppModal, setShowWhatsAppModal] = useState(false);
-  const [whatsAppTarget, setWhatsAppTarget] = useState('');
-  const [whatsAppMessage, setWhatsAppMessage] = useState('');
-  const [sendAsImage, setSendAsImage] = useState(false);
-  const [sendingReport, setSendingReport] = useState(false);
-  
-  // Calendar Internal Logic
-  const [calendarMonth, setCalendarMonth] = useState(new Date());
+  // Calendar State (Fallback)
+  const currentShamsi = getCurrentShamsiDate();
+  const [calendarMonth, setCalendarMonth] = useState({ year: currentShamsi.year, month: currentShamsi.month });
 
   const completedOrders = orders.filter(o => o.status === OrderStatus.APPROVED_CEO);
   const totalAmount = completedOrders.reduce((sum, order) => sum + order.totalAmount, 0);
@@ -39,6 +31,12 @@ const Dashboard: React.FC<DashboardProps> = ({ orders, settings, onViewArchive, 
   const countFin = orders.filter(o => o.status === OrderStatus.APPROVED_FINANCE).length;
   const countMgr = orders.filter(o => o.status === OrderStatus.APPROVED_MANAGER).length;
   const countRejected = orders.filter(o => o.status === OrderStatus.REJECTED).length;
+
+  // Active (Current) Cartable Logic
+  const activeCartable = orders
+    .filter(o => o.status !== OrderStatus.APPROVED_CEO && o.status !== OrderStatus.REJECTED)
+    .sort((a, b) => b.createdAt - a.createdAt)
+    .slice(0, 10); // Show max 10 items
 
   // Status Widgets Data
   const statusWidgets = [
@@ -74,7 +72,7 @@ const Dashboard: React.FC<DashboardProps> = ({ orders, settings, onViewArchive, 
     },
     { 
       key: OrderStatus.REJECTED, 
-      label: 'درخواست‌های رد شده', 
+      label: 'رد شده', 
       count: countRejected, 
       icon: XCircle, 
       color: 'text-red-600', 
@@ -84,7 +82,7 @@ const Dashboard: React.FC<DashboardProps> = ({ orders, settings, onViewArchive, 
     },
     { 
       key: OrderStatus.APPROVED_CEO, 
-      label: 'تایید نهایی (بایگانی)', 
+      label: 'بایگانی', 
       count: completedOrders.length, 
       icon: CheckCircle, 
       color: 'text-green-600', 
@@ -98,158 +96,174 @@ const Dashboard: React.FC<DashboardProps> = ({ orders, settings, onViewArchive, 
   orders.forEach(order => { order.paymentDetails.forEach(detail => { methodDataRaw[detail.method] = (methodDataRaw[detail.method] || 0) + detail.amount; }); });
   const methodData = Object.keys(methodDataRaw).map(key => ({ name: key, amount: methodDataRaw[key] }));
 
-  // Bank Summary Stats
+  // Bank Stats
   const bankStats = useMemo(() => {
     const stats: Record<string, number> = {};
     completedOrders.forEach(order => { order.paymentDetails.forEach(detail => { if (detail.bankName && detail.bankName.trim() !== '') { const normalizedName = detail.bankName.trim(); stats[normalizedName] = (stats[normalizedName] || 0) + detail.amount; } }); });
     return Object.entries(stats).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value);
   }, [completedOrders]);
 
-  // Bank Timeline Breakdown (Month > Day > Details)
+  // Bank Timeline
   const bankTimeline = useMemo(() => {
       const groups: Record<string, { label: string, total: number, count: number, days: Record<string, { total: number, items: any[] }> }> = {};
-      
       completedOrders.forEach(order => {
           const dateParts = getShamsiDateFromIso(order.date);
           const monthKey = `${dateParts.year}/${String(dateParts.month).padStart(2, '0')}`;
           const monthLabel = `${MONTHS[dateParts.month - 1]} ${dateParts.year}`;
-
-          if (!groups[monthKey]) {
-              groups[monthKey] = { label: monthLabel, total: 0, count: 0, days: {} };
-          }
-
+          if (!groups[monthKey]) { groups[monthKey] = { label: monthLabel, total: 0, count: 0, days: {} }; }
           order.paymentDetails.forEach(detail => {
               if (detail.bankName) {
                   const dayKey = String(dateParts.day).padStart(2, '0');
-                  
-                  if (!groups[monthKey].days[dayKey]) {
-                      groups[monthKey].days[dayKey] = { total: 0, items: [] };
-                  }
-
+                  if (!groups[monthKey].days[dayKey]) { groups[monthKey].days[dayKey] = { total: 0, items: [] }; }
                   const amount = detail.amount;
-                  
-                  // Add totals
                   groups[monthKey].total += amount;
                   groups[monthKey].count += 1;
                   groups[monthKey].days[dayKey].total += amount;
-                  
-                  // Add Item
-                  groups[monthKey].days[dayKey].items.push({
-                      id: detail.id,
-                      bank: detail.bankName,
-                      payee: order.payee,
-                      amount: amount,
-                      desc: order.description,
-                      tracking: order.trackingNumber
-                  });
+                  groups[monthKey].days[dayKey].items.push({ id: detail.id, bank: detail.bankName, payee: order.payee, amount: amount, desc: order.description, tracking: order.trackingNumber });
               }
           });
       });
-
-      // Convert to array and sort desc
-      return Object.entries(groups)
-          .sort((a, b) => b[0].localeCompare(a[0])) // Sort months desc
-          .map(([key, data]) => ({
-              key,
-              ...data,
-              days: Object.entries(data.days)
-                  .sort((a, b) => Number(b[0]) - Number(a[0])) // Sort days desc
-                  .map(([day, dayData]) => ({ day, ...dayData }))
-          }));
+      return Object.entries(groups).sort((a, b) => b[0].localeCompare(a[0])).map(([key, data]) => ({ key, ...data, days: Object.entries(data.days).sort((a, b) => Number(b[0]) - Number(a[0])).map(([day, dayData]) => ({ day, ...dayData })) }));
   }, [completedOrders]);
 
-  // Top Bank & Payee for Dashboard Cards
   const topBank = bankStats.length > 0 ? bankStats[0] : { name: '-', value: 0 };
   const mostActiveMonth = bankTimeline.length > 0 ? bankTimeline[0] : { label: '-', total: 0 };
 
-  // Cheque Report Logic
-  const chequeData = useMemo(() => {
-      const allCheques: any[] = [];
-      orders.forEach(order => {
-          order.paymentDetails.forEach(detail => {
-              if (detail.method === PaymentMethod.CHEQUE && detail.chequeDate) {
-                  const dueDate = parsePersianDate(detail.chequeDate);
-                  if (dueDate) {
-                      const now = new Date();
-                      const diffTime = dueDate.getTime() - now.getTime();
-                      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-                      
-                      allCheques.push({
-                          id: detail.id,
-                          bank: detail.bankName || 'نامشخص',
-                          number: detail.chequeNumber,
-                          date: detail.chequeDate,
-                          amount: detail.amount,
-                          payee: order.payee,
-                          daysLeft: diffDays,
-                          isPassed: diffDays < 0
-                      });
-                  }
-              }
-          });
-      });
-      return allCheques.sort((a, b) => a.daysLeft - b.daysLeft);
-  }, [orders]);
+  // CALENDAR LOGIC (Fallback)
+  const getDaysInMonth = (y: number, m: number) => {
+      if (m <= 6) return 31;
+      if (m <= 11) return 30;
+      const isLeap = (y % 33 === 1 || y % 33 === 5 || y % 33 === 9 || y % 33 === 13 || y % 33 === 17 || y % 33 === 22 || y % 33 === 26 || y % 33 === 30);
+      return isLeap ? 30 : 29;
+  };
 
-  const handleOpenWhatsAppModal = () => { setWhatsAppMessage(`📊 گزارش مالی...\n💰 کل: ${formatNumberString(totalAmount)}`); setWhatsAppTarget(settings?.whatsappNumber || ''); setSendAsImage(false); setShowWhatsAppModal(true); };
-  const handleSendWhatsApp = async () => { /* ... existing code ... */ };
-  const renderInternalCalendar = () => { /* ... existing code ... */ return <div/>; };
+  const generateCalendarDays = () => {
+      const days = [];
+      const totalDays = getDaysInMonth(calendarMonth.year, calendarMonth.month);
+      const gDate = jalaliToGregorian(calendarMonth.year, calendarMonth.month, 1);
+      const startDayOfWeek = (gDate.getDay() + 1) % 7;
+
+      for (let i = 0; i < startDayOfWeek; i++) {
+          days.push(null);
+      }
+      for (let i = 1; i <= totalDays; i++) {
+          days.push(i);
+      }
+      return days;
+  };
+
+  const changeMonth = (delta: number) => {
+      let m = calendarMonth.month + delta;
+      let y = calendarMonth.year;
+      if (m > 12) { m = 1; y++; }
+      else if (m < 1) { m = 12; y--; }
+      setCalendarMonth({ year: y, month: m });
+  };
+
+  // Status Badge Helper
+  const getStatusBadge = (status: OrderStatus) => {
+      switch(status) {
+          case OrderStatus.PENDING: return <span className="bg-amber-100 text-amber-700 px-2 py-0.5 rounded text-[10px]">مالی</span>;
+          case OrderStatus.APPROVED_FINANCE: return <span className="bg-blue-100 text-blue-700 px-2 py-0.5 rounded text-[10px]">مدیریت</span>;
+          case OrderStatus.APPROVED_MANAGER: return <span className="bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded text-[10px]">مدیرعامل</span>;
+          default: return null;
+      }
+  };
+
+  // Google Calendar Integration
+  const googleCalendarId = settings?.googleCalendarId;
 
   return (
-    <div id="dashboard-container" className="space-y-6 animate-fade-in min-w-0 relative">
+    <div className="space-y-6 animate-fade-in min-w-0 relative pb-10">
       
-      {/* ... (Existing WhatsApp Modal & Contacts Modal & Header Buttons) ... */}
-      
-      <div id="dashboard-content-area">
-          {/* Status Widgets Grid */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {statusWidgets.map((widget) => {
-                const Icon = widget.icon;
-                return (
-                    <div 
-                        key={widget.key} 
-                        onClick={() => onFilterByStatus && onFilterByStatus(widget.key)} 
-                        className={`p-5 rounded-2xl shadow-sm border transition-all cursor-pointer group relative overflow-hidden bg-white hover:shadow-md ${widget.border}`}
-                    >
-                        <div className={`absolute right-0 top-0 w-1.5 h-full ${widget.barColor} group-hover:w-2 transition-all`}></div>
-                        <div className="flex justify-between items-start mb-2">
-                            <div className={`p-2.5 rounded-xl ${widget.bg} ${widget.color}`}>
-                                <Icon size={22} />
-                            </div>
-                            <span className="text-2xl font-black text-gray-800">{widget.count}</span>
+      {/* Top Widgets */}
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+        {statusWidgets.map((widget) => {
+            const Icon = widget.icon;
+            return (
+                <div 
+                    key={widget.key} 
+                    onClick={() => onFilterByStatus && onFilterByStatus(widget.key === OrderStatus.APPROVED_CEO ? 'pending_all' : widget.key as any)} 
+                    className={`p-3 rounded-2xl shadow-sm border transition-all cursor-pointer group relative overflow-hidden bg-white hover:shadow-md ${widget.border}`}
+                >
+                    <div className={`absolute right-0 top-0 w-1 h-full ${widget.barColor} group-hover:w-1.5 transition-all`}></div>
+                    <div className="flex justify-between items-start mb-1">
+                        <div className={`p-2 rounded-xl ${widget.bg} ${widget.color}`}>
+                            <Icon size={18} />
                         </div>
-                        <h3 className="text-sm font-bold text-gray-600">{widget.label}</h3>
+                        <span className="text-lg font-black text-gray-800">{widget.count}</span>
                     </div>
-                );
-            })}
-            
-            {/* Special Bank Report Card */}
-            <div 
-                onClick={() => setShowBankReport(true)} 
-                className="p-5 rounded-2xl shadow-sm border border-cyan-100 bg-gradient-to-br from-cyan-50 to-white hover:shadow-md transition-all cursor-pointer group relative overflow-hidden"
-            >
-                <div className="absolute right-0 top-0 w-1.5 h-full bg-cyan-500 group-hover:w-2 transition-all"></div>
-                <div className="flex justify-between items-start mb-2">
-                    <div className="p-2.5 rounded-xl bg-cyan-100 text-cyan-600">
-                        <Building2 size={22} />
-                    </div>
-                    <div className="text-right">
-                        <span className="text-lg font-black text-gray-800 dir-ltr block">{formatNumberString(totalAmount)}</span>
-                        <span className="text-[10px] text-gray-400">ریال (خروجی کل)</span>
-                    </div>
+                    <h3 className="text-xs font-bold text-gray-600 truncate">{widget.label}</h3>
                 </div>
-                <h3 className="text-sm font-bold text-gray-600">گزارش جامع بانکی</h3>
+            );
+        })}
+        
+        {/* Bank Report Widget */}
+        <div 
+            onClick={() => setShowBankReport(true)} 
+            className="p-3 rounded-2xl shadow-sm border border-cyan-100 bg-gradient-to-br from-cyan-50 to-white hover:shadow-md transition-all cursor-pointer group relative overflow-hidden"
+        >
+            <div className="absolute right-0 top-0 w-1 h-full bg-cyan-500 group-hover:w-1.5 transition-all"></div>
+            <div className="flex justify-between items-start mb-1">
+                <div className="p-2 rounded-xl bg-cyan-100 text-cyan-600">
+                    <Building2 size={18} />
+                </div>
             </div>
-          </div>
+            <h3 className="text-xs font-bold text-gray-600">گزارش بانکی</h3>
+            <span className="text-[10px] text-gray-400 font-mono mt-1 block">{formatNumberString(totalAmount)} Rls</span>
+        </div>
+      </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
-              {/* Payment Methods Chart */}
-              <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
-                  <h3 className="font-bold text-gray-800 mb-6 flex items-center gap-2 text-sm"><PieChart size={18}/> روش‌های پرداخت</h3>
-                  <div className="h-[300px]">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          
+          {/* Right Column: Active Cartable & Charts */}
+          <div className="lg:col-span-2 space-y-6">
+              
+              {/* Minimal Current Cartable */}
+              <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
+                  <div className="p-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
+                      <h3 className="font-bold text-gray-800 flex items-center gap-2"><Briefcase size={20} className="text-blue-600"/> کارتابل جاری (در دست اقدام)</h3>
+                      <button onClick={() => onFilterByStatus && onFilterByStatus('pending_all')} className="text-xs text-blue-600 hover:underline">مشاهده همه</button>
+                  </div>
+                  <div className="divide-y divide-gray-50">
+                      {activeCartable.length === 0 ? (
+                          <div className="p-8 text-center text-gray-400 text-sm">هیچ دستور پرداختی در جریان نیست.</div>
+                      ) : (
+                          activeCartable.map(order => (
+                              <div key={order.id} className="p-4 hover:bg-gray-50 transition-colors flex items-center justify-between group">
+                                  <div className="flex items-center gap-3">
+                                      <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${order.status === OrderStatus.PENDING ? 'bg-amber-100 text-amber-600' : order.status === OrderStatus.APPROVED_FINANCE ? 'bg-blue-100 text-blue-600' : 'bg-indigo-100 text-indigo-600'}`}>
+                                          {order.status === OrderStatus.PENDING ? '1' : order.status === OrderStatus.APPROVED_FINANCE ? '2' : '3'}
+                                      </div>
+                                      <div>
+                                          <div className="flex items-center gap-2">
+                                              <span className="font-bold text-gray-800 text-sm">{order.payee}</span>
+                                              {getStatusBadge(order.status)}
+                                          </div>
+                                          <div className="text-xs text-gray-500 mt-0.5 flex items-center gap-2">
+                                              <span className="font-mono">#{order.trackingNumber}</span>
+                                              <span className="w-1 h-1 bg-gray-300 rounded-full"></span>
+                                              <span>{order.description.substring(0, 30)}...</span>
+                                          </div>
+                                      </div>
+                                  </div>
+                                  <div className="text-left">
+                                      <div className="font-bold text-gray-800 font-mono text-sm">{formatCurrency(order.totalAmount)}</div>
+                                      <div className="text-[10px] text-gray-400 mt-0.5">{new Date(order.createdAt).toLocaleDateString('fa-IR')}</div>
+                                  </div>
+                              </div>
+                          ))
+                      )}
+                  </div>
+              </div>
+
+              {/* Chart */}
+              <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100">
+                  <h3 className="font-bold text-gray-800 mb-4 text-sm flex items-center gap-2"><TrendingUp size={18}/> نمودار روش‌های پرداخت</h3>
+                  <div className="h-[250px]">
                       <ResponsiveContainer width="100%" height="100%">
                           <PieChart>
-                              <Pie data={methodData} cx="50%" cy="50%" innerRadius={60} outerRadius={100} paddingAngle={5} dataKey="amount">
+                              <Pie data={methodData} cx="50%" cy="50%" innerRadius={50} outerRadius={80} paddingAngle={5} dataKey="amount">
                                   {methodData.map((entry, index) => (<Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />))}
                               </Pie>
                               <Tooltip formatter={(value: number) => formatCurrency(value)} />
@@ -258,41 +272,71 @@ const Dashboard: React.FC<DashboardProps> = ({ orders, settings, onViewArchive, 
                       </ResponsiveContainer>
                   </div>
               </div>
+          </div>
 
-              {/* Upcoming Cheques */}
-              <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex flex-col">
-                  <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2 text-sm"><CalendarDays size={18}/> چک‌های نزدیک سررسید</h3>
-                  <div className="flex-1 overflow-y-auto pr-2 space-y-3 custom-scrollbar max-h-[300px]">
-                      {chequeData.filter(c => !c.isPassed).length === 0 ? (
-                          <div className="text-center text-gray-400 py-10 flex flex-col items-center"><CheckCircle size={32} className="mb-2 opacity-30"/>چک نزدیک به سررسید وجود ندارد.</div>
-                      ) : (
-                          chequeData.filter(c => !c.isPassed).map(cheque => (
-                              <div key={cheque.id} className="flex items-center justify-between p-3 rounded-xl bg-gray-50 border border-gray-100 hover:border-blue-200 transition-colors">
-                                  <div className="flex items-center gap-3">
-                                      <div className={`w-10 h-10 rounded-lg flex flex-col items-center justify-center text-xs font-bold ${cheque.daysLeft <= 2 ? 'bg-red-100 text-red-600' : 'bg-blue-100 text-blue-600'}`}>
-                                          <span>{cheque.daysLeft}</span><span>روز</span>
-                                      </div>
-                                      <div>
-                                          <p className="font-bold text-gray-800 text-sm">{cheque.payee}</p>
-                                          <p className="text-[10px] text-gray-500 mt-0.5">{cheque.bank} - {cheque.number}</p>
-                                      </div>
+          {/* Left Column: Calendar & Quick Stats */}
+          <div className="space-y-6">
+              
+              {/* Calendar Widget (Google Calendar or Fallback) */}
+              <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden h-[380px] relative">
+                  {googleCalendarId ? (
+                      <iframe 
+                          src={`https://calendar.google.com/calendar/embed?height=600&wkst=6&ctz=Asia%2FTehran&bgcolor=%23ffffff&showTitle=0&showNav=1&showDate=1&showPrint=0&showTabs=0&showCalendars=0&showTz=0&src=${encodeURIComponent(googleCalendarId)}`} 
+                          style={{border: 0}} 
+                          width="100%" 
+                          height="100%" 
+                          frameBorder="0" 
+                          scrolling="no"
+                          title="Google Calendar"
+                      ></iframe>
+                  ) : (
+                      <div className="p-5 h-full flex flex-col">
+                          <div className="flex justify-between items-center mb-4">
+                              <button onClick={() => changeMonth(-1)} className="p-1 hover:bg-gray-100 rounded-full"><ChevronRight size={18}/></button>
+                              <h3 className="font-bold text-gray-800">{MONTHS[calendarMonth.month - 1]} {calendarMonth.year}</h3>
+                              <button onClick={() => changeMonth(1)} className="p-1 hover:bg-gray-100 rounded-full"><ChevronLeft size={18}/></button>
+                          </div>
+                          <div className="grid grid-cols-7 gap-1 text-center text-xs mb-2 text-gray-500 font-bold">
+                              <div>ش</div><div>ی</div><div>د</div><div>س</div><div>چ</div><div>پ</div><div>ج</div>
+                          </div>
+                          <div className="grid grid-cols-7 gap-1 text-center flex-1">
+                              {generateCalendarDays().map((day, idx) => (
+                                  <div 
+                                    key={idx} 
+                                    className={`aspect-square flex items-center justify-center rounded-lg text-xs font-medium 
+                                        ${!day ? '' : 
+                                          (day === currentShamsi.day && calendarMonth.month === currentShamsi.month && calendarMonth.year === currentShamsi.year) ? 'bg-blue-600 text-white shadow-md' : 'hover:bg-gray-50 text-gray-700'
+                                        }`}
+                                  >
+                                      {day}
                                   </div>
-                                  <div className="text-left">
-                                      <p className="font-bold text-gray-800 font-mono text-sm">{formatNumberString(cheque.amount)}</p>
-                                      <p className="text-[10px] text-gray-400">{cheque.date}</p>
-                                  </div>
-                              </div>
-                          ))
-                      )}
+                              ))}
+                          </div>
+                          <div className="mt-4 p-2 bg-yellow-50 rounded border border-yellow-100 text-[10px] text-yellow-800 text-center">
+                              برای مشاهده تقویم گوگل خود، لطفا «آیدی تقویم» را در بخش تنظیمات > اتصالات وارد کنید.
+                          </div>
+                      </div>
+                  )}
+              </div>
+
+              {/* Quick Summary Cards */}
+              <div className="grid grid-cols-1 gap-3">
+                  <div className="bg-emerald-50 p-4 rounded-2xl border border-emerald-100 flex items-center justify-between">
+                      <div><div className="text-xs text-emerald-600 font-bold mb-1">محبوب‌ترین بانک</div><div className="font-bold text-emerald-800 text-sm">{topBank.name}</div></div>
+                      <Building2 className="text-emerald-300" size={24}/>
+                  </div>
+                  <div className="bg-violet-50 p-4 rounded-2xl border border-violet-100 flex items-center justify-between">
+                      <div><div className="text-xs text-violet-600 font-bold mb-1">پرتراکنش‌ترین ماه</div><div className="font-bold text-violet-800 text-sm">{mostActiveMonth.label}</div></div>
+                      <CalendarIcon className="text-violet-300" size={24}/>
                   </div>
               </div>
           </div>
       </div>
 
+      {/* Bank Report Modal (Existing Code) */}
       {showBankReport && (
           <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setShowBankReport(false)}>
               <div id="bank-report-modal-content" className="bg-gray-50 rounded-3xl shadow-2xl w-full max-w-5xl max-h-[90vh] overflow-hidden flex flex-col border border-white/20" onClick={e => e.stopPropagation()}>
-                  {/* Modern Header */}
                   <div className="flex items-center justify-between p-6 bg-white border-b sticky top-0 z-10">
                       <div className="flex items-center gap-4">
                           <div className="bg-gradient-to-br from-blue-500 to-indigo-600 p-3 rounded-2xl text-white shadow-lg shadow-blue-500/30"><Building2 size={28} /></div>

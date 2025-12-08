@@ -3,12 +3,14 @@ import React, { useState, useEffect } from 'react';
 import { User, SystemSettings, WarehouseItem, WarehouseTransaction, WarehouseTransactionItem } from '../types';
 import { getWarehouseItems, saveWarehouseItem, deleteWarehouseItem, getWarehouseTransactions, saveWarehouseTransaction, deleteWarehouseTransaction, getNextBijakNumber } from '../services/storageService';
 import { generateUUID, getCurrentShamsiDate, jalaliToGregorian, formatNumberString, deformatNumberString, formatDate } from '../constants';
-import { Package, Plus, Search, Trash2, ArrowDownCircle, ArrowUpCircle, FileText, Printer, BarChart3, Filter, X, Check, Eye, Loader2 } from 'lucide-react';
+import { Package, Plus, Trash2, ArrowDownCircle, ArrowUpCircle, FileText, BarChart3, Eye, Loader2, AlertTriangle, Settings } from 'lucide-react';
 import PrintBijak from './PrintBijak';
 
 interface Props { currentUser: User; settings?: SystemSettings; }
 
 const WarehouseModule: React.FC<Props> = ({ currentUser, settings }) => {
+    // Basic States
+    const [loadingData, setLoadingData] = useState(true);
     const [activeTab, setActiveTab] = useState<'dashboard' | 'items' | 'entry' | 'exit' | 'reports'>('dashboard');
     const [items, setItems] = useState<WarehouseItem[]>([]);
     const [transactions, setTransactions] = useState<WarehouseTransaction[]>([]);
@@ -42,12 +44,25 @@ const WarehouseModule: React.FC<Props> = ({ currentUser, settings }) => {
     const [reportSearch, setReportSearch] = useState('');
 
     useEffect(() => { loadData(); }, []);
-    useEffect(() => { if(selectedCompany && activeTab === 'exit') updateNextBijak(); }, [selectedCompany, activeTab]);
+    
+    // Update next bijak ONLY if settings and company are available
+    useEffect(() => { 
+        if(selectedCompany && activeTab === 'exit' && settings) {
+            updateNextBijak(); 
+        }
+    }, [selectedCompany, activeTab, settings]);
 
     const loadData = async () => {
-        const [i, t] = await Promise.all([getWarehouseItems(), getWarehouseTransactions()]);
-        setItems(i || []);
-        setTransactions(t || []);
+        setLoadingData(true);
+        try {
+            const [i, t] = await Promise.all([getWarehouseItems(), getWarehouseTransactions()]);
+            setItems(i || []);
+            setTransactions(t || []);
+        } catch (e) {
+            console.error(e);
+        } finally {
+            setLoadingData(false);
+        }
     };
 
     const updateNextBijak = async () => {
@@ -106,8 +121,6 @@ const WarehouseModule: React.FC<Props> = ({ currentUser, settings }) => {
         };
 
         const result = await saveWarehouseTransaction(tx);
-        // If it was OUT, result[0] (or mocked) might have the number.
-        // For mock, we rely on reloading or optimistic update.
         await loadData();
         
         // Reset Form
@@ -116,7 +129,6 @@ const WarehouseModule: React.FC<Props> = ({ currentUser, settings }) => {
             setRecipientName(''); setDriverName(''); setPlateNumber(''); setDestination('');
             if(result) {
                 // Find the newly created tx to show print dialog immediately
-                // In mock env, it's at index 0
                 setViewBijak(result && result.length > 0 ? result[0] : tx);
             }
         } else {
@@ -158,8 +170,27 @@ const WarehouseModule: React.FC<Props> = ({ currentUser, settings }) => {
         </div>
     );
 
-    if (!settings) {
-        return <div className="flex items-center justify-center h-[50vh] text-gray-500"><Loader2 className="animate-spin mr-2"/> در حال بارگذاری اطلاعات...</div>;
+    // 1. Loading State Check
+    if (!settings || loadingData) {
+        return <div className="flex flex-col items-center justify-center h-[50vh] text-gray-500 gap-2"><Loader2 className="animate-spin text-blue-600" size={32}/><span className="text-sm font-bold">در حال بارگذاری اطلاعات انبار...</span></div>;
+    }
+
+    // 2. Missing Configuration Check (Prevents Crash & Guides User)
+    const companyList = settings.companyNames || [];
+    if (companyList.length === 0) {
+        return (
+            <div className="flex flex-col items-center justify-center h-[60vh] text-center p-6 animate-fade-in">
+                <div className="bg-amber-100 p-4 rounded-full text-amber-600 mb-4 shadow-sm"><AlertTriangle size={48}/></div>
+                <h2 className="text-xl font-bold text-gray-800 mb-2">هنوز شرکتی تعریف نشده است</h2>
+                <p className="text-gray-600 max-w-md mb-6 leading-relaxed">
+                    برای استفاده از سیستم انبار (ثبت رسید و بیجک)، ابتدا باید نام شرکت‌ها را در بخش تنظیمات سیستم وارد کنید.
+                </p>
+                <a href="#settings" className="bg-blue-600 text-white px-6 py-3 rounded-xl font-bold flex items-center gap-2 hover:bg-blue-700 transition-colors shadow-lg">
+                    <Settings size={20}/>
+                    رفتن به تنظیمات > مدیریت شرکت‌ها
+                </a>
+            </div>
+        );
     }
 
     return (
@@ -215,7 +246,7 @@ const WarehouseModule: React.FC<Props> = ({ currentUser, settings }) => {
                     <div className="max-w-4xl mx-auto bg-green-50 p-6 rounded-2xl border border-green-200">
                         <h3 className="font-bold text-green-800 mb-4 flex items-center gap-2"><ArrowDownCircle/> ثبت ورود کالا (رسید انبار)</h3>
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-                            <div><label className="block text-xs font-bold mb-1">شرکت مالک</label><select className="w-full border rounded p-2 bg-white" value={selectedCompany} onChange={e=>setSelectedCompany(e.target.value)}><option value="">انتخاب...</option>{(settings?.companyNames || []).map(c=><option key={c} value={c}>{c}</option>)}</select></div>
+                            <div><label className="block text-xs font-bold mb-1">شرکت مالک</label><select className="w-full border rounded p-2 bg-white" value={selectedCompany} onChange={e=>setSelectedCompany(e.target.value)}><option value="">انتخاب...</option>{companyList.map(c=><option key={c} value={c}>{c}</option>)}</select></div>
                             <div><label className="block text-xs font-bold mb-1">شماره پروفرما / سند</label><input className="w-full border rounded p-2 bg-white" value={proformaNumber} onChange={e=>setProformaNumber(e.target.value)}/></div>
                             <div><label className="block text-xs font-bold mb-1">تاریخ ورود</label><DateSelect/></div>
                         </div>
@@ -239,7 +270,7 @@ const WarehouseModule: React.FC<Props> = ({ currentUser, settings }) => {
                     <div className="max-w-4xl mx-auto bg-red-50 p-6 rounded-2xl border border-red-200">
                         <h3 className="font-bold text-red-800 mb-4 flex items-center gap-2"><ArrowUpCircle/> ثبت خروج کالا (صدور بیجک)</h3>
                         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
-                            <div><label className="block text-xs font-bold mb-1">شرکت فرستنده</label><select className="w-full border rounded p-2 bg-white" value={selectedCompany} onChange={e=>setSelectedCompany(e.target.value)}><option value="">انتخاب...</option>{(settings?.companyNames || []).map(c=><option key={c} value={c}>{c}</option>)}</select></div>
+                            <div><label className="block text-xs font-bold mb-1">شرکت فرستنده</label><select className="w-full border rounded p-2 bg-white" value={selectedCompany} onChange={e=>setSelectedCompany(e.target.value)}><option value="">انتخاب...</option>{companyList.map(c=><option key={c} value={c}>{c}</option>)}</select></div>
                             <div><label className="block text-xs font-bold mb-1">شماره بیجک (سیستمی)</label><div className="bg-white p-2 rounded border font-mono text-center text-red-600 font-bold">{nextBijakNum > 0 ? nextBijakNum : '---'}</div></div>
                             <div><label className="block text-xs font-bold mb-1">تاریخ خروج</label><DateSelect/></div>
                             <div><label className="block text-xs font-bold mb-1">تحویل گیرنده</label><input className="w-full border rounded p-2 bg-white" value={recipientName} onChange={e=>setRecipientName(e.target.value)}/></div>
@@ -270,7 +301,7 @@ const WarehouseModule: React.FC<Props> = ({ currentUser, settings }) => {
                     <div className="space-y-6">
                         <div className="bg-white p-4 rounded-xl border shadow-sm flex flex-col md:flex-row gap-4 items-end">
                             <div className="flex-1 w-full"><label className="text-xs font-bold block mb-1">جستجو (کالا/گیرنده)</label><input className="w-full border rounded p-2 text-sm" value={reportSearch} onChange={e=>setReportSearch(e.target.value)} placeholder="..."/></div>
-                            <div className="w-full md:w-64"><label className="text-xs font-bold block mb-1">فیلتر شرکت</label><select className="w-full border rounded p-2 text-sm" value={reportFilterCompany} onChange={e=>setReportFilterCompany(e.target.value)}><option value="">همه</option>{(settings?.companyNames || []).map(c=><option key={c} value={c}>{c}</option>)}</select></div>
+                            <div className="w-full md:w-64"><label className="text-xs font-bold block mb-1">فیلتر شرکت</label><select className="w-full border rounded p-2 text-sm" value={reportFilterCompany} onChange={e=>setReportFilterCompany(e.target.value)}><option value="">همه</option>{companyList.map(c=><option key={c} value={c}>{c}</option>)}</select></div>
                         </div>
 
                         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
