@@ -9,7 +9,8 @@ import ManageUsers from './components/ManageUsers';
 import Settings from './components/Settings';
 import ChatRoom from './components/ChatRoom';
 import TradeModule from './components/TradeModule';
-import SmartPaymentAnalysis from './components/SmartPaymentAnalysis'; // NEW
+import CreateExitPermit from './components/CreateExitPermit'; // NEW
+import ManageExitPermits from './components/ManageExitPermits'; // NEW
 import { getOrders, getSettings } from './services/storageService';
 import { getCurrentUser } from './services/authService';
 import { PaymentOrder, User, OrderStatus, UserRole, AppNotification, SystemSettings, PaymentMethod } from './types';
@@ -38,7 +39,7 @@ function App() {
 
   useEffect(() => {
     const hash = window.location.hash.replace('#', '');
-    if (hash && ['dashboard', 'create', 'manage', 'chat', 'trade', 'users', 'settings', 'tahlil'].includes(hash)) {
+    if (hash && ['dashboard', 'create', 'manage', 'chat', 'trade', 'users', 'settings', 'create-exit', 'manage-exit'].includes(hash)) {
         setActiveTabState(hash);
         safeReplaceState({ tab: hash }, '', `#${hash}`);
     } else {
@@ -132,9 +133,10 @@ function App() {
       {loading && orders.length === 0 ? ( <div className="flex h-[50vh] items-center justify-center text-blue-600"><Loader2 size={48} className="animate-spin" /></div> ) : (
         <>
             {activeTab === 'dashboard' && <Dashboard orders={orders} settings={settings} onViewArchive={handleViewArchive} onFilterByStatus={handleDashboardFilter} />}
-            {activeTab === 'tahlil' && <SmartPaymentAnalysis />} 
             {activeTab === 'create' && <CreateOrder onSuccess={handleOrderCreated} currentUser={currentUser} />}
             {activeTab === 'manage' && <ManageOrders orders={orders} refreshData={() => loadData(true)} currentUser={currentUser} initialTab={manageOrdersInitialTab} settings={settings} statusFilter={dashboardStatusFilter} />}
+            {activeTab === 'create-exit' && <CreateExitPermit onSuccess={() => setActiveTab('manage-exit')} currentUser={currentUser} />}
+            {activeTab === 'manage-exit' && <ManageExitPermits currentUser={currentUser} settings={settings} />}
             {activeTab === 'trade' && <TradeModule currentUser={currentUser} />}
             {activeTab === 'users' && <ManageUsers />}
             {activeTab === 'settings' && <Settings />}

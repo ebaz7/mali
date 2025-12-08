@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { LayoutDashboard, PlusCircle, ListChecks, FileText, Users, LogOut, User as UserIcon, Settings, Bell, BellOff, MessageSquare, X, Check, Container, KeyRound, Save, Upload, Camera, Download, Share, ChevronRight, Home, Send, BrainCircuit, Mic, StopCircle, Loader2 } from 'lucide-react';
+import { LayoutDashboard, PlusCircle, ListChecks, FileText, Users, LogOut, User as UserIcon, Settings, Bell, BellOff, MessageSquare, X, Check, Container, KeyRound, Save, Upload, Camera, Download, Share, ChevronRight, Home, Send, BrainCircuit, Mic, StopCircle, Loader2, Truck, ClipboardList } from 'lucide-react';
 import { User, UserRole, AppNotification, SystemSettings } from '../types';
 import { logout, hasPermission, getRolePermissions, updateUser } from '../services/authService';
 import { requestNotificationPermission, setNotificationPreference, isNotificationEnabledInApp } from '../services/notificationService';
@@ -81,13 +81,10 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab, curr
       try {
           const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
           
-          // Determine best supported mime type
-          let mimeType = 'audio/webm';
-          if (MediaRecorder.isTypeSupported('audio/webm')) {
-              mimeType = 'audio/webm';
-          } else if (MediaRecorder.isTypeSupported('audio/mp4')) {
-              mimeType = 'audio/mp4'; // iOS Safari fallback
-          }
+          // Use simple supported types
+          let mimeType = 'audio/webm'; // Default fallback
+          if (MediaRecorder.isTypeSupported('audio/webm')) mimeType = 'audio/webm';
+          else if (MediaRecorder.isTypeSupported('audio/mp4')) mimeType = 'audio/mp4';
 
           const recorder = new MediaRecorder(stream, { mimeType });
           mediaRecorderRef.current = recorder;
@@ -101,7 +98,7 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab, curr
               const reader = new FileReader();
               reader.readAsDataURL(blob);
               reader.onloadend = async () => {
-                  const base64 = (reader.result as string).split(',')[1]; // Remove data URL prefix
+                  const base64 = (reader.result as string).split(',')[1];
                   try {
                       const response = await apiCall<{reply: string}>('/ai-request', 'POST', { 
                           audio: base64, 
@@ -109,10 +106,7 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab, curr
                           username: currentUser.username 
                       });
                       setVoiceResult(response.reply);
-                      
-                      // Enhanced success detection for Persian/English
-                      if (response.reply && (response.reply.includes("ثبت شد") || response.reply.includes("موفقیت") || response.reply.includes("تایید شد") || response.reply.includes("Success"))) {
-                          // Simple way to refresh data without full reload
+                      if (response.reply && (response.reply.includes("ثبت شد") || response.reply.includes("موفقیت") || response.reply.includes("تایید شد"))) {
                           setTimeout(() => window.location.reload(), 2000);
                       }
                   } catch (e: any) {
@@ -140,15 +134,25 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab, curr
   const unreadCount = notifications.filter(n => !n.read).length;
   const perms = settings ? getRolePermissions(currentUser.role, settings, currentUser) : null;
   const canSeeTrade = perms?.canManageTrade ?? false;
+  const canCreateExit = perms?.canCreateExitPermit ?? false;
+  const canApproveExit = perms?.canApproveExitCeo || perms?.canApproveExitFactory;
   const canSeeSettings = currentUser.role === UserRole.ADMIN || (perms?.canManageSettings ?? false);
 
   const navItems = [
     { id: 'dashboard', label: 'داشبورد', icon: LayoutDashboard },
-    { id: 'tahlil', label: 'تحلیل هوشمند', icon: BrainCircuit },
-    { id: 'create', label: 'ثبت دستور', icon: PlusCircle },
-    { id: 'manage', label: 'مدیریت', icon: ListChecks },
-    { id: 'chat', label: 'گفتگو', icon: MessageSquare },
+    { id: 'create', label: 'ثبت دستور پرداخت', icon: PlusCircle },
+    { id: 'manage', label: 'کارتابل پرداخت', icon: ListChecks },
   ];
+
+  if (canCreateExit) {
+      navItems.push({ id: 'create-exit', label: 'ثبت خروج بار', icon: Truck });
+  }
+  if (canCreateExit || canApproveExit) {
+      navItems.push({ id: 'manage-exit', label: 'کارتابل خروج بار', icon: ClipboardList });
+  }
+
+  navItems.push({ id: 'chat', label: 'گفتگو', icon: MessageSquare });
+
   if (canSeeTrade) navItems.push({ id: 'trade', label: 'بازرگانی', icon: Container });
   if (hasPermission(currentUser, 'manage_users')) navItems.push({ id: 'users', label: 'کاربران', icon: Users });
   if (canSeeSettings) navItems.push({ id: 'settings', label: 'تنظیمات', icon: Settings });

@@ -235,6 +235,30 @@ const PrintVoucher: React.FC<PrintVoucherProps> = ({ order, onClose, settings, o
       const element = document.getElementById('print-area');
       if (!element) return;
 
+      // Construct detailed text caption
+      let caption = `📄 *رسید دستور پرداخت #${order.trackingNumber}*\n`;
+      if (order.payingCompany) caption += `🏢 شرکت: ${order.payingCompany}\n`;
+      caption += `📅 تاریخ: ${formatDate(order.date)}\n`;
+      caption += `👤 ذینفع: ${order.payee}\n`;
+      caption += `💰 مبلغ کل: ${formatCurrency(order.totalAmount)}\n`;
+      caption += `📝 شرح: ${order.description}\n`;
+      
+      if (order.paymentDetails && order.paymentDetails.length > 0) {
+          caption += `\n📋 *جزئیات پرداخت:*`;
+          order.paymentDetails.forEach((d) => {
+              const method = d.method;
+              const amount = formatCurrency(d.amount);
+              let details = '';
+              if (d.bankName) details += ` - ${d.bankName}`;
+              if (d.chequeNumber) details += ` - چک: ${d.chequeNumber}`;
+              if (d.chequeDate) details += ` (سررسید: ${d.chequeDate})`;
+              
+              caption += `\n🔹 ${method}: ${amount}${details}`;
+          });
+      }
+
+      caption += `\n👤 درخواست کننده: ${order.requester}`;
+
       try {
           // @ts-ignore
           const canvas = await window.html2canvas(element, { 
@@ -250,14 +274,14 @@ const PrintVoucher: React.FC<PrintVoucherProps> = ({ order, onClose, settings, o
           
           await apiCall('/send-whatsapp', 'POST', {
               number: targetNumber,
-              message: `رسید دستور پرداخت #${order.trackingNumber}`,
+              message: caption, // Pass the text caption
               mediaData: {
                   data: base64,
                   mimeType: 'image/png',
                   filename: `voucher_${order.trackingNumber}.png`
               }
           });
-          alert('رسید با موفقیت ارسال شد.');
+          alert('رسید به همراه متن جزئیات با موفقیت ارسال شد.');
       } catch (e: any) {
           alert(`خطا در ارسال: ${e.message}`);
       } finally {

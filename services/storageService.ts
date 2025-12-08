@@ -1,7 +1,8 @@
 
-import { PaymentOrder, User, UserRole, OrderStatus, SystemSettings, ChatMessage, ChatGroup, GroupTask, TradeRecord } from '../types';
+import { PaymentOrder, User, UserRole, OrderStatus, SystemSettings, ChatMessage, ChatGroup, GroupTask, TradeRecord, ExitPermit, ExitPermitStatus } from '../types';
 import { apiCall } from './apiService';
 
+// ... Existing methods for Orders ...
 export const getOrders = async (): Promise<PaymentOrder[]> => {
     return await apiCall<PaymentOrder[]>('/orders');
 };
@@ -29,7 +30,7 @@ export const updateOrderStatus = async (id: string, status: OrderStatus, approve
       }
       if (status === OrderStatus.REJECTED) {
           if (rejectionReason) updates.rejectionReason = rejectionReason;
-          updates.rejectedBy = approverUser.fullName; // Record who rejected it
+          updates.rejectedBy = approverUser.fullName; 
       }
       const updatedOrder = { ...order, ...updates };
       return await apiCall<PaymentOrder[]>(`/orders/${id}`, 'PUT', updatedOrder);
@@ -41,6 +42,51 @@ export const deleteOrder = async (id: string): Promise<PaymentOrder[]> => {
     return await apiCall<PaymentOrder[]>(`/orders/${id}`, 'DELETE');
 };
 
+// --- NEW: Exit Permits ---
+export const getExitPermits = async (): Promise<ExitPermit[]> => {
+    return await apiCall<ExitPermit[]>('/exit-permits');
+};
+
+export const saveExitPermit = async (permit: ExitPermit): Promise<ExitPermit[]> => {
+    return await apiCall<ExitPermit[]>('/exit-permits', 'POST', permit);
+};
+
+export const updateExitPermitStatus = async (id: string, status: ExitPermitStatus, approverUser: User, rejectionReason?: string): Promise<ExitPermit[]> => {
+    const permits = await getExitPermits();
+    const permit = permits.find(p => p.id === id);
+    if(permit) {
+        const updates: any = { status };
+        if (status === ExitPermitStatus.PENDING_FACTORY && (approverUser.role === UserRole.CEO || approverUser.role === UserRole.ADMIN)) {
+            updates.approverCeo = approverUser.fullName;
+        }
+        if (status === ExitPermitStatus.EXITED && (approverUser.role === UserRole.FACTORY_MANAGER || approverUser.role === UserRole.ADMIN)) {
+            updates.approverFactory = approverUser.fullName;
+        }
+        if (status === ExitPermitStatus.REJECTED) {
+            updates.rejectionReason = rejectionReason || 'بدون دلیل';
+            updates.rejectedBy = approverUser.fullName;
+        }
+        const updatedPermit = { ...permit, ...updates };
+        return await apiCall<ExitPermit[]>(`/exit-permits/${id}`, 'PUT', updatedPermit);
+    }
+    return permits;
+};
+
+export const deleteExitPermit = async (id: string): Promise<ExitPermit[]> => {
+    return await apiCall<ExitPermit[]>(`/exit-permits/${id}`, 'DELETE');
+};
+
+export const getNextExitPermitNumber = async (): Promise<number> => {
+    try {
+        const response = await apiCall<{ nextNumber: number }>('/next-exit-permit-number');
+        return response.nextNumber;
+    } catch(e) {
+        const settings = await getSettings();
+        return (settings.currentExitPermitNumber || 1000) + 1;
+    }
+};
+
+// ... Existing methods for Settings ...
 export const getSettings = async (): Promise<SystemSettings> => {
     return await apiCall<SystemSettings>('/settings');
 };
@@ -54,7 +100,6 @@ export const getNextTrackingNumber = async (): Promise<number> => {
         const response = await apiCall<{ nextTrackingNumber: number }>('/next-tracking-number');
         return response.nextTrackingNumber;
     } catch (e) {
-        // Fallback for offline mode if API fails
         const settings = await getSettings();
         return settings.currentTrackingNumber + 1;
     }
@@ -64,6 +109,7 @@ export const restoreSystemData = async (backupData: any): Promise<void> => {
     await apiCall('/restore', 'POST', backupData);
 };
 
+// ... Chat & Trade methods (kept same) ...
 export const getMessages = async (): Promise<ChatMessage[]> => { return await apiCall<ChatMessage[]>('/chat'); };
 export const sendMessage = async (message: ChatMessage): Promise<ChatMessage[]> => { return await apiCall<ChatMessage[]>('/chat', 'POST', message); };
 export const updateMessage = async (message: ChatMessage): Promise<ChatMessage[]> => { return await apiCall<ChatMessage[]>(`/chat/${message.id}`, 'PUT', message); };
