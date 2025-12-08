@@ -2,7 +2,7 @@
 import React, { useState } from 'react';
 import { PaymentOrder, OrderStatus, PaymentMethod, SystemSettings } from '../types';
 import { formatCurrency, formatDate } from '../constants';
-import { X, Printer, Image as ImageIcon, FileDown, Loader2, CheckCircle, XCircle, Pencil, Share2 } from 'lucide-react';
+import { X, Printer, Image as ImageIcon, FileDown, Loader2, CheckCircle, XCircle, Pencil, Share2, Users } from 'lucide-react';
 import { apiCall } from '../services/apiService';
 
 interface PrintVoucherProps {
@@ -17,6 +17,7 @@ interface PrintVoucherProps {
 const PrintVoucher: React.FC<PrintVoucherProps> = ({ order, onClose, settings, onApprove, onReject, onEdit }) => {
   const [processing, setProcessing] = useState(false);
   const [sharing, setSharing] = useState(false);
+  const [showContactSelect, setShowContactSelect] = useState(false);
 
   // Smart Compact Mode: If more than 2 payment lines, shrink fonts/padding to fit A5
   const isCompact = order.paymentDetails.length > 2;
@@ -228,17 +229,9 @@ const PrintVoucher: React.FC<PrintVoucherProps> = ({ order, onClose, settings, o
     }
   };
 
-  const handleSendToWhatsApp = async () => {
-      if (!settings?.whatsappNumber) {
-          alert('شماره واتساپ در تنظیمات وارد نشده است.');
-          return;
-      }
-      
-      // Prompt for target if needed, or use default
-      let target = prompt("شماره یا آیدی گروه را وارد کنید:", settings.whatsappNumber);
-      if (!target) return;
-
+  const handleSendToWhatsApp = async (targetNumber: string) => {
       setSharing(true);
+      setShowContactSelect(false); // Close dropdown
       const element = document.getElementById('print-area');
       if (!element) return;
 
@@ -256,7 +249,7 @@ const PrintVoucher: React.FC<PrintVoucherProps> = ({ order, onClose, settings, o
           const base64 = canvas.toDataURL('image/png').split(',')[1];
           
           await apiCall('/send-whatsapp', 'POST', {
-              number: target,
+              number: targetNumber,
               message: `رسید دستور پرداخت #${order.trackingNumber}`,
               mediaData: {
                   data: base64,
@@ -283,8 +276,8 @@ const PrintVoucher: React.FC<PrintVoucherProps> = ({ order, onClose, settings, o
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto animate-fade-in">
       {/* Controls */}
-      <div className="absolute top-0 left-0 right-0 p-4 flex justify-between items-start z-50 pointer-events-none">
-         <div className="bg-white p-3 rounded-xl shadow-lg pointer-events-auto flex flex-col gap-3 w-full max-w-lg mx-auto mt-10 md:mt-0">
+      <div className="absolute top-0 left-0 right-0 p-4 flex justify-between items-start z-50 pointer-events-none no-print">
+         <div className="bg-white p-3 rounded-xl shadow-lg pointer-events-auto flex flex-col gap-3 w-full max-w-lg mx-auto mt-10 md:mt-0 relative">
              <div className="flex items-center justify-between border-b pb-2 mb-1">
                  <h3 className="font-bold text-gray-800 text-base">جزئیات و عملیات</h3>
                  <button onClick={onClose} className="text-gray-400 hover:text-red-500"><X size={20}/></button>
@@ -312,7 +305,7 @@ const PrintVoucher: React.FC<PrintVoucherProps> = ({ order, onClose, settings, o
              )}
 
              {/* Output Options */}
-             <div className="grid grid-cols-4 gap-2">
+             <div className="grid grid-cols-4 gap-2 relative">
                  <button 
                     onClick={handleDownloadImage}
                     disabled={processing}
@@ -337,14 +330,56 @@ const PrintVoucher: React.FC<PrintVoucherProps> = ({ order, onClose, settings, o
                      چاپ
                  </button>
                  <button 
-                    onClick={handleSendToWhatsApp}
+                    onClick={() => setShowContactSelect(!showContactSelect)}
                     disabled={sharing}
-                    className="bg-green-600 hover:bg-green-700 text-white py-2 rounded-lg flex items-center justify-center gap-1 text-xs font-bold transition-colors"
+                    className="bg-green-600 hover:bg-green-700 text-white py-2 rounded-lg flex items-center justify-center gap-1 text-xs font-bold transition-colors relative"
                     title="ارسال تصویر به واتساپ"
                  >
                      {sharing ? <Loader2 size={14} className="animate-spin"/> : <Share2 size={14} />}
                      واتساپ
                  </button>
+
+                 {/* Contact Selection Dropdown */}
+                 {showContactSelect && (
+                     <div className="absolute top-full right-0 mt-2 w-64 bg-white rounded-xl shadow-2xl border border-gray-200 z-[100] animate-fade-in overflow-hidden">
+                         <div className="p-3 bg-gray-50 border-b font-bold text-xs text-gray-700 flex justify-between items-center">
+                             <span>انتخاب مخاطب</span>
+                             <button onClick={() => setShowContactSelect(false)}><X size={14}/></button>
+                         </div>
+                         <div className="max-h-48 overflow-y-auto">
+                             {settings?.savedContacts && settings.savedContacts.length > 0 ? (
+                                 settings.savedContacts.map(c => (
+                                     <button 
+                                        key={c.id} 
+                                        onClick={() => handleSendToWhatsApp(c.number)}
+                                        className="w-full text-right p-3 hover:bg-blue-50 text-sm border-b last:border-0 flex items-center gap-2"
+                                     >
+                                         <div className={`p-1.5 rounded-full ${c.isGroup ? 'bg-orange-100 text-orange-600' : 'bg-gray-100 text-gray-600'}`}>
+                                             <Users size={12}/>
+                                         </div>
+                                         <div className="truncate">
+                                             <div className="font-bold text-gray-800">{c.name}</div>
+                                             <div className="text-[10px] text-gray-500 font-mono">{c.number}</div>
+                                         </div>
+                                     </button>
+                                 ))
+                             ) : (
+                                 <div className="p-4 text-center text-xs text-gray-400">مخاطبی یافت نشد.</div>
+                             )}
+                         </div>
+                         <div className="p-2 border-t bg-gray-50">
+                             <button 
+                                onClick={() => {
+                                    const num = prompt("شماره را وارد کنید:", settings?.whatsappNumber);
+                                    if(num) handleSendToWhatsApp(num);
+                                }}
+                                className="w-full text-center text-xs text-blue-600 font-bold hover:underline"
+                             >
+                                 ورود دستی شماره
+                             </button>
+                         </div>
+                     </div>
+                 )}
              </div>
          </div>
       </div>

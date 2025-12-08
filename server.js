@@ -160,7 +160,7 @@ async function processUserCommand(user, text, isVoice = false) {
         }
     }
 
-    // 2. REPORT LOGIC (Detailed & Complete)
+    // 2. REPORT LOGIC
     if (cleanText.includes('گزارش') || cleanText.includes('کارتابل')) {
         let pending = [];
         if (user.role === 'financial') pending = db.orders.filter(o => o.status === 'در انتظار بررسی مالی');
@@ -182,7 +182,6 @@ async function processUserCommand(user, text, isVoice = false) {
             rep += `👤 *ذینفع (گیرنده):* ${o.payee}\n`;
             rep += `📝 *شرح:* ${o.description}\n`;
             
-            // Payment Sources Details
             if (o.paymentDetails && o.paymentDetails.length > 0) {
                 rep += `🏦 *منابع پرداخت:*`;
                 o.paymentDetails.forEach((d, idx) => {
@@ -211,19 +210,16 @@ async function processUserCommand(user, text, isVoice = false) {
 مثال‌ها:
 🔹 "۵۰ میلیون به علی حسینی بابت خرید مواد اولیه"
 🔹 "۱۰۰ میلیون برای شرکت فولاد، ۵۰ تومن از بانک ملی، ۵۰ تومن از صادرات بابت پیش پرداخت"
-_(در مثال دوم، سیستم دو ردیف پرداخت جداگانه ایجاد می‌کند)_
 
 2️⃣ *تایید دستور پرداخت*
 فقط *شماره دستور* را ارسال کنید.
 مثال: "1001" یا "تایید 1001"
 
 3️⃣ *گزارش کارتابل*
-کلمه *"گزارش"* یا *"کارتابل"* را ارسال کنید تا لیست کارهای منتظر تایید خود را با جزئیات کامل ببینید.
+کلمه *"گزارش"* یا *"کارتابل"* را ارسال کنید.
 
 4️⃣ *وضعیت سیستم*
-کلمه *"وضعیت"* را بفرستید تا وضعیت سرور چک شود.
-
-💡 *نکته:* می‌توانید از ویس (Voice Note) برای همه موارد بالا استفاده کنید.`;
+کلمه *"وضعیت"* را بفرستید.`;
     }
 
     // 4. CREATION LOGIC (Hybrid: AI -> Regex)
@@ -288,7 +284,6 @@ _(در مثال دوم، سیستم دو ردیف پرداخت جداگانه ا
             
             if (totalAmount <= 0) return "مبلغ نامعتبر است. لطفا مجدد تلاش کنید.";
 
-            // Resolve Paying Company
             let payingCompany = data.company || db.settings.defaultCompany || "";
             if (data.company && db.settings.companies) {
                 const matched = db.settings.companies.find(c => c.name.includes(data.company) || data.company.includes(c.name));
@@ -352,29 +347,57 @@ function triggerNotifications(order, db) {
     else if (order.status === 'تایید نهایی') { targetRole = 'financial'; msg = `✅ *دستور #${tracking} نهایی شد.*\nلطفا پرداخت کنید.`; }
 
     if (targetRole && msg) {
-        // WhatsApp Notifications
         db.users.filter(u => u.role === targetRole || u.role === 'admin').forEach(u => {
             if (u.phoneNumber) sendWhatsAppMessageInternal(u.phoneNumber, msg);
         });
         
-        // Telegram Notifications
         if (telegramBot && db.settings?.telegramBotToken) {
              db.users.filter(u => (u.role === targetRole || u.role === 'admin') && u.telegramChatId).forEach(u => {
-                 telegramBot.sendMessage(u.telegramChatId, msg).catch(() => {});
+                 if (order.status !== 'تایید نهایی' && order.status !== 'رد شده') {
+                     let details = `📄 *دستور #${order.trackingNumber}*\n`;
+                     details += `👤 ذینفع: ${order.payee}\n`;
+                     details += `💰 مبلغ: ${amount} ریال\n`;
+                     details += `📝 شرح: ${order.description}\n`;
+                     if (order.paymentDetails && order.paymentDetails.length > 0) {
+                         details += `🏦 بانک‌ها:\n`;
+                         order.paymentDetails.forEach((d) => {
+                             details += `   - ${d.bankName || '؟'} (${Number(d.amount).toLocaleString()})\n`;
+                         });
+                     }
+                     const opts = {
+                         parse_mode: 'Markdown',
+                         reply_markup: {
+                             inline_keyboard: [
+                                 [
+                                     { text: '✅ تایید', callback_data: `approve_${order.id}` },
+                                     { text: '❌ رد', callback_data: `reject_${order.id}` }
+                                 ]
+                             ]
+                         }
+                     };
+                     telegramBot.sendMessage(u.telegramChatId, details, opts).catch(() => {});
+                 } else {
+                     telegramBot.sendMessage(u.telegramChatId, msg, { parse_mode: 'Markdown' }).catch(() => {});
+                 }
              });
         }
     }
 }
 
-// --- VOICE TRANSCRIPTION (Direct) ---
+// --- VOICE TRANSCRIPTION (Enhanced for Browser & WhatsApp) ---
 async function transcribe(buffer, mimeType) {
     const ai = getGeminiClient();
     if (!ai) return null;
     try {
-        // Standardize MIME type for WhatsApp Audio
-        let cleanMime = mimeType.split(';')[0];
-        if (cleanMime === 'audio/ogg' || cleanMime === 'application/ogg') cleanMime = 'audio/ogg';
-        if (cleanMime === 'audio/mp4' || cleanMime === 'video/mp4') cleanMime = 'audio/mp3'; // Fallback mapping
+        // Clean MIME Type. Browsers send 'audio/webm;codecs=opus' which Gemini might dislike.
+        // We normalize it to a simple type.
+        let cleanMime = 'audio/webm'; // Default for browser recordings
+        if (mimeType.includes('mp4') || mimeType.includes('m4a')) cleanMime = 'audio/mp3';
+        if (mimeType.includes('mpeg')) cleanMime = 'audio/mp3';
+        if (mimeType.includes('wav')) cleanMime = 'audio/wav';
+        if (mimeType.includes('ogg')) cleanMime = 'audio/ogg'; // WhatsApp Voice Notes are usually OGG
+
+        console.log(`>>> Transcribing audio (Original: ${mimeType} -> Sent as: ${cleanMime})...`);
 
         const result = await ai.models.generateContent({
             model: 'gemini-2.5-flash',
@@ -386,9 +409,11 @@ async function transcribe(buffer, mimeType) {
                 ]
             }]
         });
-        return result.response.text().trim();
+        const txt = result.response.text().trim();
+        console.log(">>> Transcribed: ", txt);
+        return txt;
     } catch (e) {
-        console.error(">>> Transcribe Error Details:", e.message, mimeType);
+        console.error(">>> Transcribe Error Details:", e.message);
         return null;
     }
 }
@@ -406,17 +431,116 @@ const initTelegram = async () => {
             });
             console.log(">>> Telegram Bot Started");
 
-            telegramBot.on('polling_error', () => {}); // Silence errors
+            telegramBot.on('polling_error', () => {}); 
+
+            telegramBot.on('callback_query', async (query) => {
+                const chatId = query.message.chat.id.toString();
+                const db = getDb();
+                const user = db.users.find(u => u.telegramChatId === chatId);
+                if (!user) return;
+
+                const [action, orderId] = query.data.split('_');
+                const orderIdx = db.orders.findIndex(o => o.id === orderId);
+                
+                if (orderIdx === -1) {
+                    telegramBot.answerCallbackQuery(query.id, { text: 'سند یافت نشد.', show_alert: true });
+                    return;
+                }
+
+                const order = db.orders[orderIdx];
+                let nextStatus = null;
+                let replyText = '';
+
+                // Auth Check
+                const isAllowed = (order.status === 'در انتظار بررسی مالی' && (user.role === 'financial' || user.role === 'admin')) ||
+                                  (order.status === 'تایید مالی / در انتظار مدیریت' && (user.role === 'manager' || user.role === 'admin')) ||
+                                  (order.status === 'تایید مدیریت / در انتظار مدیرعامل' && (user.role === 'ceo' || user.role === 'admin'));
+
+                if (!isAllowed) {
+                    telegramBot.answerCallbackQuery(query.id, { text: 'عدم دسترسی.', show_alert: true });
+                    return;
+                }
+
+                if (action === 'approve') {
+                    if (order.status === 'در انتظار بررسی مالی') nextStatus = 'تایید مالی / در انتظار مدیریت';
+                    else if (order.status === 'تایید مالی / در انتظار مدیریت') nextStatus = 'تایید مدیریت / در انتظار مدیرعامل';
+                    else if (order.status === 'تایید مدیریت / در انتظار مدیرعامل') nextStatus = 'تایید نهایی';
+                    replyText = `✅ تایید شد توسط ${user.fullName}`;
+                } else if (action === 'reject') {
+                    nextStatus = 'رد شده';
+                    replyText = `❌ رد شد توسط ${user.fullName}`;
+                }
+
+                if (nextStatus) {
+                    order.status = nextStatus;
+                    order.updatedAt = Date.now();
+                    order[`approver${user.role === 'admin' ? 'Admin' : user.role === 'ceo' ? 'Ceo' : user.role === 'manager' ? 'Manager' : 'Financial'}`] = user.fullName;
+                    if (action === 'reject') order.rejectionReason = "رد شده از طریق تلگرام";
+                    
+                    db.orders[orderIdx] = order;
+                    saveDb(db);
+                    triggerNotifications(order, db);
+
+                    telegramBot.editMessageText(`${query.message.text}\n\n${replyText}`, {
+                        chat_id: chatId,
+                        message_id: query.message.message_id,
+                        parse_mode: 'Markdown',
+                        reply_markup: { inline_keyboard: [] }
+                    });
+                    telegramBot.answerCallbackQuery(query.id, { text: 'انجام شد' });
+                }
+            });
 
             telegramBot.on('message', async (msg) => {
+                if (!msg.text) return;
                 const chatId = msg.chat.id.toString();
                 const db = getDb();
                 const user = db.users.find(u => u.telegramChatId === chatId);
                 if (!user) { telegramBot.sendMessage(chatId, `⛔ عدم دسترسی. ID: ${chatId}`); return; }
 
-                if (msg.text) {
+                const cleanText = msg.text.trim().toLowerCase();
+
+                if (cleanText === 'گزارش' || cleanText === 'کارتابل') {
+                    let pending = [];
+                    if (user.role === 'financial') pending = db.orders.filter(o => o.status === 'در انتظار بررسی مالی');
+                    else if (user.role === 'manager') pending = db.orders.filter(o => o.status === 'تایید مالی / در انتظار مدیریت');
+                    else if (user.role === 'ceo') pending = db.orders.filter(o => o.status === 'تایید مدیریت / در انتظار مدیرعامل');
+                    else if (user.role === 'admin') pending = db.orders.filter(o => o.status !== 'تایید نهایی' && o.status !== 'رد شده');
+
+                    if (pending.length === 0) {
+                        telegramBot.sendMessage(chatId, "✅ کارتابل شما خالی است.");
+                    } else {
+                        telegramBot.sendMessage(chatId, `📊 *کارتابل جاری (${user.fullName})*: ${pending.length} مورد`, { parse_mode: 'Markdown' });
+                        for (const o of pending) {
+                            let details = `📄 *دستور #${o.trackingNumber}*\n`;
+                            details += `👤 ذینفع: ${o.payee}\n`;
+                            details += `💰 مبلغ: ${Number(o.totalAmount).toLocaleString()} ریال\n`;
+                            details += `📝 شرح: ${o.description}\n`;
+                            if (o.paymentDetails && o.paymentDetails.length > 0) {
+                                details += `🏦 بانک‌ها:\n`;
+                                o.paymentDetails.forEach((d) => {
+                                    details += `   - ${d.bankName || '؟'} (${Number(d.amount).toLocaleString()})\n`;
+                                });
+                            }
+                            if (o.payingCompany) details += `🏢 شرکت: ${o.payingCompany}`;
+
+                            const opts = {
+                                parse_mode: 'Markdown',
+                                reply_markup: {
+                                    inline_keyboard: [
+                                        [
+                                            { text: '✅ تایید', callback_data: `approve_${o.id}` },
+                                            { text: '❌ رد', callback_data: `reject_${o.id}` }
+                                        ]
+                                    ]
+                                }
+                            };
+                            await telegramBot.sendMessage(chatId, details, opts);
+                        }
+                    }
+                } else {
                     const reply = await processUserCommand(user, msg.text);
-                    telegramBot.sendMessage(chatId, reply).catch(() => {});
+                    telegramBot.sendMessage(chatId, reply, { parse_mode: 'Markdown' }).catch(() => {});
                 }
             });
         }
@@ -455,7 +579,7 @@ const initWhatsApp = async () => {
         
         whatsappClient.on('message', async (msg) => {
             try {
-                if (!msg.from.includes('@c.us')) return; // Ignore groups for command processing
+                if (!msg.from.includes('@c.us')) return;
                 
                 const senderDigits = getTenDigits(msg.from.replace('@c.us', ''));
                 console.log(`>>> Incoming MSG from: ${msg.from} (Digits: ${senderDigits})`);
@@ -471,21 +595,18 @@ const initWhatsApp = async () => {
                 let text = msg.body;
                 let isVoice = false;
                 
-                // Voice / Audio Handling
                 if (msg.hasMedia) {
                     const media = await msg.downloadMedia();
                     if (media && media.mimetype && (media.mimetype.includes('audio') || media.mimetype.includes('ogg'))) {
                         console.log(">>> Processing Voice Note...");
                         const buff = Buffer.from(media.data, 'base64');
-                        // Transcribe directly
                         const transcribed = await transcribe(buff, media.mimetype);
                         if (transcribed) {
                             text = transcribed;
                             isVoice = true;
-                            // Feedback to user that voice was understood
                             await msg.reply(`🎤 متن تشخیص داده شده:\n"${text}"`);
                         } else {
-                            await msg.reply("متاسفانه نتوانستم صدا را تشخیص دهم. لطفا واضح‌تر صحبت کنید یا تایپ کنید.");
+                            await msg.reply("متاسفانه نتوانستم صدا را تشخیص دهم.");
                             return;
                         }
                     }
@@ -505,7 +626,6 @@ const initWhatsApp = async () => {
     } catch (e) { console.error("WA Module Error", e.message); }
 };
 
-// Initialize Bots
 setTimeout(() => { initWhatsApp(); initTelegram(); }, 3000);
 
 // ==========================================
@@ -541,6 +661,7 @@ app.post('/api/ai-request', async (req, res) => {
         let text = message;
         
         if (audio) {
+            // Forward base64 audio to transcribe function with provided mimeType
             text = await transcribe(Buffer.from(audio, 'base64'), mimeType || 'audio/webm');
         }
 
@@ -564,8 +685,6 @@ app.post('/api/ai-request', async (req, res) => {
 
 app.post('/api/analyze-payment', async (req, res) => {
     const { amount, date, company, description } = req.body;
-    
-    // Direct Gemini Call for Analysis (No explicit timeout wrapping)
     const ai = getGeminiClient();
     if (ai) {
         try {
@@ -581,8 +700,6 @@ app.post('/api/analyze-payment', async (req, res) => {
             console.error("Analysis Error:", e.message);
         }
     }
-
-    // Fallback if no client or error
     res.json({ 
         recommendation: "تحلیل آفلاین (هوش مصنوعی در دسترس نیست)", 
         score: 70, 
@@ -591,7 +708,6 @@ app.post('/api/analyze-payment', async (req, res) => {
     });
 });
 
-// CRUD APIs
 app.get('/api/orders', (req, res) => res.json(getDb().orders));
 app.post('/api/orders', (req, res) => { const db = getDb(); const o = req.body; o.updatedAt = Date.now(); if(db.orders.some(x=>x.trackingNumber===o.trackingNumber)) o.trackingNumber = findNextAvailableTrackingNumber(db); db.orders.unshift(o); saveDb(db); triggerNotifications(o, db); res.json(db.orders); });
 app.put('/api/orders/:id', (req, res) => { const db = getDb(); const i = db.orders.findIndex(x=>x.id===req.params.id); if(i!==-1){ const oldStatus = db.orders[i].status; db.orders[i] = req.body; db.orders[i].updatedAt = Date.now(); saveDb(db); if(oldStatus!==db.orders[i].status) triggerNotifications(db.orders[i], db); res.json(db.orders); } else res.sendStatus(404); });
@@ -599,7 +715,6 @@ app.delete('/api/orders/:id', (req, res) => { const db = getDb(); db.orders = db
 app.get('/api/next-tracking-number', (req, res) => res.json({ nextTrackingNumber: findNextAvailableTrackingNumber(getDb()) }));
 app.post('/api/upload', (req, res) => { try { const { fileName, fileData } = req.body; const b = Buffer.from(fileData.split(',')[1], 'base64'); const n = Date.now() + '_' + fileName; fs.writeFileSync(path.join(UPLOADS_DIR, n), b); res.json({ url: `/uploads/${n}`, fileName: n }); } catch (e) { res.status(500).send('Err'); } });
 
-// Auth & Users
 app.post('/api/login', (req, res) => { const { username, password } = req.body; const user = getDb().users.find(u => u.username === username && u.password === password); if (user) res.json(user); else res.status(401).json({ message: 'Invalid' }); });
 app.get('/api/users', (req, res) => res.json(getDb().users));
 app.post('/api/users', (req, res) => { const db = getDb(); db.users.push(req.body); saveDb(db); res.json(db.users); });
@@ -610,7 +725,6 @@ app.post('/api/settings', (req, res) => { const db = getDb(); db.settings = req.
 app.get('/api/backup', (req, res) => { res.json(getDb()); });
 app.post('/api/restore', (req, res) => { if(req.body && req.body.orders) { saveDb(req.body); res.json({success:true}); } else res.sendStatus(400); });
 
-// Chat & Trade
 app.get('/api/chat', (req, res) => res.json(getDb().messages));
 app.post('/api/chat', (req, res) => { const db = getDb(); if(db.messages.length>500) db.messages.shift(); db.messages.push(req.body); saveDb(db); res.json(db.messages); });
 app.get('/api/trade', (req, res) => res.json(getDb().tradeRecords));

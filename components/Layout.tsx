@@ -80,10 +80,14 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab, curr
       setVoiceResult(null);
       try {
           const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-          let mimeType = '';
-          if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) mimeType = 'audio/webm;codecs=opus';
-          else if (MediaRecorder.isTypeSupported('audio/mp4')) mimeType = 'audio/mp4';
-          else mimeType = 'audio/webm';
+          
+          // Determine best supported mime type
+          let mimeType = 'audio/webm';
+          if (MediaRecorder.isTypeSupported('audio/webm')) {
+              mimeType = 'audio/webm';
+          } else if (MediaRecorder.isTypeSupported('audio/mp4')) {
+              mimeType = 'audio/mp4'; // iOS Safari fallback
+          }
 
           const recorder = new MediaRecorder(stream, { mimeType });
           mediaRecorderRef.current = recorder;
