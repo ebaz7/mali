@@ -4,12 +4,13 @@ import { getSettings } from '../services/storageService';
 import { apiCall } from '../services/apiService';
 import { SystemSettings } from '../types';
 import { formatNumberString, deformatNumberString, getCurrentShamsiDate, jalaliToGregorian } from '../constants';
-import { BrainCircuit, Calendar, Calculator, Building2, CheckCircle2, AlertTriangle, Loader2, Server, FileText, Wifi, RefreshCw } from 'lucide-react';
+import { BrainCircuit, Calendar, Calculator, Building2, CheckCircle2, AlertTriangle, Loader2, Server, FileText, Wifi, RefreshCw, FileType2 } from 'lucide-react';
 
 const SmartPaymentAnalysis: React.FC = () => {
     const [settings, setSettings] = useState<SystemSettings | null>(null);
     const [amount, setAmount] = useState('');
     const [company, setCompany] = useState('');
+    const [description, setDescription] = useState('');
     const [date, setDate] = useState(getCurrentShamsiDate());
     const [analysisResult, setAnalysisResult] = useState<any>(null);
     const [loading, setLoading] = useState(false);
@@ -45,6 +46,7 @@ const SmartPaymentAnalysis: React.FC = () => {
     const handleReset = () => {
         setAmount('');
         setCompany('');
+        setDescription('');
         setDate(getCurrentShamsiDate());
         setAnalysisResult(null);
         setLoading(false);
@@ -65,7 +67,8 @@ const SmartPaymentAnalysis: React.FC = () => {
             const result = await apiCall<any>('/analyze-payment', 'POST', {
                 amount: deformatNumberString(amount),
                 date: isoDate,
-                company
+                company,
+                description
             });
             
             // Complete Progress
@@ -160,6 +163,21 @@ const SmartPaymentAnalysis: React.FC = () => {
                             />
                         </div>
 
+                        {/* 4. Description Input */}
+                        <div className="relative">
+                            <span className="absolute -right-2 -top-2 w-6 h-6 flex items-center justify-center bg-blue-600 text-white rounded-full text-xs font-bold shadow-md ring-2 ring-white">4</span>
+                            <label className="block text-sm font-bold text-gray-700 mb-2 flex items-center gap-2">
+                                <FileType2 size={18} className="text-blue-500"/> بابت (شرح پرداخت)
+                            </label>
+                            <input 
+                                type="text" 
+                                className="w-full border rounded-xl p-3 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-blue-500 transition-all"
+                                value={description}
+                                onChange={e => setDescription(e.target.value)}
+                                placeholder="مثال: خرید مواد اولیه / تنخواه‌گردان..."
+                            />
+                        </div>
+
                         <div className="flex gap-2">
                             <button 
                                 type="button" 
@@ -236,7 +254,7 @@ const SmartPaymentAnalysis: React.FC = () => {
                                     {analysisResult.recommendation}
                                 </div>
                                 <p className="text-gray-400 text-sm">
-                                    {analysisResult.isOffline ? 'بر اساس قوانین پیش‌فرض (آفلاین)' : 'بر اساس تحلیل هوشمند'}
+                                    {analysisResult.isOffline ? 'بر اساس قوانین پیش‌فرض (آفلاین)' : 'بر اساس تحلیل هوشمند Gemini'}
                                 </p>
                             </div>
 

@@ -17,13 +17,15 @@ const UPLOADS_DIR = path.join(__dirname, 'uploads');
 const BACKUPS_DIR = path.join(__dirname, 'backups');
 const WAUTH_DIR = path.join(__dirname, 'wauth');
 
-// --- GEMINI SETUP (For Voice & Data Extraction Only) ---
+// --- GEMINI SETUP ---
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || process.env.API_KEY || "AIzaSyAyCu0MyoP82ypvanV9xyM0Vuy2t3owqm8";
 let geminiClient = null;
 
 if (GEMINI_API_KEY) {
-    console.log(">>> ✅ Gemini API Key found (Voice & Extraction Enabled).");
+    console.log(">>> ✅ Gemini API Key configured.");
     geminiClient = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
+} else {
+    console.warn(">>> ⚠️ No Gemini API Key found. AI features will be disabled.");
 }
 
 if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR);
@@ -96,15 +98,13 @@ const sendWhatsAppMessageInternal = async (number, message) => {
 // ==========================================
 // CORE LOGIC: PROCESS COMMANDS (Hybrid)
 // ==========================================
-// This function handles commands from BOTH WhatsApp and Telegram
-// It uses Rules first, then falls back to AI for "Creation" if enabled.
 
 async function processUserCommand(user, text, isVoice = false) {
     if (!text) return "متن پیام خالی است.";
     const db = getDb();
     const cleanText = text.trim().toLowerCase();
 
-    // 1. APPROVAL LOGIC (Rule-Based: "1605" or "تایید 1605")
+    // 1. APPROVAL LOGIC (Rule-Based)
     const numMatch = cleanText.match(/^(\d+)$/) || cleanText.match(/تایید\s*(\d+)/) || cleanText.match(/ok\s*(\d+)/);
     
     if (numMatch) {
@@ -117,7 +117,6 @@ async function processUserCommand(user, text, isVoice = false) {
         let nextStatus = null;
         let roleName = "";
 
-        // Check Permissions
         if (order.status === 'در انتظار بررسی مالی' && (user.role === 'financial' || user.role === 'admin')) {
             nextStatus = 'تایید مالی / در انتظار مدیریت'; roleName = "مدیر مالی";
         } else if (order.status === 'تایید مالی / در انتظار مدیریت' && (user.role === 'manager' || user.role === 'admin')) {
@@ -133,7 +132,7 @@ async function processUserCommand(user, text, isVoice = false) {
             
             db.orders[orderIdx] = order;
             saveDb(db);
-            triggerNotifications(order, db); // Send next notification
+            triggerNotifications(order, db);
             return `✅ دستور #${trackNum} توسط شما تایید شد.\nوضعیت جدید: ${nextStatus}`;
         } else {
             return `⛔ وضعیت فعلی دستور (${order.status}) منتظر تایید شما نیست.`;
@@ -163,21 +162,30 @@ async function processUserCommand(user, text, isVoice = false) {
         return `🤖 *دستیار هوشمند سیستم مالی*\n\n1️⃣ *تایید دستور:* شماره دستور را بفرستید (مثلا 1602).\n2️⃣ *گزارش:* کلمه "گزارش" یا "کارتابل" را بفرستید.\n3️⃣ *ثبت دستور (فقط واتساپ):* بصورت متنی یا صوتی بگویید: "ثبت دستور پرداخت برای آقای رضایی مبلغ 5 میلیون بابت خرید..."\n4️⃣ *ویس:* می‌توانید همه موارد بالا را بصورت ویس بگویید.`;
     }
 
-    // 4. CREATION LOGIC (AI-Based - Only if text implies creation)
-    // Only verify creation intent if text is long enough
+    // 4. CREATION LOGIC (AI-Based)
     if (geminiClient && (cleanText.includes('ثبت') || cleanText.includes('پرداخت') || cleanText.includes('دستور'))) {
         try {
+            console.log(">>> Sending text to Gemini for Order Extraction...");
+            // Use a Promise.race to enforce a timeout if network is stuck
+            const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('AI_TIMEOUT')), 15000));
+            
             const prompt = `Extract payment order details from this text to JSON: "${text}".
             JSON format: { "payee": string, "amount": number, "description": string }
-            If information is missing, return null. Amount should be in Rials.`;
+            If information is missing, return null. Amount should be in Rials (convert Toman to Rial if needed).`;
             
-            const result = await geminiClient.models.generateContent({
+            const aiPromise = geminiClient.models.generateContent({
                 model: 'gemini-2.5-flash',
                 contents: [{ role: 'user', parts: [{ text: prompt }] }],
                 config: { responseMimeType: 'application/json' }
             });
+
+            const result = await Promise.race([aiPromise, timeoutPromise]);
             
-            const data = JSON.parse(result.response.text());
+            // @ts-ignore
+            const responseText = result.response.text();
+            console.log(">>> Gemini Raw Response:", responseText);
+            
+            const data = JSON.parse(responseText);
             if (data && data.payee && data.amount) {
                 const num = findNextAvailableTrackingNumber(db);
                 const newOrder = {
@@ -196,21 +204,26 @@ async function processUserCommand(user, text, isVoice = false) {
                 saveDb(db);
                 triggerNotifications(newOrder, db);
                 return `✅ دستور پرداخت با موفقیت ثبت شد.\nشماره: ${num}\nمبلغ: ${data.amount.toLocaleString()} ریال\nگیرنده: ${data.payee}`;
+            } else {
+                return "مشخصات دستور پرداخت کامل نیست (مبلغ یا گیرنده یافت نشد).";
             }
         } catch (e) {
-            console.error("AI Create Error", e);
+            console.error(">>> ❌ Gemini Extraction Error:", e.message);
+            if (e.message === 'AI_TIMEOUT' || e.message.includes('fetch failed') || e.message.includes('ETIMEDOUT')) {
+                return "❌ خطای اتصال به هوش مصنوعی (فیلترشکن).";
+            }
+            return "خطا در پردازش درخواست هوشمند.";
         }
     }
 
     return "متوجه نشدم. برای راهنمایی کلمه 'راهنما' را بفرستید.";
 }
 
-// --- NOTIFICATION SYSTEM (INDIVIDUAL MESSAGES) ---
+// --- NOTIFICATION SYSTEM ---
 function triggerNotifications(order, db) {
     const tracking = order.trackingNumber;
     const amount = Number(order.totalAmount).toLocaleString('fa-IR');
     const status = order.status;
-    
     let targetRole = null;
     let msg = "";
 
@@ -243,7 +256,12 @@ function triggerNotifications(order, db) {
 async function transcribe(buffer, mimeType) {
     if (!geminiClient) return null;
     try {
-        const result = await geminiClient.models.generateContent({
+        console.log(">>> Sending Audio to Gemini...");
+        
+        // Enforce timeout for voice as well
+        const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('AI_TIMEOUT')), 20000));
+        
+        const aiPromise = geminiClient.models.generateContent({
             model: 'gemini-2.5-flash',
             contents: [{
                 role: 'user',
@@ -253,9 +271,14 @@ async function transcribe(buffer, mimeType) {
                 ]
             }]
         });
-        return result.response.text().trim();
+
+        const result = await Promise.race([aiPromise, timeoutPromise]);
+        // @ts-ignore
+        const text = result.response.text().trim();
+        console.log(">>> Transcribed Text:", text);
+        return text;
     } catch (e) {
-        console.error("Transcribe Error:", e.message);
+        console.error(">>> ❌ Gemini Voice Error:", e.message);
         return null;
     }
 }
@@ -268,26 +291,15 @@ const initTelegram = async () => {
         const TelegramBot = (await import('node-telegram-bot-api')).default;
         const db = getDb();
         if (db.settings.telegramBotToken) {
-            // Enhanced Polling Options to prevent ETIMEDOUT crashes
             telegramBot = new TelegramBot(db.settings.telegramBotToken, { 
-                polling: {
-                    interval: 300,
-                    autoStart: true,
-                    params: {
-                        timeout: 10
-                    }
-                } 
+                polling: { interval: 300, autoStart: true, params: { timeout: 10 } } 
             });
-            
             console.log(">>> Telegram Bot Started");
 
-            // CRITICAL: Handle Polling Errors to stop crashes
+            // Ignore ETIMEDOUT errors to prevent crash
             telegramBot.on('polling_error', (error) => {
-                if (error.code === 'EFATAL' || error.code === 'ETIMEDOUT') {
-                    // Suppress log spam for connectivity issues
-                    if (Math.random() < 0.05) console.warn(">>> ⚠️ Telegram Connection Error (VPN Check Required)");
-                } else {
-                    console.error(">>> TG Poll Error:", error.code || error.message);
+                if (error.code !== 'EFATAL' && error.code !== 'ETIMEDOUT') {
+                    console.error(">>> TG Poll Error:", error.message);
                 }
             });
 
@@ -305,8 +317,9 @@ const initTelegram = async () => {
                         const resp = await axios.get(link, { responseType: 'arraybuffer' });
                         text = await transcribe(resp.data, msg.voice ? 'audio/ogg' : 'audio/mp3');
                         if (text) telegramBot.sendMessage(chatId, `🎤: "${text}"`);
+                        else telegramBot.sendMessage(chatId, "❌ خطا در تبدیل صدا (فیلترشکن).");
                     } catch (e) {
-                        telegramBot.sendMessage(chatId, "خطا در پردازش صدا (اتصال اینترنت یا هوش مصنوعی را چک کنید).");
+                        telegramBot.sendMessage(chatId, "خطا در دانلود فایل صوتی.");
                     }
                 }
 
@@ -364,6 +377,7 @@ const initWhatsApp = async () => {
                         const buff = Buffer.from(media.data, 'base64');
                         text = await transcribe(buff, media.mimetype);
                         if(text) msg.reply(`🎤 تشخیص: "${text}"`);
+                        else msg.reply("❌ خطا در اتصال به هوش مصنوعی (فیلترشکن).");
                     }
                 } catch (e) { console.error("WA Media Error", e); }
             }
@@ -415,7 +429,6 @@ app.post('/api/ai-request', async (req, res) => {
         if (audio) {
             text = await transcribe(Buffer.from(audio, 'base64'), mimeType || 'audio/webm');
         }
-        // Use the general processor for web voice commands too
         const user = { fullName: 'User(Web)', role: 'user', id: 'web' }; 
         const reply = await processUserCommand(user, text || '');
         res.json({ reply });
@@ -423,12 +436,52 @@ app.post('/api/ai-request', async (req, res) => {
 });
 
 app.post('/api/analyze-payment', async (req, res) => {
-    // Basic AI Analysis
-    const { amount, company } = req.body;
-    res.json({ recommendation: "پرداخت بلامانع", score: 85, reasons: ["مبلغ متعارف است", "وضعیت شرکت نرمال است"], analysisId: Date.now() });
+    const { amount, date, company, description } = req.body;
+    
+    if (!geminiClient) {
+        return res.json({ 
+            recommendation: "تحلیل آفلاین (هوش مصنوعی خاموش)", 
+            score: 75, 
+            reasons: ["ارتباط با سرور هوش مصنوعی برقرار نیست.", "مبلغ و شرکت بررسی شد."],
+            isOffline: true 
+        });
+    }
+
+    try {
+        const prompt = `Analyze this payment order strictly for a financial manager.
+        Company/Context: ${company}
+        Amount: ${amount} Rials
+        Date: ${date}
+        Description: ${description || 'No description provided'}
+        
+        Provide a risk assessment in Persian JSON format:
+        {
+            "recommendation": "Short Persian recommendation (e.g., پرداخت بلامانع است, نیاز به بررسی بیشتر, ریسک بالا)",
+            "score": number (0-100, where 100 is completely safe/verified),
+            "reasons": ["Reason 1", "Reason 2"]
+        }`;
+
+        const result = await geminiClient.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: [{ role: 'user', parts: [{ text: prompt }] }],
+            config: { responseMimeType: 'application/json' }
+        });
+
+        const jsonResponse = JSON.parse(result.response.text());
+        res.json(jsonResponse);
+
+    } catch (e) {
+        console.error("AI Analysis Error:", e.message);
+        res.json({ 
+            recommendation: "خطا در پردازش هوشمند", 
+            score: 0, 
+            reasons: ["خطای شبکه یا فیلترینگ (VPN سرور را چک کنید)"],
+            isOffline: true 
+        });
+    }
 });
 
-// CRUD APIs (Standard)
+// CRUD APIs
 app.get('/api/orders', (req, res) => res.json(getDb().orders));
 app.post('/api/orders', (req, res) => { const db = getDb(); const o = req.body; o.updatedAt = Date.now(); if(db.orders.some(x=>x.trackingNumber===o.trackingNumber)) o.trackingNumber = findNextAvailableTrackingNumber(db); db.orders.unshift(o); saveDb(db); triggerNotifications(o, db); res.json(db.orders); });
 app.put('/api/orders/:id', (req, res) => { const db = getDb(); const i = db.orders.findIndex(x=>x.id===req.params.id); if(i!==-1){ const oldStatus = db.orders[i].status; db.orders[i] = req.body; db.orders[i].updatedAt = Date.now(); saveDb(db); if(oldStatus!==db.orders[i].status) triggerNotifications(db.orders[i], db); res.json(db.orders); } else res.sendStatus(404); });
@@ -447,7 +500,7 @@ app.post('/api/settings', (req, res) => { const db = getDb(); db.settings = req.
 app.get('/api/backup', (req, res) => { res.json(getDb()); });
 app.post('/api/restore', (req, res) => { if(req.body && req.body.orders) { saveDb(req.body); res.json({success:true}); } else res.sendStatus(400); });
 
-// Chat & Trade (Placeholders to prevent errors)
+// Chat & Trade
 app.get('/api/chat', (req, res) => res.json(getDb().messages));
 app.post('/api/chat', (req, res) => { const db = getDb(); if(db.messages.length>500) db.messages.shift(); db.messages.push(req.body); saveDb(db); res.json(db.messages); });
 app.get('/api/trade', (req, res) => res.json(getDb().tradeRecords));
@@ -455,7 +508,6 @@ app.post('/api/trade', (req, res) => { const db = getDb(); db.tradeRecords.push(
 app.put('/api/trade/:id', (req, res) => { const db = getDb(); const i = db.tradeRecords.findIndex(t => t.id === req.params.id); if(i!==-1){ db.tradeRecords[i] = req.body; saveDb(db); res.json(db.tradeRecords); } });
 app.delete('/api/trade/:id', (req, res) => { const db = getDb(); db.tradeRecords = db.tradeRecords.filter(t => t.id !== req.params.id); saveDb(db); res.json(db.tradeRecords); });
 
-// Serve App
 app.get('/api/manifest', (req, res) => res.json({ "name": "PaySys", "short_name": "PaySys", "start_url": "/", "display": "standalone", "icons": [] }));
 app.get('*', (req, res) => { const p = path.join(__dirname, 'dist', 'index.html'); if(fs.existsSync(p)) res.sendFile(p); else res.send('Build first'); });
 

@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { PaymentMethod, OrderStatus, PaymentOrder, User, PaymentDetail, SystemSettings } from '../types';
 import { saveOrder, getNextTrackingNumber, uploadFile, getSettings, saveSettings } from '../services/storageService';
@@ -183,7 +184,8 @@ const CreateOrder: React.FC<CreateOrderProps> = ({ onSuccess, currentUser }) => 
           const result = await apiCall<any>('/analyze-payment', 'POST', {
               amount: sumPaymentLines,
               date: getIsoDate(),
-              company: payingCompany
+              company: payingCompany,
+              description: formData.description || 'توضیحات وارد نشده'
           });
           setAnalysisResult(result);
       } catch (e) {
@@ -224,6 +226,8 @@ const CreateOrder: React.FC<CreateOrderProps> = ({ onSuccess, currentUser }) => 
                 <div className="space-y-2"><label className="text-sm font-medium text-gray-700 flex items-center gap-2"><Calendar size={16} />تاریخ پرداخت (شمسی)</label><div className="grid grid-cols-3 gap-2"><select className="border border-gray-300 rounded-xl px-2 py-3 bg-white focus:ring-2 focus:ring-blue-500" value={shamsiDate.day} onChange={e => setShamsiDate({...shamsiDate, day: Number(e.target.value)})}>{days.map(d => <option key={d} value={d}>{d}</option>)}</select><select className="border border-gray-300 rounded-xl px-2 py-3 bg-white focus:ring-2 focus:ring-blue-500" value={shamsiDate.month} onChange={e => setShamsiDate({...shamsiDate, month: Number(e.target.value)})}>{MONTHS.map((m, idx) => <option key={idx} value={idx + 1}>{m}</option>)}</select><select className="border border-gray-300 rounded-xl px-2 py-3 bg-white focus:ring-2 focus:ring-blue-500" value={shamsiDate.year} onChange={e => setShamsiDate({...shamsiDate, year: Number(e.target.value)})}>{years.map(y => <option key={y} value={y}>{y}</option>)}</select></div></div>
             </div>
             
+            <div className="space-y-2"><div className="flex justify-between items-center"><label className="text-sm font-bold text-gray-700">شرح پرداخت</label><button type="button" onClick={handleEnhance} disabled={isEnhancing || !formData.description} className="text-xs flex items-center gap-1.5 text-purple-600 bg-purple-50 hover:bg-purple-100 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50">{isEnhancing ? <Loader2 size={14} className="animate-spin" /> : <Wand2 size={14} />}بهبود متن با هوش مصنوعی</button></div><textarea required rows={4} className="w-full border border-gray-300 rounded-xl px-4 py-3 focus:ring-2 focus:ring-blue-500 transition-all resize-none" placeholder="توضیحات کامل دستور پرداخت..." value={formData.description} onChange={e => setFormData({ ...formData, description: e.target.value })} onKeyDown={handleKeyDown} /></div>
+
             <div className="bg-gray-50 p-6 rounded-2xl border border-gray-200 relative overflow-hidden">
                 <div className="flex justify-between items-center mb-4 flex-wrap gap-2">
                     <h3 className="font-bold text-gray-700">روش‌های پرداخت</h3>
@@ -293,8 +297,6 @@ const CreateOrder: React.FC<CreateOrderProps> = ({ onSuccess, currentUser }) => 
                 </div>
                 {attachments.length > 0 && <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">{attachments.map((file, idx) => (<div key={idx} className="flex items-center justify-between bg-white p-3 rounded-xl border border-gray-200 text-sm shadow-sm group"><a href={file.data} target="_blank" className="text-blue-600 truncate hover:underline flex items-center gap-2"><Paperclip size={14}/> {file.fileName}</a><button type="button" onClick={() => removeAttachment(idx)} className="text-gray-400 hover:text-red-500 p-1"><X size={16} /></button></div>))}</div>}
             </div>
-
-            <div className="space-y-2"><div className="flex justify-between items-center"><label className="text-sm font-bold text-gray-700">شرح پرداخت</label><button type="button" onClick={handleEnhance} disabled={isEnhancing || !formData.description} className="text-xs flex items-center gap-1.5 text-purple-600 bg-purple-50 hover:bg-purple-100 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50">{isEnhancing ? <Loader2 size={14} className="animate-spin" /> : <Wand2 size={14} />}بهبود متن با هوش مصنوعی</button></div><textarea required rows={4} className="w-full border border-gray-300 rounded-xl px-4 py-3 focus:ring-2 focus:ring-blue-500 transition-all resize-none" placeholder="توضیحات کامل دستور پرداخت..." value={formData.description} onChange={e => setFormData({ ...formData, description: e.target.value })} onKeyDown={handleKeyDown} /></div>
             
             <div className="pt-4"><button type="submit" disabled={isSubmitting || uploading} className="w-full bg-blue-600 hover:bg-blue-700 text-white py-4 rounded-xl font-bold shadow-lg shadow-blue-600/20 flex items-center justify-center gap-2 transition-all transform hover:scale-[1.01] active:scale-[0.99] disabled:opacity-70 disabled:hover:scale-100">{isSubmitting ? <Loader2 size={24} className="animate-spin" /> : <Save size={24} />}ثبت نهایی دستور پرداخت</button></div>
         </form>
