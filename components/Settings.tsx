@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { getSettings, saveSettings, restoreSystemData, uploadFile } from '../services/storageService';
 import { SystemSettings, UserRole, RolePermissions, Company, Contact } from '../types';
-import { Settings as SettingsIcon, Save, Loader2, Database, Bell, Plus, Trash2, Building, ShieldCheck, Landmark, Package, AppWindow, BellRing, BellOff, Send, Image as ImageIcon, Pencil, X, Check, MessageCircle, Calendar, Phone, LogOut, RefreshCw, Users, FolderSync, BrainCircuit, Smartphone, Link, Truck, MessageSquare } from 'lucide-react';
+import { Settings as SettingsIcon, Save, Loader2, Database, Bell, Plus, Trash2, Building, ShieldCheck, Landmark, Package, AppWindow, BellRing, BellOff, Send, Image as ImageIcon, Pencil, X, Check, MessageCircle, Calendar, Phone, LogOut, RefreshCw, Users, FolderSync, BrainCircuit, Smartphone, Link, Truck, MessageSquare, DownloadCloud, UploadCloud } from 'lucide-react';
 import { apiCall } from '../services/apiService';
 import { requestNotificationPermission, setNotificationPreference, isNotificationEnabledInApp } from '../services/notificationService';
 import { generateUUID } from '../constants';
@@ -30,31 +30,25 @@ const Settings: React.FC = () => {
   });
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
+  const [restoring, setRestoring] = useState(false);
   
-  // Company Management State
+  // ... (Keep existing state variables for Company, WA, Lists, etc.) ...
   const [newCompanyName, setNewCompanyName] = useState('');
   const [newCompanyLogo, setNewCompanyLogo] = useState('');
   const [editingCompanyId, setEditingCompanyId] = useState<string | null>(null);
   const [isUploadingLogo, setIsUploadingLogo] = useState(false);
   const companyLogoInputRef = useRef<HTMLInputElement>(null);
-
-  // WhatsApp Session & Contacts State
   const [whatsappStatus, setWhatsappStatus] = useState<{ready: boolean, qr: string | null, user: string | null} | null>(null);
   const [refreshingWA, setRefreshingWA] = useState(false);
   const [contactName, setContactName] = useState('');
   const [contactNumber, setContactNumber] = useState('');
   const [isGroupContact, setIsGroupContact] = useState(false);
   const [fetchingGroups, setFetchingGroups] = useState(false);
-
-  // General Lists State
   const [newBank, setNewBank] = useState('');
   const [newCommodity, setNewCommodity] = useState('');
-  
-  // Backup/Restore & Icon
   const fileInputRef = useRef<HTMLInputElement>(null);
   const iconInputRef = useRef<HTMLInputElement>(null);
   const [uploadingIcon, setUploadingIcon] = useState(false);
-  
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
   const isSecure = window.isSecureContext;
 
@@ -68,7 +62,6 @@ const Settings: React.FC = () => {
       try { 
           const data = await getSettings(); 
           let safeData = { ...data };
-          // Ensure defaults
           safeData.currentExitPermitNumber = safeData.currentExitPermitNumber || 1000;
           safeData.companies = safeData.companies || [];
           if (safeData.companyNames?.length > 0 && safeData.companies.length === 0) {
@@ -125,52 +118,51 @@ const Settings: React.FC = () => {
       } catch (e) { setMessage('خطا ❌'); } finally { setLoading(false); } 
   };
 
-  // Contacts
-  const handleAddContact = () => {
-      if (!contactName.trim() || !contactNumber.trim()) return;
-      const newContact: Contact = { id: generateUUID(), name: contactName.trim(), number: contactNumber.trim(), isGroup: isGroupContact };
-      setSettings({ ...settings, savedContacts: [...(settings.savedContacts || []), newContact] });
-      setContactName(''); setContactNumber(''); setIsGroupContact(false);
-  };
+  // Contacts & Companies & Lists Logic (Kept same)
+  const handleAddContact = () => { if (!contactName.trim() || !contactNumber.trim()) return; const newContact: Contact = { id: generateUUID(), name: contactName.trim(), number: contactNumber.trim(), isGroup: isGroupContact }; setSettings({ ...settings, savedContacts: [...(settings.savedContacts || []), newContact] }); setContactName(''); setContactNumber(''); setIsGroupContact(false); };
   const handleDeleteContact = (id: string) => { setSettings({ ...settings, savedContacts: (settings.savedContacts || []).filter(c => c.id !== id) }); };
-
-  // Companies
-  const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-      const file = e.target.files?.[0]; if (!file) return;
-      setIsUploadingLogo(true);
-      const reader = new FileReader();
-      reader.onload = async (ev) => {
-          try { const result = await uploadFile(file.name, ev.target?.result as string); setNewCompanyLogo(result.url); } 
-          catch (error) { alert('خطا در آپلود'); } finally { setIsUploadingLogo(false); }
-      };
-      reader.readAsDataURL(file);
-  };
-  const handleSaveCompany = () => { 
-      if (!newCompanyName.trim()) return;
-      let updatedCompanies = settings.companies || [];
-      if (editingCompanyId) updatedCompanies = updatedCompanies.map(c => c.id === editingCompanyId ? { ...c, name: newCompanyName.trim(), logo: newCompanyLogo } : c);
-      else updatedCompanies = [...updatedCompanies, { id: generateUUID(), name: newCompanyName.trim(), logo: newCompanyLogo }];
-      setSettings({ ...settings, companies: updatedCompanies, companyNames: updatedCompanies.map(c => c.name) }); 
-      setNewCompanyName(''); setNewCompanyLogo(''); setEditingCompanyId(null);
-  };
+  const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => { const file = e.target.files?.[0]; if (!file) return; setIsUploadingLogo(true); const reader = new FileReader(); reader.onload = async (ev) => { try { const result = await uploadFile(file.name, ev.target?.result as string); setNewCompanyLogo(result.url); } catch (error) { alert('خطا در آپلود'); } finally { setIsUploadingLogo(false); } }; reader.readAsDataURL(file); };
+  const handleSaveCompany = () => { if (!newCompanyName.trim()) return; let updatedCompanies = settings.companies || []; if (editingCompanyId) updatedCompanies = updatedCompanies.map(c => c.id === editingCompanyId ? { ...c, name: newCompanyName.trim(), logo: newCompanyLogo } : c); else updatedCompanies = [...updatedCompanies, { id: generateUUID(), name: newCompanyName.trim(), logo: newCompanyLogo }]; setSettings({ ...settings, companies: updatedCompanies, companyNames: updatedCompanies.map(c => c.name) }); setNewCompanyName(''); setNewCompanyLogo(''); setEditingCompanyId(null); };
   const handleEditCompany = (c: Company) => { setNewCompanyName(c.name); setNewCompanyLogo(c.logo || ''); setEditingCompanyId(c.id); };
   const handleRemoveCompany = (id: string) => { if(confirm("حذف؟")) { const updated = (settings.companies || []).filter(c => c.id !== id); setSettings({ ...settings, companies: updated, companyNames: updated.map(c => c.name) }); } };
-
-  // Lists
   const handleAddBank = () => { if (newBank.trim() && !settings.bankNames.includes(newBank.trim())) { setSettings({ ...settings, bankNames: [...settings.bankNames, newBank.trim()] }); setNewBank(''); } };
   const handleRemoveBank = (name: string) => { setSettings({ ...settings, bankNames: settings.bankNames.filter(b => b !== name) }); };
   const handleAddCommodity = () => { if (newCommodity.trim() && !settings.commodityGroups.includes(newCommodity.trim())) { setSettings({ ...settings, commodityGroups: [...settings.commodityGroups, newCommodity.trim()] }); setNewCommodity(''); } };
   const handleRemoveCommodity = (name: string) => { setSettings({ ...settings, commodityGroups: settings.commodityGroups.filter(c => c !== name) }); };
-  
-  // Permissions
   const handlePermissionChange = (role: string, field: keyof RolePermissions, value: boolean) => { setSettings({ ...settings, rolePermissions: { ...settings.rolePermissions, [role]: { ...settings.rolePermissions[role], [field]: value } } }); };
-  
-  // Other
-  const handleDownloadBackup = async () => { try { const backup = await apiCall<any>('/backup'); const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' })); a.download = `backup_${new Date().toISOString().split('T')[0]}.json`; a.click(); } catch (e) { alert('خطا'); } };
-  const handleRestoreClick = () => { if (confirm('بازگردانی اطلاعات؟ همه اطلاعات فعلی پاک می‌شود.')) fileInputRef.current?.click(); };
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => { const file = e.target.files?.[0]; if (!file) return; const reader = new FileReader(); reader.onload = async (ev) => { try { await restoreSystemData(JSON.parse(ev.target?.result as string)); alert('بازگردانی شد. رفرش کنید.'); window.location.reload(); } catch (error) { alert('فایل نامعتبر'); } }; reader.readAsText(file); };
   const handleIconChange = async (e: React.ChangeEvent<HTMLInputElement>) => { const file = e.target.files?.[0]; if (!file) return; setUploadingIcon(true); const reader = new FileReader(); reader.onload = async (ev) => { try { const res = await uploadFile(file.name, ev.target?.result as string); setSettings({ ...settings, pwaIcon: res.url }); } catch (error) { alert('خطا'); } finally { setUploadingIcon(false); } }; reader.readAsDataURL(file); };
   const handleToggleNotifications = async () => { if (!isSecure) { alert("HTTPS لازم است"); return; } if (notificationsEnabled) { setNotificationPreference(false); setNotificationsEnabled(false); } else { const granted = await requestNotificationPermission(); if (granted) { setNotificationPreference(true); setNotificationsEnabled(true); } } };
+
+  // --- NEW BACKUP & RESTORE LOGIC ---
+  const handleDownloadFullBackup = () => {
+      // Direct download link to the new endpoint
+      window.location.href = '/api/full-backup';
+  };
+
+  const handleRestoreClick = () => { if (confirm('بازگردانی اطلاعات کامل (شامل عکس‌ها)؟ همه اطلاعات فعلی پاک می‌شود.')) fileInputRef.current?.click(); };
+  
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => { 
+      const file = e.target.files?.[0]; 
+      if (!file) return; 
+      
+      setRestoring(true);
+      const reader = new FileReader(); 
+      reader.onload = async (ev) => { 
+          const base64 = ev.target?.result as string; 
+          try { 
+              const response = await apiCall<{success: boolean}>('/full-restore', 'POST', { fileData: base64 }); 
+              if (response.success) {
+                  alert('بازگردانی کامل با موفقیت انجام شد. سیستم رفرش می‌شود.'); 
+                  window.location.reload(); 
+              }
+          } catch (error) { 
+              alert('خطا در بازگردانی فایل Zip'); 
+          } finally {
+              setRestoring(false);
+          }
+      }; 
+      reader.readAsDataURL(file); 
+  };
 
   const roles = [ { id: UserRole.USER, label: 'کاربر عادی' }, { id: UserRole.FINANCIAL, label: 'مدیر مالی' }, { id: UserRole.MANAGER, label: 'مدیر داخلی' }, { id: UserRole.CEO, label: 'مدیر عامل' }, { id: UserRole.SALES_MANAGER, label: 'مدیر فروش' }, { id: UserRole.FACTORY_MANAGER, label: 'مدیر کارخانه' }, { id: UserRole.ADMIN, label: 'مدیر سیستم' }, ];
   const permissionsList = [ 
@@ -194,7 +186,7 @@ const Settings: React.FC = () => {
   return (
     <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden flex flex-col md:flex-row min-h-[600px] mb-20 animate-fade-in">
         
-        {/* Sidebar */}
+        {/* Sidebar (Existing) */}
         <div className="w-full md:w-64 bg-gray-50 border-b md:border-b-0 md:border-l border-gray-200 p-4">
             <h2 className="text-xl font-bold text-gray-800 mb-6 flex items-center gap-2 px-2"><SettingsIcon size={24} className="text-blue-600"/> تنظیمات</h2>
             <nav className="space-y-1">
@@ -234,16 +226,24 @@ const Settings: React.FC = () => {
                         </div>
 
                         <div className="space-y-4">
-                            <h3 className="font-bold text-gray-800 border-b pb-2">پشتیبان‌گیری و بازگردانی</h3>
+                            <h3 className="font-bold text-gray-800 border-b pb-2">پشتیبان‌گیری کامل (دیتابیس + فایل‌ها)</h3>
+                            <p className="text-sm text-gray-600 bg-blue-50 p-3 rounded-lg border border-blue-100">
+                                ℹ️ سیستم به صورت خودکار هر شب (۲۳:۳۰) بک‌آپ کامل را به تلگرام ارسال می‌کند (در صورت تنظیم ربات). در اینجا می‌توانید به صورت دستی بک‌آپ بگیرید.
+                            </p>
                             <div className="flex gap-4">
-                                <button type="button" onClick={handleDownloadBackup} className="bg-gray-100 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-200 flex items-center gap-2"><FolderSync size={18} /> دانلود بکاپ</button>
-                                <button type="button" onClick={handleRestoreClick} className="bg-gray-100 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-200 flex items-center gap-2"><RefreshCw size={18} /> بازگردانی بکاپ</button>
-                                <input type="file" ref={fileInputRef} className="hidden" accept=".json" onChange={handleFileChange} />
+                                <button type="button" onClick={handleDownloadFullBackup} className="bg-indigo-600 text-white px-6 py-3 rounded-xl hover:bg-indigo-700 flex items-center gap-2 shadow-lg shadow-indigo-200 transition-transform hover:scale-105">
+                                    <DownloadCloud size={20} /> دانلود بک‌آپ کامل (Zip)
+                                </button>
+                                <button type="button" onClick={handleRestoreClick} disabled={restoring} className="bg-gray-800 text-white px-6 py-3 rounded-xl hover:bg-gray-900 flex items-center gap-2 shadow-lg shadow-gray-300 transition-transform hover:scale-105 disabled:opacity-70">
+                                    {restoring ? <Loader2 size={20} className="animate-spin"/> : <UploadCloud size={20} />} بازگردانی فایل Zip
+                                </button>
+                                <input type="file" ref={fileInputRef} className="hidden" accept=".zip" onChange={handleFileChange} />
                             </div>
                         </div>
                     </div>
                 )}
 
+                {/* ... (Keep other categories: data, integrations, whatsapp, permissions same as before) ... */}
                 {activeCategory === 'data' && (
                     <div className="space-y-8 animate-fade-in">
                         <div className="space-y-4">
