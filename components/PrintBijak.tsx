@@ -65,20 +65,38 @@ const PrintBijak: React.FC<PrintBijakProps> = ({ tx, onClose, settings }) => {
   };
 
   const sendToWarehouse = () => {
-      if (!settings?.defaultWarehouseGroup) { alert("شماره گروه انبار در تنظیمات تعیین نشده است."); return; }
-      generateAndSend(settings.defaultWarehouseGroup, true, "📦 *حواله خروج کالا (بیجک انبار)*");
+      let target = settings?.defaultWarehouseGroup;
+      if (!target) {
+          target = prompt("شماره واتساپ انبار در تنظیمات وارد نشده است. لطفا شماره را وارد کنید:");
+      }
+      if (target) {
+          generateAndSend(target, true, "📦 *حواله خروج کالا (بیجک انبار)*");
+      }
   };
 
   const sendToManager = () => {
-      if (!settings?.defaultSalesManager) { alert("شماره مدیر فروش در تنظیمات تعیین نشده است."); return; }
-      generateAndSend(settings.defaultSalesManager, false, "📄 *گزارش خروج کالا (بیجک)*");
+      let target = settings?.defaultSalesManager;
+      if (!target) {
+          target = prompt("شماره مدیر فروش در تنظیمات وارد نشده است. لطفا شماره را وارد کنید:");
+      }
+      if (target) {
+          generateAndSend(target, false, "📄 *گزارش خروج کالا (بیجک)*");
+      }
   };
 
   const sendToBoth = async () => {
-      if (!settings?.defaultWarehouseGroup || !settings?.defaultSalesManager) { alert("شماره‌ها در تنظیمات کامل نیستند."); return; }
-      if(!confirm("آیا برای ارسال اتوماتیک به انبار (بدون قیمت) و مدیر (با قیمت) اطمینان دارید؟")) return;
-      await generateAndSend(settings.defaultWarehouseGroup, true, "📦 *حواله خروج کالا (بیجک انبار)*");
-      await generateAndSend(settings.defaultSalesManager, false, "📄 *گزارش خروج کالا (بیجک)*");
+      let wh = settings?.defaultWarehouseGroup;
+      let mgr = settings?.defaultSalesManager;
+      
+      if (!wh) wh = prompt("شماره انبار وارد نشده. لطفا وارد کنید:");
+      if (!mgr) mgr = prompt("شماره مدیر وارد نشده. لطفا وارد کنید:");
+      
+      if (!wh || !mgr) return; // If cancelled
+
+      if(!confirm("ارسال به هر دو؟")) return;
+      
+      await generateAndSend(wh, true, "📦 *حواله خروج کالا (بیجک انبار)*");
+      await generateAndSend(mgr, false, "📄 *گزارش خروج کالا (بیجک)*");
   };
 
   return (

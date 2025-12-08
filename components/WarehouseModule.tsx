@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { User, SystemSettings, WarehouseItem, WarehouseTransaction, WarehouseTransactionItem } from '../types';
 import { getWarehouseItems, saveWarehouseItem, deleteWarehouseItem, getWarehouseTransactions, saveWarehouseTransaction, deleteWarehouseTransaction, getNextBijakNumber } from '../services/storageService';
 import { generateUUID, getCurrentShamsiDate, jalaliToGregorian, formatNumberString, deformatNumberString, formatDate } from '../constants';
-import { Package, Plus, Trash2, ArrowDownCircle, ArrowUpCircle, FileText, BarChart3, Eye, Loader2, AlertTriangle, Settings } from 'lucide-react';
+import { Package, Plus, Trash2, ArrowDownCircle, ArrowUpCircle, FileText, BarChart3, Eye, Loader2, AlertTriangle, Settings, ChevronLeft } from 'lucide-react';
 import PrintBijak from './PrintBijak';
 
 interface Props { currentUser: User; settings?: SystemSettings; }
@@ -185,10 +185,12 @@ const WarehouseModule: React.FC<Props> = ({ currentUser, settings }) => {
                 <p className="text-gray-600 max-w-md mb-6 leading-relaxed">
                     برای استفاده از سیستم انبار (ثبت رسید و بیجک)، ابتدا باید نام شرکت‌ها را در بخش تنظیمات سیستم وارد کنید.
                 </p>
-                <a href="#settings" className="bg-blue-600 text-white px-6 py-3 rounded-xl font-bold flex items-center gap-2 hover:bg-blue-700 transition-colors shadow-lg">
-                    <Settings size={20}/>
-                    رفتن به تنظیمات > مدیریت شرکت‌ها
-                </a>
+                <div className="flex gap-2">
+                    <button onClick={() => window.location.hash = '#settings'} className="bg-blue-600 text-white px-6 py-3 rounded-xl font-bold flex items-center gap-2 hover:bg-blue-700 transition-colors shadow-lg">
+                        <Settings size={20}/>
+                        <span>رفتن به تنظیمات &gt; مدیریت شرکت‌ها</span>
+                    </button>
+                </div>
             </div>
         );
     }
