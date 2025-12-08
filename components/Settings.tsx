@@ -2,14 +2,14 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { getSettings, saveSettings, restoreSystemData, uploadFile } from '../services/storageService';
 import { SystemSettings, UserRole, RolePermissions, Company, Contact } from '../types';
-import { Settings as SettingsIcon, Save, Loader2, Download, Database, Bell, Plus, Trash2, Building, ShieldCheck, Landmark, Package, AppWindow, BellRing, BellOff, Send, Crown, Image as ImageIcon, Pencil, X, Check, MessageSquare, Calendar, Phone, QrCode, LogOut, RefreshCw, Users, FolderSync, Bot } from 'lucide-react';
+import { Settings as SettingsIcon, Save, Loader2, Download, Database, Bell, Plus, Trash2, Building, ShieldCheck, Landmark, Package, AppWindow, BellRing, BellOff, Send, Crown, Image as ImageIcon, Pencil, X, Check, MessageSquare, Calendar, Phone, QrCode, LogOut, RefreshCw, Users, FolderSync, Bot, Key } from 'lucide-react';
 import { apiCall } from '../services/apiService';
 import { requestNotificationPermission, setNotificationPreference, isNotificationEnabledInApp } from '../services/notificationService';
 import { generateUUID } from '../constants';
 
 const Settings: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'general' | 'permissions' | 'whatsapp'>('general');
-  const [settings, setSettings] = useState<SystemSettings>({ currentTrackingNumber: 1000, companyNames: [], companies: [], defaultCompany: '', bankNames: [], commodityGroups: [], rolePermissions: {} as any, savedContacts: [], pwaIcon: '', telegramBotToken: '', telegramAdminId: '', smsApiKey: '', smsSenderNumber: '', googleCalendarId: '', whatsappNumber: '', n8nWebhookUrl: '' });
+  const [settings, setSettings] = useState<SystemSettings>({ currentTrackingNumber: 1000, companyNames: [], companies: [], defaultCompany: '', bankNames: [], commodityGroups: [], rolePermissions: {} as any, savedContacts: [], pwaIcon: '', telegramBotToken: '', telegramAdminId: '', smsApiKey: '', smsSenderNumber: '', googleCalendarId: '', whatsappNumber: '', geminiApiKey: '' });
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
   
@@ -61,7 +61,7 @@ const Settings: React.FC = () => {
               smsSenderNumber: data.smsSenderNumber || '',
               googleCalendarId: data.googleCalendarId || '',
               whatsappNumber: data.whatsappNumber || '',
-              n8nWebhookUrl: data.n8nWebhookUrl || ''
+              geminiApiKey: data.geminiApiKey || ''
           }; 
           
           // Migrate old string companies to object structure if empty
@@ -429,22 +429,22 @@ const Settings: React.FC = () => {
         <form onSubmit={handleSave} className="space-y-8">
             {activeTab === 'general' ? (
                 <>
-                {/* AI / n8n Settings */}
+                {/* AI / Gemini Settings */}
                 <div className="space-y-4">
-                    <div className="flex items-center gap-2 mb-2"><Bot className="text-indigo-600" size={20} /><h3 className="font-bold text-gray-800">تنظیمات هوش مصنوعی (n8n)</h3></div>
+                    <div className="flex items-center gap-2 mb-2"><Bot className="text-indigo-600" size={20} /><h3 className="font-bold text-gray-800">تنظیمات هوش مصنوعی (Google Gemini)</h3></div>
                     <div className="bg-indigo-50 p-4 rounded-xl border border-indigo-200">
-                        <label className="text-xs font-bold text-gray-700 block mb-2">آدرس وب‌هوک n8n (Webhook URL)</label>
+                        <label className="text-xs font-bold text-gray-700 block mb-2 flex items-center gap-1"><Key size={14}/> کلید دسترسی (API Key)</label>
                         <input 
-                            type="text" 
+                            type="password" 
                             className="w-full border border-indigo-300 rounded-lg p-2 text-sm dir-ltr font-mono bg-white" 
-                            placeholder="https://your-n8n-instance.com/webhook/..."
-                            value={settings.n8nWebhookUrl}
-                            onChange={(e) => setSettings({...settings, n8nWebhookUrl: e.target.value})}
+                            placeholder="AIzaSy..."
+                            value={settings.geminiApiKey}
+                            onChange={(e) => setSettings({...settings, geminiApiKey: e.target.value})}
                         />
                         <p className="text-xs text-gray-600 mt-2">
-                            برای پردازش پیام‌های صوتی و متنی، سرور پیام‌ها را به این آدرس ارسال می‌کند.
+                            برای استفاده از قابلیت‌های هوشمند (تحلیل، ثبت صوتی)، کلید API گوگل جمینای را وارد کنید.
                             <br/>
-                            <span className="font-bold">نکته:</span> n8n باید طوری تنظیم شود که پاسخ JSON با فرمت مشخص شده در مستندات را برگرداند.
+                            <a href="https://aistudio.google.com/app/apikey" target="_blank" className="text-indigo-700 hover:underline">دریافت کلید API</a>
                         </p>
                     </div>
                 </div>

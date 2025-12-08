@@ -17,18 +17,6 @@ const UPLOADS_DIR = path.join(__dirname, 'uploads');
 const BACKUPS_DIR = path.join(__dirname, 'backups');
 const WAUTH_DIR = path.join(__dirname, 'wauth');
 
-// --- GEMINI SETUP ---
-// کلید خود را اینجا نگه داشتم
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY || process.env.API_KEY || "AIzaSyAyCu0MyoP82ypvanV9xyM0Vuy2t3owqm8";
-let geminiClient = null;
-
-if (GEMINI_API_KEY) {
-    console.log(">>> ✅ Gemini API Key configured.");
-    geminiClient = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
-} else {
-    console.warn(">>> ⚠️ No Gemini API Key found. AI features will be disabled.");
-}
-
 if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR);
 if (!fs.existsSync(BACKUPS_DIR)) fs.mkdirSync(BACKUPS_DIR);
 if (!fs.existsSync(WAUTH_DIR)) fs.mkdirSync(WAUTH_DIR);
@@ -63,7 +51,7 @@ const getDb = () => {
 const saveDb = (data) => fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2));
 
 const findNextAvailableTrackingNumber = (db) => {
-    const baseNum = (db.settings.currentTrackingNumber || 1000);
+    const baseNum = (db.settings?.currentTrackingNumber || 1000);
     const startNum = baseNum + 1;
     const existing = db.orders.map(o => o.trackingNumber).sort((a, b) => a - b);
     let next = startNum;
@@ -71,21 +59,39 @@ const findNextAvailableTrackingNumber = (db) => {
     return next;
 };
 
+// --- GEMINI HELPER ---
+const getGeminiClient = () => {
+    const db = getDb();
+    const apiKey = db.settings?.geminiApiKey || process.env.GEMINI_API_KEY || process.env.API_KEY;
+    if (apiKey) {
+        return new GoogleGenAI({ apiKey: apiKey });
+    }
+    return null;
+};
+
 // ==========================================
-// WHATSAPP GLOBALS
+// WHATSAPP & TELEGRAM GLOBALS
 // ==========================================
 let whatsappClient = null;
+let telegramBot = null;
 let MessageMedia = null; 
 let isWhatsAppReady = false;
 let currentQR = null; 
 let whatsappUser = null; 
 
-const normalizePhone = (p) => p ? p.replace(/\D/g, '').replace(/^09/, '989').replace(/^9/, '989') : '';
+// Robust Phone Normalizer: Takes last 10 digits (e.g. 9123456789)
+// This handles +98, 09, 9, 0098 variations automatically.
+const getTenDigits = (p) => {
+    if (!p) return '';
+    const digits = p.replace(/\D/g, '');
+    return digits.length >= 10 ? digits.slice(-10) : digits;
+};
 
 const sendWhatsAppMessageInternal = async (number, message) => {
     if (!whatsappClient || !isWhatsAppReady) return false;
     try {
-        let chatId = number.includes('@') ? number : `${normalizePhone(number)}@c.us`;
+        // Construct standard WhatsApp ID
+        let chatId = number.includes('@') ? number : `98${getTenDigits(number)}@c.us`;
         await whatsappClient.sendMessage(chatId, message);
         console.log(`>>> WA Sent to ${chatId}`);
         return true;
@@ -99,7 +105,6 @@ const sendWhatsAppMessageInternal = async (number, message) => {
 // CORE LOGIC: PROCESS COMMANDS
 // ==========================================
 
-// Simple extraction if AI fails completely (Backup)
 function extractOrderWithRegex(text) {
     try {
         let amount = 0;
@@ -129,7 +134,9 @@ async function processUserCommand(user, text, isVoice = false) {
     const db = getDb();
     const cleanText = text.trim().toLowerCase();
 
-    // 1. APPROVAL LOGIC
+    console.log(`>>> Processing command from ${user.fullName}: ${cleanText}`);
+
+    // 1. APPROVAL LOGIC (Highest Priority)
     const numMatch = cleanText.match(/^(\d+)$/) || cleanText.match(/تایید\s*(\d+)/) || cleanText.match(/ok\s*(\d+)/);
     if (numMatch) {
         const trackNum = parseInt(numMatch[1]);
@@ -155,7 +162,7 @@ async function processUserCommand(user, text, isVoice = false) {
         }
     }
 
-    // 2. REPORT LOGIC
+    // 2. REPORT LOGIC (Simple & Fast)
     if (cleanText.includes('گزارش') || cleanText.includes('کارتابل')) {
         let pending = [];
         if (user.role === 'financial') pending = db.orders.filter(o => o.status === 'در انتظار بررسی مالی');
@@ -169,16 +176,23 @@ async function processUserCommand(user, text, isVoice = false) {
         return rep + `\n💡 برای تایید، شماره دستور را ارسال کنید.`;
     }
 
-    // 3. CREATION LOGIC (Direct Gemini Call - No Timeout Wrappers)
+    // 3. HELP LOGIC
+    if (cleanText === 'راهنما' || cleanText === 'help' || cleanText === '/start') {
+        return `🤖 *راهنمای سیستم*\n1️⃣ ارسال عدد دستور = تایید\n2️⃣ کلمه "گزارش" = مشاهده کارتابل\n3️⃣ "ثبت [مبلغ] برای [شخص]" = ثبت دستور جدید`;
+    }
+
+    // 4. CREATION LOGIC (Hybrid: AI -> Regex)
     if (cleanText.includes('ثبت') || cleanText.includes('پرداخت') || cleanText.includes('دستور')) {
         let data = null;
+        const ai = getGeminiClient();
         
-        if (geminiClient) {
+        // Only use AI if key exists, otherwise skip straight to regex
+        if (ai) {
             try {
                 console.log(">>> Sending to Gemini (Direct)...");
                 const prompt = `Extract payment details from: "${text}". JSON: { "payee": string, "amount": number (in Rials), "description": string }. If amount is in Toman/Million, convert to Rial.`;
                 
-                const result = await geminiClient.models.generateContent({
+                const result = await ai.models.generateContent({
                     model: 'gemini-2.5-flash',
                     contents: [{ role: 'user', parts: [{ text: prompt }] }],
                     config: { responseMimeType: 'application/json' }
@@ -186,13 +200,12 @@ async function processUserCommand(user, text, isVoice = false) {
                 
                 const responseText = result.response.text();
                 data = JSON.parse(responseText);
-                console.log(">>> Gemini Response:", data);
             } catch (e) {
-                console.error(">>> Gemini Error:", e.message);
-                // Fallback to regex if Gemini fails
-                data = extractOrderWithRegex(text);
+                console.error(">>> Gemini Error (Fallback to Regex):", e.message);
             }
-        } else {
+        }
+        
+        if (!data || !data.amount) {
             data = extractOrderWithRegex(text);
         }
 
@@ -206,7 +219,7 @@ async function processUserCommand(user, text, isVoice = false) {
                 totalAmount: data.amount,
                 description: data.description || text,
                 status: 'در انتظار بررسی مالی',
-                requester: user.fullName + ' (AI)',
+                requester: user.fullName + ' (Bot)',
                 paymentDetails: [{ id: 'ai'+Date.now(), method: 'حواله بانکی', amount: data.amount, description: 'Auto Generated' }],
                 createdAt: Date.now()
             };
@@ -235,18 +248,26 @@ function triggerNotifications(order, db) {
     else if (order.status === 'تایید نهایی') { targetRole = 'financial'; msg = `✅ *دستور #${tracking} نهایی شد.*\nلطفا پرداخت کنید.`; }
 
     if (targetRole && msg) {
+        // WhatsApp Notifications
         db.users.filter(u => u.role === targetRole || u.role === 'admin').forEach(u => {
             if (u.phoneNumber) sendWhatsAppMessageInternal(u.phoneNumber, msg);
         });
+        
+        // Telegram Notifications
+        if (telegramBot && db.settings?.telegramBotToken) {
+             db.users.filter(u => (u.role === targetRole || u.role === 'admin') && u.telegramChatId).forEach(u => {
+                 telegramBot.sendMessage(u.telegramChatId, msg).catch(() => {});
+             });
+        }
     }
 }
 
 // --- VOICE TRANSCRIPTION (Direct) ---
 async function transcribe(buffer, mimeType) {
-    if (!geminiClient) return null;
+    const ai = getGeminiClient();
+    if (!ai) return null;
     try {
-        console.log(">>> Transcribing Audio...");
-        const result = await geminiClient.models.generateContent({
+        const result = await ai.models.generateContent({
             model: 'gemini-2.5-flash',
             contents: [{
                 role: 'user',
@@ -262,6 +283,36 @@ async function transcribe(buffer, mimeType) {
         return null;
     }
 }
+
+// ==========================================
+// TELEGRAM BOT
+// ==========================================
+const initTelegram = async () => {
+    try {
+        const TelegramBot = (await import('node-telegram-bot-api')).default;
+        const db = getDb();
+        if (db.settings?.telegramBotToken) {
+            telegramBot = new TelegramBot(db.settings.telegramBotToken, { 
+                polling: { interval: 300, autoStart: true, params: { timeout: 10 } } 
+            });
+            console.log(">>> Telegram Bot Started");
+
+            telegramBot.on('polling_error', () => {}); // Silence errors
+
+            telegramBot.on('message', async (msg) => {
+                const chatId = msg.chat.id.toString();
+                const db = getDb();
+                const user = db.users.find(u => u.telegramChatId === chatId);
+                if (!user) { telegramBot.sendMessage(chatId, `⛔ عدم دسترسی. ID: ${chatId}`); return; }
+
+                if (msg.text) {
+                    const reply = await processUserCommand(user, msg.text);
+                    telegramBot.sendMessage(chatId, reply).catch(() => {});
+                }
+            });
+        }
+    } catch (e) { console.log("TG Init Error:", e.message); }
+};
 
 // ==========================================
 // WHATSAPP BOT
@@ -294,26 +345,43 @@ const initWhatsApp = async () => {
         whatsappClient.on('ready', () => { isWhatsAppReady = true; currentQR = null; whatsappUser = whatsappClient.info.wid.user; console.log(">>> WA Ready"); });
         
         whatsappClient.on('message', async (msg) => {
-            const sender = msg.from.replace('@c.us', '').replace(/^98|^0/, '');
-            const db = getDb();
-            const user = db.users.find(u => normalizePhone(u.phoneNumber) === normalizePhone(sender));
-            if (!user) return;
+            try {
+                if (!msg.from.includes('@c.us')) return; // Ignore groups for command processing
+                
+                // Strict 10-digit matching (ignores 98 or 0 prefix issues)
+                const senderDigits = getTenDigits(msg.from.replace('@c.us', ''));
+                console.log(`>>> Incoming MSG from: ${msg.from} (Digits: ${senderDigits})`);
 
-            let text = msg.body;
-            if (msg.hasMedia) {
-                try {
-                    const media = await msg.downloadMedia();
-                    if (media.mimetype.includes('audio')) {
-                        const buff = Buffer.from(media.data, 'base64');
-                        text = await transcribe(buff, media.mimetype);
-                        if (text) msg.reply(`🎤: "${text}"`);
-                    }
-                } catch (e) { console.error("WA Media Fail", e.message); }
-            }
+                const db = getDb();
+                const user = db.users.find(u => getTenDigits(u.phoneNumber) === senderDigits);
+                
+                if (!user) {
+                    // Optional: Feedback for unknown users
+                    console.log(`>>> User Unknown: ${senderDigits}`);
+                    // await msg.reply("⛔ شماره شما در سیستم تعریف نشده است.");
+                    return;
+                }
 
-            if (text) {
-                const reply = await processUserCommand(user, text);
-                if (reply) msg.reply(reply);
+                let text = msg.body;
+                
+                // Voice Handling
+                if (msg.hasMedia) {
+                    try {
+                        const media = await msg.downloadMedia();
+                        if (media.mimetype.includes('audio')) {
+                            const buff = Buffer.from(media.data, 'base64');
+                            text = await transcribe(buff, media.mimetype);
+                            if (text) msg.reply(`🎤: "${text}"`);
+                        }
+                    } catch (e) { console.error("WA Media Fail", e.message); }
+                }
+
+                if (text) {
+                    const reply = await processUserCommand(user, text);
+                    if (reply) await msg.reply(reply);
+                }
+            } catch (err) {
+                console.error(">>> Error Processing Message:", err);
             }
         });
 
@@ -322,8 +390,8 @@ const initWhatsApp = async () => {
     } catch (e) { console.error("WA Module Error", e.message); }
 };
 
-// Initialize only WhatsApp
-setTimeout(() => { initWhatsApp(); }, 3000);
+// Initialize Bots
+setTimeout(() => { initWhatsApp(); initTelegram(); }, 3000);
 
 // ==========================================
 // API ENDPOINTS
@@ -333,7 +401,7 @@ app.post('/api/send-whatsapp', async (req, res) => {
     if (!whatsappClient || !isWhatsAppReady) return res.status(503).json({ success: false, message: 'Bot not ready' });
     const { number, message, mediaData } = req.body;
     try {
-        let chatId = number.includes('@') ? number : `${normalizePhone(number)}@c.us`;
+        let chatId = number.includes('@') ? number : `98${getTenDigits(number)}@c.us`;
         if (mediaData && mediaData.data) {
             const media = new MessageMedia(mediaData.mimeType, mediaData.data, mediaData.filename);
             await whatsappClient.sendMessage(chatId, media, { caption: message || '' });
@@ -368,10 +436,11 @@ app.post('/api/analyze-payment', async (req, res) => {
     const { amount, date, company, description } = req.body;
     
     // Direct Gemini Call for Analysis (No explicit timeout wrapping)
-    if (geminiClient) {
+    const ai = getGeminiClient();
+    if (ai) {
         try {
             const prompt = `Analyze payment: Company: ${company}, Amount: ${amount} Rials, Date: ${date}, Desc: ${description}. JSON: { "recommendation": string (Persian), "score": number, "reasons": string[] }`;
-            const result = await geminiClient.models.generateContent({
+            const result = await ai.models.generateContent({
                 model: 'gemini-2.5-flash',
                 contents: [{ role: 'user', parts: [{ text: prompt }] }],
                 config: { responseMimeType: 'application/json' }
