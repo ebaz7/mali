@@ -5,7 +5,6 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import axios from 'axios';
-import { spawn } from 'child_process';
 import { GoogleGenAI } from "@google/genai";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -19,13 +18,15 @@ const BACKUPS_DIR = path.join(__dirname, 'backups');
 const WAUTH_DIR = path.join(__dirname, 'wauth');
 
 // --- GEMINI SETUP ---
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY || process.env.API_KEY;
+// Get Key from Environment or use the provided key
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY || process.env.API_KEY || "AIzaSyAyCu0MyoP82ypvanV9xyM0Vuy2t3owqm8";
 let geminiClient = null;
+
 if (GEMINI_API_KEY) {
-    console.log(">>> Gemini API Key found. Initializing AI...");
+    console.log(">>> ✅ Gemini API Key found. AI features enabled.");
     geminiClient = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
 } else {
-    console.warn(">>> ⚠️ No GEMINI_API_KEY found. System will run in LIMITED OFFLINE MODE.");
+    console.warn(">>> ⚠️ No GEMINI_API_KEY found. System running in OFFLINE MODE (Rule-based).");
 }
 
 if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR);
@@ -143,12 +144,24 @@ const sendTelegramMessageInternal = async (chatId, message) => {
 const processOfflineAI = (user, text) => {
     if (!text) return "متوجه نشدم.";
     const lower = text.toLowerCase();
-    console.log(`>>> ⚠️ Using Offline AI Fallback for: ${text}`);
+    console.log(`>>> ⚠️ Using Offline AI Fallback for: ${text.substring(0, 50)}...`);
 
+    // 1. Text Enhancement Fallback (Simple cleanup)
+    if (text.includes("بازنویسی کن") || text.includes("شرح سند")) {
+        // Extract content inside quotes or just cleanup the text
+        const match = text.match(/"([^"]+)"/);
+        let content = match ? match[1] : text.replace("لطفا متن زیر را به زبان فارسی رسمی و اداری برای شرح سند حسابداری بازنویسی کن. فقط متن نهایی را برگردان و هیچ توضیح اضافه‌ای نده:", "").trim();
+        // Remove extra spaces and make it look a bit cleaner
+        content = content.replace(/\s+/g, ' ').trim();
+        return { type: "message", text: content };
+    }
+
+    // 2. Report / Summary
     if (lower.includes('گزارش') || lower.includes('وضعیت') || lower.includes('کارتابل') || lower.includes('چک')) {
         return { type: "tool_call", tool: "get_financial_summary", args: {} };
     }
 
+    // 3. Register Payment
     if (lower.includes('ثبت') || lower.includes('پرداخت') || lower.includes('دستور')) {
         const amountMatch = text.match(/(\d+)/); 
         const amount = amountMatch ? parseInt(amountMatch[0]) : 0;
@@ -157,6 +170,7 @@ const processOfflineAI = (user, text) => {
         return { type: "tool_call", tool: "register_payment_order", args: { payee: payee || "شخص ناشناس (آفلاین)", amount: amount || 1000000, description: text, company: "شرکت پیش‌فرض" } };
     }
 
+    // 4. Approval / Rejection
     if (lower.includes('تایید') || lower.includes('اوکی')) {
         const numMatch = text.match(/(\d+)/);
         if (numMatch) return { type: "tool_call", tool: "manage_order", args: { trackingNumber: numMatch[0], action: 'approve' } };
@@ -174,7 +188,6 @@ const processOfflineAI = (user, text) => {
 // GEMINI REQUEST LOGIC
 // ==========================================
 
-// Define Tools for Gemini
 const geminiTools = [
     {
       functionDeclarations: [
@@ -225,7 +238,7 @@ const geminiTools = [
     }
 ];
 
-async function processN8NRequest(user, messageText, audioData = null, audioMimeType = null, systemPrompt = null) {
+async function processAIRequest(user, messageText, audioData = null, audioMimeType = null, systemPrompt = null) {
     // Priority 1: Gemini (Free & Fast)
     if (geminiClient) {
         try {
@@ -267,7 +280,7 @@ async function processN8NRequest(user, messageText, audioData = null, audioMimeT
             }
             
             if (response.text) {
-                // Check if the response text looks like JSON (sometimes Gemini outputs JSON string instead of tool call if instructed poorly, but tools usually override)
+                // Check if the response text looks like JSON (sometimes Gemini outputs JSON string instead of tool call if instructed poorly)
                 const txt = response.text;
                 if (txt.trim().startsWith('{') && txt.includes("recommendation")) {
                     return JSON.parse(txt); // For analysis API
@@ -276,7 +289,7 @@ async function processN8NRequest(user, messageText, audioData = null, audioMimeT
             }
 
         } catch (error) {
-            console.error(">>> Gemini Error:", error);
+            console.error(">>> Gemini Error:", error.message);
             // Fallthrough to offline mode
         }
     }
@@ -426,10 +439,10 @@ function triggerNotifications(order, db) {
 app.post('/api/analyze-payment', async (req, res) => {
     const { amount, date, company } = req.body;
     
-    // Use Gemini JSON Mode
+    // Use Gemini JSON Mode if available
     const prompt = `Analyze this payment request: Amount ${amount}, Date ${date}, Company ${company}. Return a JSON object with keys: recommendation (string), score (number 0-100), reasons (array of strings).`;
     
-    const response = await processN8NRequest(
+    const response = await processAIRequest(
         { fullName: 'Analyzer', role: 'system', id: 'sys' }, 
         prompt, null, null, "You are a financial analysis engine. Output ONLY valid JSON."
     );
@@ -438,7 +451,7 @@ app.post('/api/analyze-payment', async (req, res) => {
         return res.json({ ...response, analysisId: Date.now() });
     }
 
-    // Fallback Logic
+    // Fallback Logic (Offline / Gemini Failure)
     console.log("Using fallback analysis logic.");
     const amountNum = Number(amount);
     let score = 85;
@@ -497,7 +510,7 @@ const initTelegram = async () => {
                 }
 
                 if (messageText || audioData) {
-                    const reply = await processN8NRequest(user, messageText, audioData);
+                    const reply = await processAIRequest(user, messageText, audioData);
                     if (reply) telegramBot.sendMessage(chatId, typeof reply === 'string' ? reply : JSON.stringify(reply));
                 }
             });
@@ -571,7 +584,7 @@ const initWhatsApp = async () => {
             }
 
             if (messageText || audioData) {
-                const reply = await processN8NRequest(user, messageText, audioData);
+                const reply = await processAIRequest(user, messageText, audioData);
                 if (reply) msg.reply(typeof reply === 'string' ? reply : JSON.stringify(reply));
             }
         });
@@ -613,7 +626,7 @@ app.post('/api/send-whatsapp', async (req, res) => {
 });
 
 app.post('/api/ai-request', async (req, res) => {
-    try { const reply = await processN8NRequest({ fullName: 'User', role: 'user', id: 'fe' }, req.body.message); res.json({ reply: typeof reply === 'string' ? reply : JSON.stringify(reply) }); } catch (e) { res.status(500).json({ error: e.message }); }
+    try { const reply = await processAIRequest({ fullName: 'User', role: 'user', id: 'fe' }, req.body.message); res.json({ reply: typeof reply === 'string' ? reply : JSON.stringify(reply) }); } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 app.get('/api/manifest', (req, res) => {
