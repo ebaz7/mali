@@ -170,7 +170,7 @@ const WarehouseModule: React.FC<Props> = ({ currentUser, settings }) => {
         </div>
     );
 
-    // 1. Loading State Check
+    // 1. Loading State Check (CRITICAL FIX FOR CRASH)
     if (!settings || loadingData) {
         return <div className="flex flex-col items-center justify-center h-[50vh] text-gray-500 gap-2"><Loader2 className="animate-spin text-blue-600" size={32}/><span className="text-sm font-bold">در حال بارگذاری اطلاعات انبار...</span></div>;
     }

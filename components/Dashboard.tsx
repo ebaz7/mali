@@ -313,7 +313,7 @@ const Dashboard: React.FC<DashboardProps> = ({ orders, settings, onViewArchive, 
                               ))}
                           </div>
                           <div className="mt-4 p-2 bg-yellow-50 rounded border border-yellow-100 text-[10px] text-yellow-800 text-center">
-                              برای مشاهده تقویم گوگل خود، لطفا «آیدی تقویم» را در بخش تنظیمات > اتصالات وارد کنید.
+                              برای مشاهده تقویم گوگل خود، لطفا «آیدی تقویم» را در بخش تنظیمات (سربرگ اتصالات) وارد کنید.
                           </div>
                       </div>
                   )}
