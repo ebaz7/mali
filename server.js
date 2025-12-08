@@ -79,8 +79,7 @@ let isWhatsAppReady = false;
 let currentQR = null; 
 let whatsappUser = null; 
 
-// Robust Phone Normalizer: Takes last 10 digits (e.g. 9123456789)
-// This handles +98, 09, 9, 0098 variations automatically.
+// Robust Phone Normalizer
 const getTenDigits = (p) => {
     if (!p) return '';
     const digits = p.replace(/\D/g, '');
@@ -90,7 +89,6 @@ const getTenDigits = (p) => {
 const sendWhatsAppMessageInternal = async (number, message) => {
     if (!whatsappClient || !isWhatsAppReady) return false;
     try {
-        // Construct standard WhatsApp ID
         let chatId = number.includes('@') ? number : `98${getTenDigits(number)}@c.us`;
         await whatsappClient.sendMessage(chatId, message);
         console.log(`>>> WA Sent to ${chatId}`);
@@ -177,20 +175,57 @@ async function processUserCommand(user, text, isVoice = false) {
     }
 
     // 3. HELP LOGIC
-    if (cleanText === 'راهنما' || cleanText === 'help' || cleanText === '/start') {
-        return `🤖 *راهنمای سیستم*\n1️⃣ ارسال عدد دستور = تایید\n2️⃣ کلمه "گزارش" = مشاهده کارتابل\n3️⃣ "ثبت [مبلغ] برای [شخص]" = ثبت دستور جدید`;
+    if (cleanText === 'راهنما' || cleanText === 'help' || cleanText === '/start' || cleanText === 'دستورات') {
+        return `🤖 *راهنمای دستورات هوشمند واتساپ*
+
+1️⃣ *ثبت دستور پرداخت (متنی یا ویس)*
+کافیست بگویید چه مبلغی به چه کسی پرداخت شود. سیستم هوشمند است و جزئیات را تشخیص می‌دهد.
+مثال‌ها:
+🔹 "۵۰ میلیون به علی حسینی بابت خرید مواد اولیه"
+🔹 "۱۰۰ میلیون برای شرکت فولاد، ۵۰ تومن از بانک ملی، ۵۰ تومن از صادرات بابت پیش پرداخت"
+_(در مثال دوم، سیستم دو ردیف پرداخت جداگانه ایجاد می‌کند)_
+
+2️⃣ *تایید دستور پرداخت*
+فقط *شماره دستور* را ارسال کنید.
+مثال: "1001" یا "تایید 1001"
+
+3️⃣ *گزارش کارتابل*
+کلمه *"گزارش"* یا *"کارتابل"* را ارسال کنید تا لیست کارهای منتظر تایید خود را ببینید.
+
+4️⃣ *وضعیت سیستم*
+کلمه *"وضعیت"* را بفرستید تا وضعیت سرور چک شود.
+
+💡 *نکته:* می‌توانید از ویس (Voice Note) برای همه موارد بالا استفاده کنید.`;
     }
 
     // 4. CREATION LOGIC (Hybrid: AI -> Regex)
-    if (cleanText.includes('ثبت') || cleanText.includes('پرداخت') || cleanText.includes('دستور')) {
+    if (cleanText.includes('ثبت') || cleanText.includes('پرداخت') || cleanText.includes('دستور') || cleanText.includes('بده') || cleanText.includes('واریز')) {
         let data = null;
         const ai = getGeminiClient();
         
-        // Only use AI if key exists, otherwise skip straight to regex
         if (ai) {
             try {
                 console.log(">>> Sending to Gemini (Direct)...");
-                const prompt = `Extract payment details from: "${text}". JSON: { "payee": string, "amount": number (in Rials), "description": string }. If amount is in Toman/Million, convert to Rial.`;
+                const prompt = `
+                  Reference Date: ${new Date().toLocaleDateString('fa-IR')} (Persian/Shamsi).
+                  Extract payment details from: "${text}".
+                  
+                  Crucial: Convert all amounts (Toman/Million/Billion) to RIALS.
+                  If the user specifies multiple sources (e.g. "50 from Bank A, 20 from Bank B"), create multiple entries in 'paymentDetails'.
+                  
+                  Output JSON structure:
+                  { 
+                    "payee": string, 
+                    "description": string,
+                    "company": string (paying company, infer from text, or null),
+                    "date": string (ISO YYYY-MM-DD, convert Persian dates or relative terms like 'tomorrow' to Gregorian. Default null),
+                    "paymentDetails": [
+                        { "amount": number (in Rials), "bankName": string, "method": "حواله بانکی" | "چک" | "نقد" }
+                    ]
+                  }
+                  
+                  Calculate "totalAmount" as sum of paymentDetails. If no specific bank details, create one entry in paymentDetails with total amount.
+                `;
                 
                 const result = await ai.models.generateContent({
                     model: 'gemini-2.5-flash',
@@ -205,34 +240,75 @@ async function processUserCommand(user, text, isVoice = false) {
             }
         }
         
-        if (!data || !data.amount) {
-            data = extractOrderWithRegex(text);
+        // Fallback
+        if (!data || !data.paymentDetails || data.paymentDetails.length === 0) {
+            const basic = extractOrderWithRegex(text);
+            if (basic) {
+                data = {
+                    payee: basic.payee,
+                    description: basic.description,
+                    paymentDetails: [{ amount: basic.amount, method: 'حواله بانکی', description: 'ثبت خودکار' }],
+                    company: null,
+                    date: null
+                };
+            }
         }
 
-        if (data && data.amount > 0) {
+        if (data && data.paymentDetails && data.paymentDetails.length > 0) {
             const num = findNextAvailableTrackingNumber(db);
+            const totalAmount = data.paymentDetails.reduce((sum, item) => sum + (item.amount || 0), 0);
+            
+            if (totalAmount <= 0) return "مبلغ نامعتبر است. لطفا مجدد تلاش کنید.";
+
+            // Resolve Paying Company
+            let payingCompany = data.company || db.settings.defaultCompany || "";
+            if (data.company && db.settings.companies) {
+                const matched = db.settings.companies.find(c => c.name.includes(data.company) || data.company.includes(c.name));
+                if (matched) payingCompany = matched.name;
+            }
+
+            const paymentLines = data.paymentDetails.map(d => ({
+                id: 'ai' + Math.random().toString(36).substr(2, 9),
+                method: d.method || 'حواله بانکی',
+                amount: d.amount,
+                bankName: d.bankName || '',
+                description: 'ثبت هوشمند'
+            }));
+
             const newOrder = {
                 id: Date.now().toString(36),
                 trackingNumber: num,
-                date: new Date().toISOString().split('T')[0],
+                date: data.date || new Date().toISOString().split('T')[0],
                 payee: data.payee || "نامشخص",
-                totalAmount: data.amount,
+                totalAmount: totalAmount,
                 description: data.description || text,
                 status: 'در انتظار بررسی مالی',
-                requester: user.fullName + ' (Bot)',
-                paymentDetails: [{ id: 'ai'+Date.now(), method: 'حواله بانکی', amount: data.amount, description: 'Auto Generated' }],
+                requester: user.fullName + (isVoice ? ' (صوتی)' : ' (Bot)'),
+                paymentDetails: paymentLines,
+                payingCompany: payingCompany,
                 createdAt: Date.now()
             };
             db.orders.unshift(newOrder);
             saveDb(db);
             triggerNotifications(newOrder, db);
-            return `✅ دستور پرداخت ثبت شد (#${num})\nمبلغ: ${data.amount.toLocaleString()} ریال\nگیرنده: ${data.payee}`;
+            
+            let reply = `✅ دستور پرداخت ثبت شد (#${num})\n💰 مبلغ کل: ${totalAmount.toLocaleString()} ریال\n👤 گیرنده: ${data.payee}`;
+            if (paymentLines.length > 1) {
+                reply += `\n\n📋 *جزئیات پرداخت:*`;
+                paymentLines.forEach(line => {
+                    reply += `\n🔸 ${line.bankName ? line.bankName : 'بانک'}: ${line.amount.toLocaleString()} ریال`;
+                });
+            } else if (paymentLines[0].bankName) {
+                reply += `\n🏦 بانک: ${paymentLines[0].bankName}`;
+            }
+            
+            return reply;
         } else {
             return "مشخصات کامل نیست. لطفا مبلغ و گیرنده را ذکر کنید.";
         }
     }
 
-    return "دستور نامعتبر. (راهنما: ثبت پرداخت / گزارش / تایید شماره)";
+    return "دستور نامعتبر. (ارسال 'راهنما' برای دیدن دستورات)";
 }
 
 // --- NOTIFICATIONS ---
@@ -348,7 +424,6 @@ const initWhatsApp = async () => {
             try {
                 if (!msg.from.includes('@c.us')) return; // Ignore groups for command processing
                 
-                // Strict 10-digit matching (ignores 98 or 0 prefix issues)
                 const senderDigits = getTenDigits(msg.from.replace('@c.us', ''));
                 console.log(`>>> Incoming MSG from: ${msg.from} (Digits: ${senderDigits})`);
 
@@ -356,28 +431,35 @@ const initWhatsApp = async () => {
                 const user = db.users.find(u => getTenDigits(u.phoneNumber) === senderDigits);
                 
                 if (!user) {
-                    // Optional: Feedback for unknown users
                     console.log(`>>> User Unknown: ${senderDigits}`);
-                    // await msg.reply("⛔ شماره شما در سیستم تعریف نشده است.");
                     return;
                 }
 
                 let text = msg.body;
+                let isVoice = false;
                 
-                // Voice Handling
+                // Voice / Audio Handling
                 if (msg.hasMedia) {
-                    try {
-                        const media = await msg.downloadMedia();
-                        if (media.mimetype.includes('audio')) {
-                            const buff = Buffer.from(media.data, 'base64');
-                            text = await transcribe(buff, media.mimetype);
-                            if (text) msg.reply(`🎤: "${text}"`);
+                    const media = await msg.downloadMedia();
+                    if (media && media.mimetype && (media.mimetype.includes('audio') || media.mimetype.includes('ogg'))) {
+                        console.log(">>> Processing Voice Note...");
+                        const buff = Buffer.from(media.data, 'base64');
+                        // Transcribe directly
+                        const transcribed = await transcribe(buff, media.mimetype);
+                        if (transcribed) {
+                            text = transcribed;
+                            isVoice = true;
+                            // Feedback to user that voice was understood
+                            await msg.reply(`🎤 متن تشخیص داده شده:\n"${text}"`);
+                        } else {
+                            await msg.reply("متاسفانه نتوانستم صدا را تشخیص دهم.");
+                            return;
                         }
-                    } catch (e) { console.error("WA Media Fail", e.message); }
+                    }
                 }
 
                 if (text) {
-                    const reply = await processUserCommand(user, text);
+                    const reply = await processUserCommand(user, text, isVoice);
                     if (reply) await msg.reply(reply);
                 }
             } catch (err) {
@@ -422,13 +504,28 @@ app.get('/api/whatsapp/groups', async (req, res) => {
 
 app.post('/api/ai-request', async (req, res) => {
     try {
-        const { message, audio, mimeType } = req.body;
+        const { message, audio, mimeType, username } = req.body;
         let text = message;
+        
         if (audio) {
             text = await transcribe(Buffer.from(audio, 'base64'), mimeType || 'audio/webm');
         }
-        // Respond simply
-        res.json({ reply: text ? `(تشخیص: ${text})` : "متوجه نشدم." });
+
+        if (!text) return res.json({ reply: "متن تشخیص داده نشد." });
+
+        const db = getDb();
+        let user = null;
+        if (username) {
+            user = db.users.find(u => u.username === username);
+        }
+
+        if (user) {
+            const commandResult = await processUserCommand(user, text, !!audio);
+            return res.json({ reply: commandResult, originalText: text });
+        } else {
+            return res.json({ reply: `(تشخیص: ${text}) - برای اجرای دستور، کاربر شناسایی نشد.` });
+        }
+
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 

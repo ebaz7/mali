@@ -101,11 +101,13 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab, curr
                   try {
                       const response = await apiCall<{reply: string}>('/ai-request', 'POST', { 
                           audio: base64, 
-                          mimeType: mimeType 
+                          mimeType: mimeType,
+                          username: currentUser.username 
                       });
                       setVoiceResult(response.reply);
-                      // If response indicates success, refresh logic could be triggered here if needed
-                      if (response.reply.includes("موفقیت")) {
+                      
+                      // Enhanced success detection for Persian/English
+                      if (response.reply && (response.reply.includes("ثبت شد") || response.reply.includes("موفقیت") || response.reply.includes("تایید شد") || response.reply.includes("Success"))) {
                           // Simple way to refresh data without full reload
                           setTimeout(() => window.location.reload(), 2000);
                       }
@@ -169,7 +171,7 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab, curr
                   <button onClick={() => { setShowVoiceModal(false); setVoiceResult(null); setIsRecording(false); }} className="absolute top-4 right-4 text-gray-400 hover:text-red-500"><X size={20}/></button>
                   
                   <h3 className="text-xl font-black text-gray-800 mb-2">دستیار صوتی هوشمند</h3>
-                  <p className="text-xs text-gray-500 mb-6">دستور خود را بگویید (مثلاً: ثبت پرداخت برای علی مبلغ ۲ میلیون)</p>
+                  <p className="text-xs text-gray-500 mb-6">دستور خود را بگویید (مثلاً: ثبت ۵ میلیون برای علی بابت خرید...)</p>
                   
                   <div className="flex justify-center mb-6">
                       <button 
@@ -187,9 +189,9 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab, curr
                   )}
 
                   {voiceResult && (
-                      <div className={`p-4 rounded-xl text-sm text-right mb-4 ${voiceResult.includes("موفقیت") ? 'bg-green-50 text-green-800 border border-green-200' : 'bg-gray-50 text-gray-800 border border-gray-200'}`}>
+                      <div className={`p-4 rounded-xl text-sm text-right mb-4 ${voiceResult.includes("ثبت شد") || voiceResult.includes("موفقیت") ? 'bg-green-50 text-green-800 border border-green-200' : 'bg-gray-50 text-gray-800 border border-gray-200'}`}>
                           <p className="font-bold mb-1">پاسخ هوش مصنوعی:</p>
-                          <p>{voiceResult}</p>
+                          <p className="whitespace-pre-wrap">{voiceResult}</p>
                       </div>
                   )}
 
