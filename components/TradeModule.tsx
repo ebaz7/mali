@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { User, TradeRecord, TradeStage, TradeItem, SystemSettings, InsuranceEndorsement, CurrencyPurchaseData, TradeTransaction, CurrencyTranche, TradeStageData, ShippingDocument, ShippingDocType, DocStatus, InvoiceItem, InspectionData, InspectionPayment, InspectionCertificate, ClearanceData, WarehouseReceipt, ClearancePayment, GreenLeafData, GreenLeafCustomsDuty, GreenLeafGuarantee, GreenLeafTax, GreenLeafRoadToll, InternalShippingData, ShippingPayment, AgentData, AgentPayment, PackingItem } from '../types';
 import { getTradeRecords, saveTradeRecord, updateTradeRecord, deleteTradeRecord, getSettings, uploadFile } from '../services/storageService';
 import { generateUUID, formatCurrency, formatNumberString, deformatNumberString, parsePersianDate, formatDate, calculateDaysDiff, getStatusLabel } from '../constants';
@@ -188,7 +188,8 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
     const goCompany = (company: string) => { setSelectedCompany(company); setNavLevel('COMPANY'); setSelectedGroup(null); setSearchTerm(''); };
     const goGroup = (group: string) => { setSelectedGroup(group); setNavLevel('GROUP'); setSearchTerm(''); };
 
-    const getGroupedData = () => {
+    // --- OPTIMIZED GROUPING (USE MEMO) ---
+    const groupedData = useMemo(() => {
         const currentRecords = records.filter(r => showArchived ? r.isArchived : !r.isArchived);
         if (navLevel === 'ROOT') {
             const companies: Record<string, number> = {};
@@ -200,7 +201,7 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
             return Object.entries(groups).map(([name, count]) => ({ name, count, type: 'group' }));
         }
         return [];
-    };
+    }, [records, showArchived, navLevel, selectedCompany]);
 
     const getStageData = (record: TradeRecord | null, stage: TradeStage): TradeStageData => {
         if (!record || !record.stages) return { stage, isCompleted: false, description: '', costRial: 0, costCurrency: 0, currencyType: 'EUR', attachments: [], updatedAt: 0, updatedBy: '' };
@@ -275,8 +276,8 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
     const handleDownloadReportPDF = async (elementId: string, filename: string) => { /* ... existing ... */ };
     const handleDownloadFinalCalculationPDF = () => handleDownloadReportPDF('print-trade-final', `Final_Calculation_${selectedRecord?.fileNumber}`);
 
-    // ... (Keep existing renderReportContent) ...
-    const renderReportContent = () => {
+    // --- OPTIMIZED REPORT CONTENT (USE MEMO) ---
+    const renderReportContent = useMemo(() => {
         let filteredRecords = records;
         if (reportFilterCompany) filteredRecords = records.filter(r => r.company === reportFilterCompany);
         if (reportSearchTerm) { const term = reportSearchTerm.toLowerCase(); filteredRecords = filteredRecords.filter(r => r.fileNumber.includes(term) || r.goodsName.includes(term) || r.sellerName.includes(term) || (r.registrationNumber && r.registrationNumber.includes(term)) ); }
@@ -293,7 +294,7 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
             case 'green_leaf': return (<div className="overflow-x-auto"><table className="w-full text-sm text-right"><thead className="bg-gray-100 text-gray-700"><tr><th className="p-3">شماره پرونده</th><th className="p-3">کوتاژها</th><th className="p-3">حقوق گمرکی (بانک)</th><th className="p-3">ضمانت‌نامه‌ها</th><th className="p-3">جمع هزینه‌های گمرکی</th></tr></thead><tbody>{filteredRecords.filter(r => r.greenLeafData?.duties.length).map(r => { const d = r.greenLeafData; if(!d) return null; const total = calculateGreenLeafTotal(d); return (<tr key={r.id} className="border-b hover:bg-gray-50"><td className="p-3 font-mono">{r.fileNumber}</td><td className="p-3">{d.duties.map(x => x.cottageNumber).join(', ')}</td><td className="p-3">{formatCurrency(d.duties.filter(x=>x.paymentMethod==='Bank').reduce((a,b)=>a+b.amount,0))}</td><td className="p-3">{d.guarantees.length} مورد</td><td className="p-3 font-bold">{formatCurrency(total)}</td></tr>); })}</tbody></table></div>);
             default: return <div>گزارش در حال تکمیل است...</div>;
         }
-    };
+    }, [activeReport, records, reportFilterCompany, reportSearchTerm, settings]);
 
     if (viewMode === 'reports') {
         return (
@@ -321,7 +322,7 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
                 </div>
                 <div className="flex-1 p-6 overflow-hidden flex flex-col w-full">
                     <h2 className="text-xl font-bold mb-4">{activeReport === 'general' ? 'لیست کلی پرونده‌ها' : activeReport === 'allocation_queue' ? 'گزارش صف تخصیص' : activeReport === 'currency' ? 'گزارش ارزی' : 'گزارش'}</h2>
-                    {renderReportContent()}
+                    {renderReportContent}
                 </div>
             </div>
         );
@@ -947,7 +948,7 @@ const TradeModule: React.FC<TradeModuleProps> = ({ currentUser }) => {
                 ) : (
                     // Folders (Company / Group) or Files
                     navLevel !== 'GROUP' ? (
-                        getGroupedData().map((item: any) => (
+                        groupedData.map((item: any) => (
                             <div key={item.name} onClick={() => item.type === 'company' ? goCompany(item.name) : goGroup(item.name)} className="bg-white p-6 rounded-2xl shadow-sm hover:shadow-md transition-all cursor-pointer border border-transparent hover:border-indigo-200 flex flex-col items-center justify-center gap-3 group">
                                 <div className={`p-4 rounded-full ${item.type === 'company' ? 'bg-indigo-50 text-indigo-600' : 'bg-amber-50 text-amber-600'} group-hover:scale-110 transition-transform`}>
                                     {item.type === 'company' ? <Building2 size={32} /> : <Package size={32} />}

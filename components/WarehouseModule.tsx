@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { User, SystemSettings, WarehouseItem, WarehouseTransaction, WarehouseTransactionItem } from '../types';
 import { getWarehouseItems, saveWarehouseItem, deleteWarehouseItem, getWarehouseTransactions, saveWarehouseTransaction, deleteWarehouseTransaction, getNextBijakNumber } from '../services/storageService';
 import { generateUUID, getCurrentShamsiDate, jalaliToGregorian, formatNumberString, deformatNumberString, formatDate } from '../constants';
@@ -139,8 +139,8 @@ const WarehouseModule: React.FC<Props> = ({ currentUser, settings }) => {
 
     const handleDeleteTx = async (id: string) => { if(confirm('حذف تراکنش؟')) { await deleteWarehouseTransaction(id); loadData(); } };
 
-    // --- REPORTS ---
-    const getInventoryBalance = () => {
+    // --- REPORTS (OPTIMIZED WITH USE MEMO) ---
+    const inventoryBalance = useMemo(() => {
         const bal: Record<string, {name: string, company: string, qty: number, weight: number}> = {};
         transactions.forEach(tx => {
             if(reportFilterCompany && tx.company !== reportFilterCompany) return;
@@ -152,14 +152,14 @@ const WarehouseModule: React.FC<Props> = ({ currentUser, settings }) => {
             });
         });
         return Object.values(bal).filter(b => !reportSearch || b.name.includes(reportSearch));
-    };
+    }, [transactions, reportFilterCompany, reportSearch]);
 
-    const getKardex = () => {
+    const kardexList = useMemo(() => {
         return transactions.filter(t => 
             (!reportFilterCompany || t.company === reportFilterCompany) &&
             (!reportSearch || (t.items || []).some(i => i.itemName.includes(reportSearch)) || t.recipientName?.includes(reportSearch))
         ).sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-    };
+    }, [transactions, reportFilterCompany, reportSearch]);
 
     // --- RENDER HELPERS ---
     const DateSelect = () => (
@@ -313,7 +313,7 @@ const WarehouseModule: React.FC<Props> = ({ currentUser, settings }) => {
                                 <table className="w-full text-sm text-right">
                                     <thead className="bg-gray-100 text-gray-600"><tr><th className="p-3">کالا</th><th className="p-3">شرکت</th><th className="p-3">تعداد</th><th className="p-3">وزن</th></tr></thead>
                                     <tbody className="divide-y">
-                                        {getInventoryBalance().map((row, i) => (
+                                        {inventoryBalance.map((row, i) => (
                                             <tr key={i} className="hover:bg-gray-50">
                                                 <td className="p-3 font-bold">{row.name}</td>
                                                 <td className="p-3 text-xs text-gray-500">{row.company}</td>
@@ -332,7 +332,7 @@ const WarehouseModule: React.FC<Props> = ({ currentUser, settings }) => {
                                     <table className="w-full text-sm text-right">
                                         <thead className="bg-gray-50 text-gray-600 sticky top-0"><tr><th className="p-3">نوع/شماره</th><th className="p-3">تاریخ</th><th className="p-3">شرکت</th><th className="p-3">گیرنده/توضیح</th><th className="p-3">عملیات</th></tr></thead>
                                         <tbody className="divide-y">
-                                            {getKardex().map((tx) => (
+                                            {kardexList.map((tx) => (
                                                 <tr key={tx.id} className="hover:bg-gray-50">
                                                     <td className="p-3">
                                                         <span className={`px-2 py-0.5 rounded text-xs font-bold ${tx.type === 'IN' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>{tx.type === 'IN' ? 'ورود' : `بیجک ${tx.number}`}</span>
