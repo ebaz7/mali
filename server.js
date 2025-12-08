@@ -282,11 +282,17 @@ app.post('/api/exit-permits', (req, res) => {
     db.exitPermits.unshift(p); 
     saveDb(db); 
     
-    // Notification Logic for Exit Permits
+    // Notification Logic for Exit Permits (filtered by receiveNotifications preference)
     if (p.status === 'در انتظار تایید مدیرعامل') {
-        const adminMsg = `🔔 *درخواست خروج بار جدید (#${p.permitNumber})*\n📦 کالا: ${p.goodsName}\n👤 درخواست کننده: ${p.requester}`;
-        db.users.filter(u => u.role === 'ceo' || u.role === 'admin').forEach(u => {
-            if (u.phoneNumber) sendWhatsAppMessageInternal(u.phoneNumber, adminMsg);
+        const goodsName = p.items ? p.items.map(i => i.goodsName).join(', ') : p.goodsName;
+        const adminMsg = `🔔 *درخواست خروج بار جدید (#${p.permitNumber})*\n📦 کالا: ${goodsName}\n👤 درخواست کننده: ${p.requester}`;
+        
+        db.users.filter(u => 
+            (u.role === 'ceo' || u.role === 'admin') && 
+            u.receiveNotifications !== false && // Check preference
+            u.phoneNumber
+        ).forEach(u => {
+            sendWhatsAppMessageInternal(u.phoneNumber, adminMsg);
         });
     }
 
@@ -301,24 +307,31 @@ app.put('/api/exit-permits/:id', (req, res) => {
         db.exitPermits[i].updatedAt = Date.now(); 
         saveDb(db); 
         
-        // Notifications on Status Change
+        // Notifications on Status Change (filtered by receiveNotifications)
         const p = db.exitPermits[i];
+        const goodsName = p.items ? p.items.map(i => i.goodsName).join(', ') : p.goodsName;
         let msg = '';
         let targetRole = '';
         
         if (p.status === 'تایید مدیرعامل / در انتظار خروج (کارخانه)') {
-            msg = `✅ *مجوز خروج #${p.permitNumber} تایید شد*\n🏭 ارسال به کارتابل کارخانه\n📦 کالا: ${p.goodsName}`;
+            msg = `✅ *مجوز خروج #${p.permitNumber} تایید شد*\n🏭 ارسال به کارتابل کارخانه\n📦 کالا: ${goodsName}`;
             targetRole = 'factory_manager';
         } else if (p.status === 'خارج شده (بایگانی)') {
-            msg = `🚛 *بار با مجوز #${p.permitNumber} از کارخانه خارج شد*\n📦 کالا: ${p.goodsName}`;
-            // Notify Sales Manager (Requester)
+            msg = `🚛 *بار با مجوز #${p.permitNumber} از کارخانه خارج شد*\n📦 کالا: ${goodsName}`;
+            // Notify Sales Manager (Requester) if enabled
             const requesterUser = db.users.find(u => u.fullName === p.requester);
-            if (requesterUser && requesterUser.phoneNumber) sendWhatsAppMessageInternal(requesterUser.phoneNumber, msg);
+            if (requesterUser && requesterUser.phoneNumber && requesterUser.receiveNotifications !== false) {
+                sendWhatsAppMessageInternal(requesterUser.phoneNumber, msg);
+            }
         }
 
         if (targetRole) {
-            db.users.filter(u => u.role === targetRole || u.role === 'admin').forEach(u => {
-                if (u.phoneNumber) sendWhatsAppMessageInternal(u.phoneNumber, msg);
+            db.users.filter(u => 
+                (u.role === targetRole || u.role === 'admin') && 
+                u.receiveNotifications !== false && // Check preference
+                u.phoneNumber
+            ).forEach(u => {
+                sendWhatsAppMessageInternal(u.phoneNumber, msg);
             });
         }
 

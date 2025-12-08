@@ -55,7 +55,16 @@ const ManageExitPermits: React.FC<Props> = ({ currentUser, settings }) => {
       if(confirm('حذف شود؟')) { await deleteExitPermit(id); loadData(); }
   };
 
-  const filtered = permits.filter(p => p.goodsName.includes(searchTerm) || p.recipientName.includes(searchTerm) || p.permitNumber.toString().includes(searchTerm));
+  // Helper to extract searchable string
+  const getSearchString = (p: ExitPermit) => {
+      const legacyGoods = p.goodsName || '';
+      const itemsGoods = p.items?.map(i => i.goodsName).join(' ') || '';
+      const legacyRec = p.recipientName || '';
+      const destsRec = p.destinations?.map(d => d.recipientName).join(' ') || '';
+      return `${p.permitNumber} ${legacyGoods} ${itemsGoods} ${legacyRec} ${destsRec}`;
+  };
+
+  const filtered = permits.filter(p => getSearchString(p).includes(searchTerm));
 
   const getStatusBadge = (status: ExitPermitStatus) => {
       switch(status) {
@@ -64,6 +73,33 @@ const ManageExitPermits: React.FC<Props> = ({ currentUser, settings }) => {
           case ExitPermitStatus.EXITED: return <span className="bg-green-100 text-green-800 px-2 py-1 rounded text-xs">خارج شده</span>;
           case ExitPermitStatus.REJECTED: return <span className="bg-red-100 text-red-800 px-2 py-1 rounded text-xs">رد شده</span>;
       }
+  };
+
+  // Render Helpers for Table Cells (handling array data)
+  const renderGoodsSummary = (p: ExitPermit) => {
+      if (p.items && p.items.length > 0) {
+          if (p.items.length === 1) return <span className="font-bold">{p.items[0].goodsName}</span>;
+          return <span className="font-bold" title={p.items.map(i=>i.goodsName).join(', ')}>{p.items.length} قلم کالا ({p.items[0].goodsName}...)</span>;
+      }
+      return <span className="font-bold">{p.goodsName}</span>; // Fallback
+  };
+
+  const renderRecipientSummary = (p: ExitPermit) => {
+      if (p.destinations && p.destinations.length > 0) {
+          if (p.destinations.length === 1) return p.destinations[0].recipientName;
+          return <span title={p.destinations.map(d=>d.recipientName).join(', ')}>{p.destinations.length} مقصد ({p.destinations[0].recipientName}...)</span>;
+      }
+      return p.recipientName; // Fallback
+  };
+
+  const renderStats = (p: ExitPermit) => {
+      let cartons = p.cartonCount || 0;
+      let weight = p.weight || 0;
+      if (p.items && p.items.length > 0) {
+          cartons = p.items.reduce((acc, i) => acc + (Number(i.cartonCount)||0), 0);
+          weight = p.items.reduce((acc, i) => acc + (Number(i.weight)||0), 0);
+      }
+      return `${cartons} کارتن (${weight} KG)`;
   };
 
   return (
@@ -80,9 +116,9 @@ const ManageExitPermits: React.FC<Props> = ({ currentUser, settings }) => {
                         <tr key={p.id} className="border-b hover:bg-gray-50">
                             <td className="p-4 font-bold text-orange-600">#{p.permitNumber}</td>
                             <td className="p-4">{formatDate(p.date)}</td>
-                            <td className="p-4 font-bold">{p.goodsName}</td>
-                            <td className="p-4">{p.recipientName}</td>
-                            <td className="p-4">{p.cartonCount} کارتن ({p.weight} KG)</td>
+                            <td className="p-4">{renderGoodsSummary(p)}</td>
+                            <td className="p-4">{renderRecipientSummary(p)}</td>
+                            <td className="p-4">{renderStats(p)}</td>
                             <td className="p-4">{getStatusBadge(p.status)}</td>
                             <td className="p-4 text-center flex justify-center gap-2">
                                 <button onClick={() => setViewPermit(p)} className="bg-blue-100 text-blue-600 p-2 rounded-lg hover:bg-blue-200"><Eye size={16}/></button>

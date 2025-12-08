@@ -81,8 +81,7 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab, curr
       try {
           const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
           
-          // Use simple supported types
-          let mimeType = 'audio/webm'; // Default fallback
+          let mimeType = 'audio/webm'; 
           if (MediaRecorder.isTypeSupported('audio/webm')) mimeType = 'audio/webm';
           else if (MediaRecorder.isTypeSupported('audio/mp4')) mimeType = 'audio/mp4';
 
@@ -120,7 +119,7 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab, curr
           recorder.start();
           setIsRecording(true);
       } catch (e) {
-          alert("دسترسی به میکروفون امکان‌پذیر نیست. (بررسی کنید سایت HTTPS باشد)");
+          alert("دسترسی به میکروفون امکان‌پذیر نیست.");
       }
   };
 
@@ -135,19 +134,26 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab, curr
   const perms = settings ? getRolePermissions(currentUser.role, settings, currentUser) : null;
   const canSeeTrade = perms?.canManageTrade ?? false;
   const canCreateExit = perms?.canCreateExitPermit ?? false;
-  const canApproveExit = perms?.canApproveExitCeo || perms?.canApproveExitFactory;
+  
+  // Specific View Permissions
+  const canViewPayment = perms?.canViewPaymentOrders !== false; // Default true unless explicitly denied
+  const canViewExit = perms?.canViewExitPermits || perms?.canCreateExitPermit || perms?.canApproveExitCeo || perms?.canApproveExitFactory;
+  
   const canSeeSettings = currentUser.role === UserRole.ADMIN || (perms?.canManageSettings ?? false);
 
   const navItems = [
     { id: 'dashboard', label: 'داشبورد', icon: LayoutDashboard },
-    { id: 'create', label: 'ثبت دستور پرداخت', icon: PlusCircle },
-    { id: 'manage', label: 'کارتابل پرداخت', icon: ListChecks },
   ];
+
+  if (canViewPayment) {
+      navItems.push({ id: 'create', label: 'ثبت دستور پرداخت', icon: PlusCircle });
+      navItems.push({ id: 'manage', label: 'کارتابل پرداخت', icon: ListChecks });
+  }
 
   if (canCreateExit) {
       navItems.push({ id: 'create-exit', label: 'ثبت خروج بار', icon: Truck });
   }
-  if (canCreateExit || canApproveExit) {
+  if (canViewExit) {
       navItems.push({ id: 'manage-exit', label: 'کارتابل خروج بار', icon: ClipboardList });
   }
 

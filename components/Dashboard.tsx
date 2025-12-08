@@ -1,9 +1,9 @@
 
 import React, { useState, useMemo } from 'react';
 import { PaymentOrder, OrderStatus, PaymentMethod, SystemSettings } from '../types';
-import { formatCurrency, parsePersianDate, formatNumberString } from '../constants';
+import { formatCurrency, parsePersianDate, formatNumberString, getShamsiDateFromIso } from '../constants';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts';
-import { TrendingUp, Clock, CheckCircle, Archive, Activity, Building2, X, XCircle, AlertCircle, Banknote, Calendar as CalendarIcon, ExternalLink, Share2, Plus, CalendarDays, Loader2, Send, Camera, Users, Trash2 } from 'lucide-react';
+import { TrendingUp, Clock, CheckCircle, Archive, Activity, Building2, X, XCircle, AlertCircle, Banknote, Calendar as CalendarIcon, ExternalLink, Share2, Plus, CalendarDays, Loader2, Send, Camera, Users, Trash2, List } from 'lucide-react';
 import { apiCall } from '../services/apiService';
 
 interface DashboardProps {
@@ -14,11 +14,13 @@ interface DashboardProps {
 }
 
 const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8', '#82ca9d'];
+const MONTHS = [ 'فروردین', 'اردیبهشت', 'خرداد', 'تیر', 'مرداد', 'شهریور', 'مهر', 'آبان', 'آذر', 'دی', 'بهمن', 'اسفند' ];
 
 const Dashboard: React.FC<DashboardProps> = ({ orders, settings, onViewArchive, onFilterByStatus }) => {
   const [showBankReport, setShowBankReport] = useState(false);
+  const [bankReportTab, setBankReportTab] = useState<'summary' | 'timeline'>('summary'); // New Tab State
   const [showCalendar, setShowCalendar] = useState(false);
-  const [showContactsList, setShowContactsList] = useState(false); // New: Contacts List Modal State
+  const [showContactsList, setShowContactsList] = useState(false);
   
   // WhatsApp Modal State
   const [showWhatsAppModal, setShowWhatsAppModal] = useState(false);
@@ -27,7 +29,7 @@ const Dashboard: React.FC<DashboardProps> = ({ orders, settings, onViewArchive, 
   const [sendAsImage, setSendAsImage] = useState(false);
   const [sendingReport, setSendingReport] = useState(false);
   
-  // Calendar Internal Logic (If no Google ID)
+  // Calendar Internal Logic
   const [calendarMonth, setCalendarMonth] = useState(new Date());
 
   const pendingOrders = orders.filter(o => o.status !== OrderStatus.APPROVED_CEO && o.status !== OrderStatus.REJECTED);
@@ -50,10 +52,63 @@ const Dashboard: React.FC<DashboardProps> = ({ orders, settings, onViewArchive, 
   orders.forEach(order => { order.paymentDetails.forEach(detail => { methodDataRaw[detail.method] = (methodDataRaw[detail.method] || 0) + detail.amount; }); });
   const methodData = Object.keys(methodDataRaw).map(key => ({ name: key, amount: methodDataRaw[key] }));
 
+  // Bank Summary Stats
   const bankStats = useMemo(() => {
     const stats: Record<string, number> = {};
     completedOrders.forEach(order => { order.paymentDetails.forEach(detail => { if (detail.bankName && detail.bankName.trim() !== '') { const normalizedName = detail.bankName.trim(); stats[normalizedName] = (stats[normalizedName] || 0) + detail.amount; } }); });
     return Object.entries(stats).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value);
+  }, [completedOrders]);
+
+  // Bank Timeline Breakdown (Month > Day > Details)
+  const bankTimeline = useMemo(() => {
+      const groups: Record<string, { label: string, total: number, days: Record<string, { total: number, items: any[] }> }> = {};
+      
+      completedOrders.forEach(order => {
+          const dateParts = getShamsiDateFromIso(order.date);
+          const monthKey = `${dateParts.year}/${String(dateParts.month).padStart(2, '0')}`;
+          const monthLabel = `${MONTHS[dateParts.month - 1]} ${dateParts.year}`;
+
+          if (!groups[monthKey]) {
+              groups[monthKey] = { label: monthLabel, total: 0, days: {} };
+          }
+
+          order.paymentDetails.forEach(detail => {
+              if (detail.bankName) {
+                  const dayKey = String(dateParts.day).padStart(2, '0');
+                  
+                  if (!groups[monthKey].days[dayKey]) {
+                      groups[monthKey].days[dayKey] = { total: 0, items: [] };
+                  }
+
+                  const amount = detail.amount;
+                  
+                  // Add totals
+                  groups[monthKey].total += amount;
+                  groups[monthKey].days[dayKey].total += amount;
+                  
+                  // Add Item
+                  groups[monthKey].days[dayKey].items.push({
+                      id: detail.id,
+                      bank: detail.bankName,
+                      payee: order.payee,
+                      amount: amount,
+                      desc: order.description,
+                      tracking: order.trackingNumber
+                  });
+              }
+          });
+      });
+
+      // Convert to array and sort desc
+      return Object.entries(groups)
+          .sort((a, b) => b[0].localeCompare(a[0])) // Sort months desc
+          .map(([key, data]) => ({
+              key,
+              ...data,
+              days: Object.entries(data.days)
+                  .sort((a, b) => Number(b[0]) - Number(a[0])) // Sort days desc
+                  .map(([day, dayData]) => ({ day, ...dayData }))
+          }));
   }, [completedOrders]);
 
   // Cheque Report Logic
@@ -115,12 +170,8 @@ const Dashboard: React.FC<DashboardProps> = ({ orders, settings, onViewArchive, 
       try {
           let mediaData = null;
           if (sendAsImage) {
-              // SMART TARGETTING: Pick the most relevant content
               let targetId = 'dashboard-content-area';
-              
-              if (showBankReport) {
-                  targetId = 'bank-report-modal-content';
-              }
+              if (showBankReport) targetId = 'bank-report-modal-content';
 
               const element = document.getElementById(targetId);
               if (element) {
@@ -129,15 +180,10 @@ const Dashboard: React.FC<DashboardProps> = ({ orders, settings, onViewArchive, 
                       scale: 2, 
                       useCORS: true, 
                       backgroundColor: '#ffffff',
-                      // Ignore header controls in screenshot
                       ignoreElements: (element) => element.classList.contains('no-print') 
                   });
                   const base64 = canvas.toDataURL('image/png').split(',')[1];
-                  mediaData = {
-                      data: base64,
-                      mimeType: 'image/png',
-                      filename: 'report.png'
-                  };
+                  mediaData = { data: base64, mimeType: 'image/png', filename: 'report.png' };
               }
           }
 
@@ -147,21 +193,16 @@ const Dashboard: React.FC<DashboardProps> = ({ orders, settings, onViewArchive, 
               mediaData: mediaData 
           });
           
-          if (response.success) {
-              alert(response.message || 'پیام با موفقیت ارسال شد.');
-          } else {
-              alert(response.message || 'خطا در ارسال پیام');
-          }
+          if (response.success) alert(response.message || 'پیام با موفقیت ارسال شد.');
+          else alert(response.message || 'خطا در ارسال پیام');
           setShowWhatsAppModal(false);
       } catch (e: any) {
-          console.error("WhatsApp Send Error:", e);
           alert(`خطا: ${e.message || 'مشکل در ارتباط با سرور'}`);
       } finally {
           setSendingReport(false);
       }
   };
 
-  // Internal Calendar Renderer
   const renderInternalCalendar = () => {
         const year = calendarMonth.getFullYear(); 
         const month = calendarMonth.getMonth();
@@ -171,7 +212,6 @@ const Dashboard: React.FC<DashboardProps> = ({ orders, settings, onViewArchive, 
         const startingDay = firstDay.getDay(); 
         const shamsiTitle = new Intl.DateTimeFormat('fa-IR', { year: 'numeric', month: 'long' }).format(calendarMonth);
 
-        // Map events to dates (simplified matching)
         const events = chequeData.map(c => ({
             date: c.date, 
             title: `چک: ${c.payee} (${formatNumberString(c.amount)})`,
@@ -229,63 +269,30 @@ const Dashboard: React.FC<DashboardProps> = ({ orders, settings, onViewArchive, 
                           <div className="mb-2">
                               <select 
                                 className="w-full border border-gray-300 rounded-lg p-2 text-sm bg-white"
-                                onChange={(e) => {
-                                    if(e.target.value) setWhatsAppTarget(e.target.value);
-                                }}
+                                onChange={(e) => { if(e.target.value) setWhatsAppTarget(e.target.value); }}
                               >
                                   <option value="">-- انتخاب از مخاطبین ذخیره شده --</option>
                                   {settings?.savedContacts && settings.savedContacts.length > 0 ? (
-                                      settings.savedContacts.map(c => (
-                                          <option key={c.id} value={c.number}>
-                                              {c.isGroup ? `[گروه] ${c.name}` : c.name}
-                                          </option>
-                                      ))
-                                  ) : (
-                                      <option disabled>لیست مخاطبین خالی است</option>
-                                  )}
+                                      settings.savedContacts.map(c => ( <option key={c.id} value={c.number}>{c.isGroup ? `[گروه] ${c.name}` : c.name}</option> ))
+                                  ) : ( <option disabled>لیست مخاطبین خالی است</option> )}
                               </select>
                           </div>
-                          <input 
-                            type="text" 
-                            className="w-full border border-green-200 rounded-lg p-2 text-sm dir-ltr font-mono bg-green-50" 
-                            placeholder="98912xxxxxxx or 1234@g.us"
-                            value={whatsAppTarget}
-                            onChange={(e) => setWhatsAppTarget(e.target.value)}
-                          />
+                          <input type="text" className="w-full border border-green-200 rounded-lg p-2 text-sm dir-ltr font-mono bg-green-50" placeholder="98912xxxxxxx or 1234@g.us" value={whatsAppTarget} onChange={(e) => setWhatsAppTarget(e.target.value)} />
                       </div>
 
                       <div className="flex items-center gap-2 bg-gray-100 p-2 rounded-lg">
-                          <input 
-                            type="checkbox" 
-                            id="sendAsImage" 
-                            checked={sendAsImage} 
-                            onChange={e => setSendAsImage(e.target.checked)} 
-                            className="w-4 h-4 text-green-600 rounded"
-                          />
-                          <label htmlFor="sendAsImage" className="text-sm font-bold flex items-center gap-1 cursor-pointer">
-                              <Camera size={16}/> ارسال به صورت تصویر (اسکرین‌شات)
-                          </label>
+                          <input type="checkbox" id="sendAsImage" checked={sendAsImage} onChange={e => setSendAsImage(e.target.checked)} className="w-4 h-4 text-green-600 rounded" />
+                          <label htmlFor="sendAsImage" className="text-sm font-bold flex items-center gap-1 cursor-pointer"><Camera size={16}/> ارسال به صورت تصویر (اسکرین‌شات)</label>
                       </div>
 
                       <div>
                           <label className="text-sm font-bold text-gray-700 block mb-1">متن گزارش (قابل ویرایش)</label>
-                          <textarea 
-                            rows={8} 
-                            className="w-full border rounded-lg p-2 text-xs leading-relaxed resize-none" 
-                            value={whatsAppMessage}
-                            onChange={(e) => setWhatsAppMessage(e.target.value)}
-                          />
+                          <textarea rows={8} className="w-full border rounded-lg p-2 text-xs leading-relaxed resize-none" value={whatsAppMessage} onChange={(e) => setWhatsAppMessage(e.target.value)} />
                       </div>
 
                       <div className="flex justify-end gap-2 pt-2">
                           <button onClick={() => setShowWhatsAppModal(false)} className="px-4 py-2 rounded-lg border text-gray-600 text-sm hover:bg-gray-50">انصراف</button>
-                          <button 
-                            onClick={handleSendWhatsApp} 
-                            disabled={sendingReport || !whatsAppTarget} 
-                            className="px-4 py-2 rounded-lg bg-green-600 text-white text-sm font-bold hover:bg-green-700 disabled:opacity-50 flex items-center gap-2"
-                          >
-                              {sendingReport ? <Loader2 size={16} className="animate-spin"/> : <Send size={16}/>} ارسال پیام
-                          </button>
+                          <button onClick={handleSendWhatsApp} disabled={sendingReport || !whatsAppTarget} className="px-4 py-2 rounded-lg bg-green-600 text-white text-sm font-bold hover:bg-green-700 disabled:opacity-50 flex items-center gap-2">{sendingReport ? <Loader2 size={16} className="animate-spin"/> : <Send size={16}/>} ارسال پیام</button>
                       </div>
                   </div>
               </div>
@@ -305,33 +312,13 @@ const Dashboard: React.FC<DashboardProps> = ({ orders, settings, onViewArchive, 
                             settings.savedContacts.map(contact => (
                                 <div key={contact.id} className="flex justify-between items-center bg-gray-50 p-3 rounded-xl border text-sm">
                                     <div className="flex items-center gap-3">
-                                        <div className={`p-2 rounded-full border ${contact.isGroup ? 'bg-orange-100 text-orange-600' : 'bg-white text-gray-500'}`}>
-                                            <Users size={16}/>
-                                        </div>
-                                        <div>
-                                            <div className="font-bold text-gray-800">{contact.name}</div>
-                                            <div className="text-xs text-gray-500 font-mono">{contact.number}</div>
-                                        </div>
+                                        <div className={`p-2 rounded-full border ${contact.isGroup ? 'bg-orange-100 text-orange-600' : 'bg-white text-gray-500'}`}><Users size={16}/></div>
+                                        <div><div className="font-bold text-gray-800">{contact.name}</div><div className="text-xs text-gray-500 font-mono">{contact.number}</div></div>
                                     </div>
-                                    <button 
-                                        onClick={() => {
-                                            setWhatsAppTarget(contact.number);
-                                            setShowContactsList(false);
-                                            handleOpenWhatsAppModal();
-                                        }}
-                                        className="text-blue-600 hover:bg-blue-50 p-2 rounded-lg text-xs"
-                                    >
-                                        ارسال پیام
-                                    </button>
+                                    <button onClick={() => { setWhatsAppTarget(contact.number); setShowContactsList(false); handleOpenWhatsAppModal(); }} className="text-blue-600 hover:bg-blue-50 p-2 rounded-lg text-xs">ارسال پیام</button>
                                 </div>
                             ))
-                        ) : (
-                            <div className="text-center text-gray-400 py-8">
-                                <Users size={32} className="mx-auto mb-2 opacity-50"/>
-                                <p>مخاطبی یافت نشد.</p>
-                                <p className="text-[10px]">از تنظیمات اضافه کنید.</p>
-                            </div>
-                        )}
+                        ) : ( <div className="text-center text-gray-400 py-8"><Users size={32} className="mx-auto mb-2 opacity-50"/><p>مخاطبی یافت نشد.</p></div> )}
                   </div>
               </div>
           </div>
@@ -341,15 +328,9 @@ const Dashboard: React.FC<DashboardProps> = ({ orders, settings, onViewArchive, 
       <div className="flex flex-col md:flex-row justify-between items-center gap-4 mb-6 no-print">
           <h2 className="text-2xl font-bold text-gray-800">داشبورد وضعیت مالی</h2>
           <div className="flex gap-2">
-              <button onClick={() => setShowContactsList(true)} className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold bg-white border text-gray-700 hover:bg-gray-50 transition-colors">
-                  <Users size={18}/> لیست مخاطبین
-              </button>
-              <button onClick={() => setShowCalendar(!showCalendar)} className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-colors ${showCalendar ? 'bg-indigo-100 text-indigo-700' : 'bg-white border text-gray-600 hover:bg-gray-50'}`}>
-                  <CalendarIcon size={18}/> {showCalendar ? 'مخفی کردن تقویم' : 'مشاهده تقویم'}
-              </button>
-              <button onClick={handleOpenWhatsAppModal} className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm font-bold transition-colors shadow-sm">
-                  <Share2 size={18}/> ارسال گزارش
-              </button>
+              <button onClick={() => setShowContactsList(true)} className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold bg-white border text-gray-700 hover:bg-gray-50 transition-colors"><Users size={18}/> لیست مخاطبین</button>
+              <button onClick={() => setShowCalendar(!showCalendar)} className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-colors ${showCalendar ? 'bg-indigo-100 text-indigo-700' : 'bg-white border text-gray-600 hover:bg-gray-50'}`}><CalendarIcon size={18}/> {showCalendar ? 'مخفی کردن تقویم' : 'مشاهده تقویم'}</button>
+              <button onClick={handleOpenWhatsAppModal} className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm font-bold transition-colors shadow-sm"><Share2 size={18}/> ارسال گزارش</button>
           </div>
       </div>
 
@@ -359,15 +340,10 @@ const Dashboard: React.FC<DashboardProps> = ({ orders, settings, onViewArchive, 
               <div className="animate-fade-in mb-8">
                   {settings?.googleCalendarId ? (
                       <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-200">
-                          <div className="flex justify-between items-center mb-4">
-                              <h3 className="font-bold text-gray-800 flex items-center gap-2"><CalendarIcon className="text-blue-600"/> تقویم گوگل</h3>
-                              <a href="https://calendar.google.com" target="_blank" className="text-xs text-blue-600 flex items-center gap-1 hover:underline"><ExternalLink size={12}/> باز کردن در گوگل</a>
-                          </div>
+                          <div className="flex justify-between items-center mb-4"><h3 className="font-bold text-gray-800 flex items-center gap-2"><CalendarIcon className="text-blue-600"/> تقویم گوگل</h3><a href="https://calendar.google.com" target="_blank" className="text-xs text-blue-600 flex items-center gap-1 hover:underline"><ExternalLink size={12}/> باز کردن در گوگل</a></div>
                           <iframe src={`https://calendar.google.com/calendar/embed?src=${encodeURIComponent(settings.googleCalendarId)}&ctz=Asia%2FTehran`} style={{border: 0}} width="100%" height="600" frameBorder="0" scrolling="no" className="rounded-lg"></iframe>
                       </div>
-                  ) : (
-                      renderInternalCalendar()
-                  )}
+                  ) : ( renderInternalCalendar() )}
               </div>
           )}
 
@@ -389,33 +365,12 @@ const Dashboard: React.FC<DashboardProps> = ({ orders, settings, onViewArchive, 
                   <h3 className="text-lg font-bold text-gray-700 mb-4 flex items-center gap-2"><Banknote size={20} className="text-purple-600"/> گزارش چک‌های صادره و سررسید</h3>
                   <div className="overflow-x-auto">
                       <table className="w-full text-sm text-right">
-                          <thead className="bg-gray-50 text-gray-600 text-xs">
-                              <tr>
-                                  <th className="px-4 py-3">نام بانک</th>
-                                  <th className="px-4 py-3">شماره چک</th>
-                                  <th className="px-4 py-3">در وجه (گیرنده)</th>
-                                  <th className="px-4 py-3">تاریخ سررسید</th>
-                                  <th className="px-4 py-3">مبلغ</th>
-                                  <th className="px-4 py-3 text-center">وضعیت</th>
-                              </tr>
-                          </thead>
+                          <thead className="bg-gray-50 text-gray-600 text-xs"><tr><th className="px-4 py-3">نام بانک</th><th className="px-4 py-3">شماره چک</th><th className="px-4 py-3">در وجه (گیرنده)</th><th className="px-4 py-3">تاریخ سررسید</th><th className="px-4 py-3">مبلغ</th><th className="px-4 py-3 text-center">وضعیت</th></tr></thead>
                           <tbody className="divide-y divide-gray-100">
                               {chequeData.slice(0, 10).map((c) => (
                                   <tr key={c.id} className="hover:bg-gray-50">
-                                      <td className="px-4 py-3 text-gray-700">{c.bank}</td>
-                                      <td className="px-4 py-3 font-mono text-gray-600">{c.number}</td>
-                                      <td className="px-4 py-3 font-bold text-gray-800">{c.payee}</td>
-                                      <td className="px-4 py-3 dir-ltr text-right">{c.date}</td>
-                                      <td className="px-4 py-3 font-mono font-bold text-gray-900 dir-ltr">{formatCurrency(c.amount)}</td>
-                                      <td className="px-4 py-3 text-center">
-                                          {c.isPassed ? (
-                                              <span className="text-gray-400 text-xs bg-gray-100 px-2 py-1 rounded">پاس شده / گذشته</span>
-                                          ) : c.daysLeft <= 2 ? (
-                                              <span className="text-red-600 text-xs bg-red-50 px-2 py-1 rounded font-bold animate-pulse">⚠️ {c.daysLeft} روز مانده</span>
-                                          ) : (
-                                              <span className="text-green-600 text-xs bg-green-50 px-2 py-1 rounded">{c.daysLeft} روز مانده</span>
-                                          )}
-                                      </td>
+                                      <td className="px-4 py-3 text-gray-700">{c.bank}</td><td className="px-4 py-3 font-mono text-gray-600">{c.number}</td><td className="px-4 py-3 font-bold text-gray-800">{c.payee}</td><td className="px-4 py-3 dir-ltr text-right">{c.date}</td><td className="px-4 py-3 font-mono font-bold text-gray-900 dir-ltr">{formatCurrency(c.amount)}</td>
+                                      <td className="px-4 py-3 text-center">{c.isPassed ? (<span className="text-gray-400 text-xs bg-gray-100 px-2 py-1 rounded">پاس شده / گذشته</span>) : c.daysLeft <= 2 ? (<span className="text-red-600 text-xs bg-red-50 px-2 py-1 rounded font-bold animate-pulse">⚠️ {c.daysLeft} روز مانده</span>) : (<span className="text-green-600 text-xs bg-green-50 px-2 py-1 rounded">{c.daysLeft} روز مانده</span>)}</td>
                                   </tr>
                               ))}
                           </tbody>
@@ -441,8 +396,74 @@ const Dashboard: React.FC<DashboardProps> = ({ orders, settings, onViewArchive, 
                       </div>
                       <button onClick={() => setShowBankReport(false)} className="text-gray-400 hover:text-red-500 transition-colors bg-white p-2 rounded-lg border border-gray-200 shadow-sm"><X size={20} /></button>
                   </div>
-                  <div className="p-6 overflow-y-auto bg-white">
-                      {bankStats.length === 0 ? (<div className="text-center py-12 text-gray-400 flex flex-col items-center"><Building2 size={48} className="mb-4 opacity-50" /><p>اطلاعات بانکی ثبت شده‌ای یافت نشد.</p></div>) : (<div className="grid grid-cols-1 md:grid-cols-2 gap-8"><div className="border rounded-xl overflow-hidden"><table className="w-full text-sm text-right"><thead className="bg-gray-100 text-gray-600"><tr><th className="px-4 py-3">نام بانک</th><th className="px-4 py-3">مجموع پرداختی</th><th className="px-4 py-3">درصد</th></tr></thead><tbody className="divide-y divide-gray-100">{bankStats.map((bank, idx) => (<tr key={idx} className="hover:bg-gray-50"><td className="px-4 py-3 font-medium text-gray-800">{bank.name}</td><td className="px-4 py-3 text-gray-600 dir-ltr text-right font-mono">{formatCurrency(bank.value)}</td><td className="px-4 py-3 text-gray-400 text-xs">{((bank.value / totalAmount) * 100).toFixed(1)}%</td></tr>))}<tr className="bg-blue-50/50 font-bold border-t-2 border-blue-100"><td className="px-4 py-3 text-blue-800">جمع کل بانکی</td><td className="px-4 py-3 text-blue-800 dir-ltr text-right font-mono">{formatCurrency(bankStats.reduce((acc, curr) => acc + curr.value, 0))}</td><td></td></tr></tbody></table></div><div className="h-[300px]"><ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={bankStats} cx="50%" cy="50%" innerRadius={60} outerRadius={100} paddingAngle={5} dataKey="value">{bankStats.map((entry, index) => (<Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />))}</Pie><Tooltip formatter={(value: number) => formatCurrency(value)} contentStyle={{ fontFamily: 'Vazirmatn', borderRadius: '8px' }} /><Legend wrapperStyle={{ fontFamily: 'Vazirmatn' }} /></PieChart></ResponsiveContainer></div></div>)}
+                  
+                  {/* Tabs */}
+                  <div className="px-6 pt-4 border-b bg-gray-50 flex gap-4 no-print">
+                      <button onClick={() => setBankReportTab('summary')} className={`pb-3 text-sm font-bold border-b-2 transition-colors ${bankReportTab === 'summary' ? 'text-blue-600 border-blue-600' : 'text-gray-500 border-transparent hover:text-gray-800'}`}>خلاصه عملکرد</button>
+                      <button onClick={() => setBankReportTab('timeline')} className={`pb-3 text-sm font-bold border-b-2 transition-colors ${bankReportTab === 'timeline' ? 'text-indigo-600 border-indigo-600' : 'text-gray-500 border-transparent hover:text-gray-800'}`}>گردش زمانی (ماهانه/روزانه)</button>
+                  </div>
+
+                  <div className="p-6 overflow-y-auto bg-white flex-1">
+                      {bankStats.length === 0 ? (<div className="text-center py-12 text-gray-400 flex flex-col items-center"><Building2 size={48} className="mb-4 opacity-50" /><p>اطلاعات بانکی ثبت شده‌ای یافت نشد.</p></div>) : (
+                          <>
+                            {bankReportTab === 'summary' && (
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-8 animate-fade-in">
+                                    <div className="border rounded-xl overflow-hidden">
+                                        <table className="w-full text-sm text-right">
+                                            <thead className="bg-gray-100 text-gray-600"><tr><th className="px-4 py-3">نام بانک</th><th className="px-4 py-3">مجموع پرداختی</th><th className="px-4 py-3">درصد</th></tr></thead>
+                                            <tbody className="divide-y divide-gray-100">{bankStats.map((bank, idx) => (<tr key={idx} className="hover:bg-gray-50"><td className="px-4 py-3 font-medium text-gray-800">{bank.name}</td><td className="px-4 py-3 text-gray-600 dir-ltr text-right font-mono">{formatCurrency(bank.value)}</td><td className="px-4 py-3 text-gray-400 text-xs">{((bank.value / totalAmount) * 100).toFixed(1)}%</td></tr>))}<tr className="bg-blue-50/50 font-bold border-t-2 border-blue-100"><td className="px-4 py-3 text-blue-800">جمع کل بانکی</td><td className="px-4 py-3 text-blue-800 dir-ltr text-right font-mono">{formatCurrency(bankStats.reduce((acc, curr) => acc + curr.value, 0))}</td><td></td></tr></tbody>
+                                        </table>
+                                    </div>
+                                    <div className="h-[300px]"><ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={bankStats} cx="50%" cy="50%" innerRadius={60} outerRadius={100} paddingAngle={5} dataKey="value">{bankStats.map((entry, index) => (<Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />))}</Pie><Tooltip formatter={(value: number) => formatCurrency(value)} contentStyle={{ fontFamily: 'Vazirmatn', borderRadius: '8px' }} /><Legend wrapperStyle={{ fontFamily: 'Vazirmatn' }} /></PieChart></ResponsiveContainer></div>
+                                </div>
+                            )}
+
+                            {bankReportTab === 'timeline' && (
+                                <div className="space-y-6 animate-fade-in">
+                                    {bankTimeline.map((month) => (
+                                        <div key={month.key} className="border border-indigo-100 rounded-xl overflow-hidden bg-white">
+                                            <div className="bg-indigo-50 px-4 py-3 flex justify-between items-center border-b border-indigo-100">
+                                                <h4 className="font-bold text-indigo-800 flex items-center gap-2"><CalendarIcon size={18}/> {month.label}</h4>
+                                                <span className="font-mono font-bold text-indigo-600 bg-white px-2 py-1 rounded text-sm">{formatCurrency(month.total)}</span>
+                                            </div>
+                                            <div className="divide-y divide-gray-100">
+                                                {month.days.map((day) => (
+                                                    <div key={day.day} className="p-4 hover:bg-gray-50 transition-colors">
+                                                        <div className="flex justify-between items-center mb-2">
+                                                            <div className="flex items-center gap-2">
+                                                                <span className="bg-gray-200 text-gray-700 font-bold text-xs px-2 py-1 rounded-md">روز {day.day}</span>
+                                                                <span className="text-xs text-gray-400">({day.items.length} تراکنش)</span>
+                                                            </div>
+                                                            <span className="text-sm font-bold text-gray-800">{formatCurrency(day.total)}</span>
+                                                        </div>
+                                                        <div className="space-y-1 mt-2 pr-4 border-r-2 border-gray-200">
+                                                            {day.items.map((item: any, i: number) => (
+                                                                <div key={i} className="flex justify-between text-xs text-gray-600">
+                                                                    <div className="flex gap-2 truncate">
+                                                                        <span className="font-bold text-gray-800">{item.bank}</span>
+                                                                        <span>-</span>
+                                                                        <span className="truncate">{item.payee}</span>
+                                                                    </div>
+                                                                    <div className="flex gap-2 items-center">
+                                                                        <span className="font-mono text-gray-500">{formatCurrency(item.amount)}</span>
+                                                                        <span className="bg-gray-100 px-1 rounded text-[10px] text-gray-400">#{item.tracking}</span>
+                                                                    </div>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    ))}
+                                    <div className="bg-gray-800 text-white p-4 rounded-xl flex justify-between items-center mt-4">
+                                        <span className="font-bold">جمع کل نهایی</span>
+                                        <span className="font-mono text-lg font-bold text-green-400">{formatCurrency(totalAmount)}</span>
+                                    </div>
+                                </div>
+                            )}
+                          </>
+                      )}
                   </div>
               </div>
           </div>

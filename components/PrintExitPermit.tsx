@@ -2,7 +2,7 @@
 import React, { useState } from 'react';
 import { ExitPermit, ExitPermitStatus, SystemSettings } from '../types';
 import { formatDate } from '../constants';
-import { X, Printer, Image as ImageIcon, FileDown, Loader2, CheckCircle, XCircle, Share2, Truck, Package, MapPin, User, Users } from 'lucide-react';
+import { X, Printer, Image as ImageIcon, FileDown, Loader2, CheckCircle, XCircle, Share2, Truck, Package, MapPin, User, Users, Phone } from 'lucide-react';
 import { apiCall } from '../services/apiService';
 
 interface Props {
@@ -54,10 +54,17 @@ const PrintExitPermit: React.FC<Props> = ({ permit, onClose, onApprove, onReject
           const base64 = canvas.toDataURL('image/png').split(',')[1];
           
           let caption = `🚛 *مجوز خروج بار #${permit.permitNumber}*\n`;
-          caption += `📦 کالا: ${permit.goodsName}\n`;
-          caption += `👤 گیرنده: ${permit.recipientName}\n`;
-          caption += `🔢 تعداد: ${permit.cartonCount} کارتن (${permit.weight} KG)\n`;
-          caption += `📍 مقصد: ${permit.destinationAddress}\n`;
+          
+          // Legacy check or Multi-row check
+          const items = permit.items && permit.items.length > 0 ? permit.items : [{goodsName: permit.goodsName, cartonCount: permit.cartonCount, weight: permit.weight}];
+          const dests = permit.destinations && permit.destinations.length > 0 ? permit.destinations : [{recipientName: permit.recipientName, address: permit.destinationAddress, phone: ''}];
+
+          caption += `📦 اقلام:\n`;
+          items.forEach((i: any) => caption += `- ${i.goodsName} (${i.cartonCount} کارتن)\n`);
+          
+          caption += `📍 مقاصد:\n`;
+          dests.forEach((d: any) => caption += `- ${d.recipientName}: ${d.address}\n`);
+
           if(permit.plateNumber) caption += `🚚 پلاک: ${permit.plateNumber}\n`;
           caption += `📅 تاریخ: ${formatDate(permit.date)}`;
 
@@ -65,6 +72,18 @@ const PrintExitPermit: React.FC<Props> = ({ permit, onClose, onApprove, onReject
           alert('ارسال شد');
       } catch(e) { alert('خطا در ارسال'); } finally { setSharing(false); }
   };
+
+  // Prepare data for rendering (Legacy compatibility)
+  const displayItems = permit.items && permit.items.length > 0 
+      ? permit.items 
+      : [{ id: 'legacy', goodsName: permit.goodsName || '', cartonCount: permit.cartonCount || 0, weight: permit.weight || 0 }];
+
+  const displayDestinations = permit.destinations && permit.destinations.length > 0
+      ? permit.destinations
+      : [{ id: 'legacy', recipientName: permit.recipientName || '', address: permit.destinationAddress || '', phone: '' }];
+
+  const totalCartons = displayItems.reduce((acc, i) => acc + (Number(i.cartonCount) || 0), 0);
+  const totalWeight = displayItems.reduce((acc, i) => acc + (Number(i.weight) || 0), 0);
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto animate-fade-in">
@@ -108,39 +127,55 @@ const PrintExitPermit: React.FC<Props> = ({ permit, onClose, onApprove, onReject
 
             {/* Body */}
             <div className="flex-1 space-y-6">
-                <div className="grid grid-cols-2 gap-6">
-                    <div className="border rounded p-3 bg-gray-50">
-                        <span className="text-xs text-gray-500 block mb-1">نام کالا / محصول:</span>
-                        <span className="font-bold text-lg">{permit.goodsName}</span>
-                    </div>
-                    <div className="border rounded p-3 bg-gray-50">
-                        <span className="text-xs text-gray-500 block mb-1">گیرنده (مشتری):</span>
-                        <span className="font-bold text-lg">{permit.recipientName}</span>
-                    </div>
+                
+                {/* Goods Table */}
+                <div>
+                    <h3 className="font-bold text-sm mb-2 border-b border-gray-300 pb-1 flex items-center gap-2"><Package size={16}/> مشخصات کالا</h3>
+                    <table className="w-full text-sm border-collapse border border-gray-400">
+                        <thead className="bg-gray-100">
+                            <tr>
+                                <th className="border border-gray-400 p-2 w-10 text-center">ردیف</th>
+                                <th className="border border-gray-400 p-2">شرح کالا</th>
+                                <th className="border border-gray-400 p-2 w-24 text-center">تعداد کارتن</th>
+                                <th className="border border-gray-400 p-2 w-24 text-center">وزن (KG)</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {displayItems.map((item, idx) => (
+                                <tr key={idx}>
+                                    <td className="border border-gray-400 p-2 text-center">{idx + 1}</td>
+                                    <td className="border border-gray-400 p-2 font-bold">{item.goodsName}</td>
+                                    <td className="border border-gray-400 p-2 text-center">{item.cartonCount}</td>
+                                    <td className="border border-gray-400 p-2 text-center">{item.weight}</td>
+                                </tr>
+                            ))}
+                            <tr className="bg-gray-50 font-bold">
+                                <td colSpan={2} className="border border-gray-400 p-2 text-left pl-4">جمع کل:</td>
+                                <td className="border border-gray-400 p-2 text-center">{totalCartons}</td>
+                                <td className="border border-gray-400 p-2 text-center">{totalWeight}</td>
+                            </tr>
+                        </tbody>
+                    </table>
                 </div>
 
-                <div className="flex gap-4">
-                    <div className="flex-1 border rounded p-3 flex items-center gap-2">
-                        <Package size={20} className="text-gray-400"/>
-                        <div><span className="text-xs text-gray-500 block">تعداد:</span><span className="font-bold">{permit.cartonCount} کارتن</span></div>
-                    </div>
-                    <div className="flex-1 border rounded p-3 flex items-center gap-2">
-                        <Truck size={20} className="text-gray-400"/>
-                        <div><span className="text-xs text-gray-500 block">وزن:</span><span className="font-bold">{permit.weight} کیلوگرم</span></div>
-                    </div>
-                </div>
-
-                <div className="border rounded p-3">
-                    <div className="flex items-start gap-2">
-                        <MapPin size={20} className="text-gray-400 mt-1"/>
-                        <div><span className="text-xs text-gray-500 block">آدرس مقصد:</span><p className="font-medium leading-relaxed">{permit.destinationAddress}</p></div>
+                {/* Destinations List */}
+                <div>
+                    <h3 className="font-bold text-sm mb-2 border-b border-gray-300 pb-1 flex items-center gap-2"><MapPin size={16}/> مقصد و گیرنده</h3>
+                    <div className="space-y-2">
+                        {displayDestinations.map((dest, idx) => (
+                            <div key={idx} className="border border-gray-300 rounded p-2 flex gap-4 text-sm bg-gray-50">
+                                <div className="font-bold min-w-[150px] flex items-center gap-1"><User size={14}/> {dest.recipientName}</div>
+                                {dest.phone && <div className="font-mono text-gray-600 flex items-center gap-1"><Phone size={12}/> {dest.phone}</div>}
+                                <div className="flex-1 flex items-start gap-1"><MapPin size={14} className="mt-0.5 text-gray-500"/> {dest.address}</div>
+                            </div>
+                        ))}
                     </div>
                 </div>
 
                 {(permit.driverName || permit.plateNumber) && (
-                    <div className="grid grid-cols-2 gap-4 border rounded p-3 bg-gray-50">
-                        <div><span className="text-xs text-gray-500">نام راننده:</span> <span className="font-bold">{permit.driverName || '-'}</span></div>
-                        <div><span className="text-xs text-gray-500">شماره پلاک:</span> <span className="font-bold font-mono text-lg">{permit.plateNumber || '-'}</span></div>
+                    <div className="grid grid-cols-2 gap-4 border rounded p-3 bg-gray-50 text-sm">
+                        <div><span className="text-gray-500 ml-2">نام راننده:</span> <span className="font-bold">{permit.driverName || '-'}</span></div>
+                        <div><span className="text-gray-500 ml-2">شماره پلاک:</span> <span className="font-bold font-mono text-lg">{permit.plateNumber || '-'}</span></div>
                     </div>
                 )}
 

@@ -26,8 +26,8 @@ export enum UserRole {
   CEO = 'ceo',            
   MANAGER = 'manager',    
   FINANCIAL = 'financial',
-  SALES_MANAGER = 'sales_manager', // New
-  FACTORY_MANAGER = 'factory_manager', // New
+  SALES_MANAGER = 'sales_manager', 
+  FACTORY_MANAGER = 'factory_manager', 
   USER = 'user'           
 }
 
@@ -38,6 +38,7 @@ export interface User {
   fullName: string;
   role: UserRole;
   canManageTrade?: boolean; 
+  receiveNotifications?: boolean; // New Field: Control WhatsApp/Telegram alerts
   avatar?: string; 
   telegramChatId?: string; 
   phoneNumber?: string; 
@@ -74,18 +75,38 @@ export interface PaymentOrder {
   updatedAt?: number; 
 }
 
+// New Interfaces for Multi-row support
+export interface ExitPermitItem {
+  id: string;
+  goodsName: string;
+  cartonCount: number;
+  weight: number;
+}
+
+export interface ExitPermitDestination {
+  id: string;
+  recipientName: string;
+  address: string;
+  phone?: string;
+}
+
 export interface ExitPermit {
   id: string;
   permitNumber: number;
   date: string;
   requester: string; // Sales Manager
   
-  // Cargo Details
-  goodsName: string;
-  cartonCount: number;
-  weight: number; // KG
-  recipientName: string;
-  destinationAddress: string;
+  // New Multi-row structures
+  items: ExitPermitItem[];
+  destinations: ExitPermitDestination[];
+
+  // Legacy fields (kept optional for backward compatibility)
+  goodsName?: string;
+  cartonCount?: number;
+  weight?: number; 
+  recipientName?: string;
+  destinationAddress?: string;
+
   plateNumber?: string; // Optional: Truck Plate
   driverName?: string; // Optional: Driver Name
   description?: string;
@@ -104,17 +125,27 @@ export interface ExitPermit {
 }
 
 export interface RolePermissions {
+    // Visibility
     canViewAll: boolean;
+    canViewPaymentOrders: boolean; // New: Access to Payment Dashboard
+    canViewExitPermits: boolean;   // New: Access to Exit Permit Dashboard
+
+    // Payment Workflow
     canApproveFinancial: boolean;
     canApproveManager: boolean;
     canApproveCeo: boolean;
+    
+    // CRUD
     canEditOwn: boolean;
     canEditAll: boolean;
     canDeleteOwn: boolean;
     canDeleteAll: boolean;
+    
+    // Modules
     canManageTrade: boolean; 
     canManageSettings?: boolean; 
-    // New Permissions
+    
+    // Exit Permit Workflow
     canCreateExitPermit?: boolean; // Sales
     canApproveExitCeo?: boolean; // CEO
     canApproveExitFactory?: boolean; // Factory
@@ -135,7 +166,7 @@ export interface Contact {
 
 export interface SystemSettings {
   currentTrackingNumber: number;
-  currentExitPermitNumber: number; // New
+  currentExitPermitNumber: number; 
   companyNames: string[]; 
   companies?: Company[]; 
   defaultCompany: string; 

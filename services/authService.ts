@@ -48,9 +48,15 @@ export const hasPermission = (user: User | null, permissionType: string): boolea
 export const getRolePermissions = (userRole: string, settings: SystemSettings | null, userObject?: User): RolePermissions => {
     const defaults: RolePermissions = {
         canViewAll: userRole !== UserRole.USER && userRole !== UserRole.SALES_MANAGER,
+        
+        // Default View Permissions
+        canViewPaymentOrders: userRole !== UserRole.FACTORY_MANAGER, // Factory Manager usually doesn't need payments
+        canViewExitPermits: userRole === UserRole.ADMIN || userRole === UserRole.CEO || userRole === UserRole.SALES_MANAGER || userRole === UserRole.FACTORY_MANAGER,
+
         canApproveFinancial: userRole === UserRole.FINANCIAL || userRole === UserRole.ADMIN,
         canApproveManager: userRole === UserRole.MANAGER || userRole === UserRole.ADMIN,
         canApproveCeo: userRole === UserRole.CEO || userRole === UserRole.ADMIN,
+        
         canEditOwn: true,
         canEditAll: userRole === UserRole.ADMIN || userRole === UserRole.CEO,
         canDeleteOwn: true,
@@ -58,7 +64,6 @@ export const getRolePermissions = (userRole: string, settings: SystemSettings | 
         canManageTrade: userRole === UserRole.ADMIN || userRole === UserRole.CEO || userRole === UserRole.MANAGER,
         canManageSettings: userRole === UserRole.ADMIN,
         
-        // New Defaults for Exit Permit
         canCreateExitPermit: userRole === UserRole.SALES_MANAGER || userRole === UserRole.ADMIN,
         canApproveExitCeo: userRole === UserRole.CEO || userRole === UserRole.ADMIN,
         canApproveExitFactory: userRole === UserRole.FACTORY_MANAGER || userRole === UserRole.ADMIN
