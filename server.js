@@ -283,21 +283,22 @@ app.post('/api/warehouse/transactions', async (req, res) => {
     db.warehouseTransactions.unshift(tx);
     saveDb(db);
 
-    // --- SMART NOTIFICATION FOR BIJAK ---
-    if (tx.type === 'OUT') {
-        const msg = `📦 *حواله خروج (بیجک) صادر شد*\nشرکت: ${tx.company}\nشماره بیجک: ${tx.number}\nگیرنده: ${tx.recipientName}\nتعداد اقلام: ${tx.items.length}\nراننده: ${tx.driverName || '-'}`;
-        
-        // Notify Warehouse Group
-        if (db.settings.defaultWarehouseGroup) {
-            sendSmartNotification(db.settings.defaultWarehouseGroup, msg);
-        }
-        // Notify Sales Manager
-        if (db.settings.defaultSalesManager) {
-            sendSmartNotification(db.settings.defaultSalesManager, msg);
-        }
-    }
+    // --- NO BACKEND TEXT NOTIFICATION HERE ---
+    // The Frontend (WarehouseModule.tsx) handles sending the Bijak Image + Caption via /send-whatsapp.
+    // This prevents sending two messages (one text from backend, one image from frontend).
 
     res.json(db.warehouseTransactions);
+});
+app.put('/api/warehouse/transactions/:id', async (req, res) => { 
+    const db = getDb(); 
+    const idx = db.warehouseTransactions.findIndex(x => x.id === req.params.id); 
+    if(idx !== -1) {
+        db.warehouseTransactions[idx] = { ...db.warehouseTransactions[idx], ...req.body, updatedAt: Date.now() }; 
+        saveDb(db); 
+        res.json(db.warehouseTransactions); 
+    } else {
+        res.sendStatus(404); 
+    }
 });
 app.delete('/api/warehouse/transactions/:id', (req, res) => { const db = getDb(); db.warehouseTransactions = db.warehouseTransactions.filter(x => x.id !== req.params.id); saveDb(db); res.json(db.warehouseTransactions); });
 
