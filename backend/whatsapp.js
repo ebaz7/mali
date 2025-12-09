@@ -40,7 +40,6 @@ const handleAIProcessing = async (text, db) => {
     if (!db.settings.geminiApiKey) return null;
     try {
         const ai = new GoogleGenAI({ apiKey: db.settings.geminiApiKey });
-        const model = ai.models.getGenerativeModel({ model: "gemini-2.5-flash" });
         
         // Context Data
         const itemsList = db.warehouseItems.map(i => i.name).join(', ');
@@ -93,8 +92,15 @@ const handleAIProcessing = async (text, db) => {
         }
         `;
 
-        const result = await model.generateContent({ contents: [{ role: 'user', parts: [{ text: prompt }] }] });
-        const responseText = result.response.text();
+        // CORRECT SDK USAGE:
+        const response = await ai.models.generateContent({
+            model: "gemini-2.5-flash",
+            contents: [{ role: 'user', parts: [{ text: prompt }] }]
+        });
+
+        // Get text directly from the property
+        const responseText = response.text;
+        
         const jsonMatch = responseText.match(/\{[\s\S]*\}/);
         if (jsonMatch) return JSON.parse(jsonMatch[0]);
     } catch (e) {
