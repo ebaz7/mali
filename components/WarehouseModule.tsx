@@ -165,12 +165,16 @@ const WarehouseModule: React.FC<Props> = ({ currentUser, settings }) => {
                 }); 
             }); 
         }); 
+        // Sort Ascending (Oldest First)
         movements.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()); 
+        
         const calculated = movements.map(m => { 
             if (m.type === 'IN') runningBalance += m.quantity; else runningBalance -= m.quantity; 
             return { ...m, balance: runningBalance }; 
         }); 
-        return calculated.reverse(); 
+        
+        // Return Ascending (Top to Bottom: Oldest to Newest) as requested
+        return calculated; 
     }, [transactions, reportFilterCompany, reportFilterItem]);
 
     // --- ALL WAREHOUSES REPORT LOGIC ---
@@ -519,8 +523,12 @@ const WarehouseModule: React.FC<Props> = ({ currentUser, settings }) => {
 
 // Helper Component for Editing Bijak (OUT)
 const EditBijakForm: React.FC<{ bijak: WarehouseTransaction, items: WarehouseItem[], companyList: string[], onSave: (tx: WarehouseTransaction) => void, onCancel: () => void }> = ({ bijak, items, companyList, onSave, onCancel }) => {
-    const [formData, setFormData] = useState(bijak);
-    const [dateParts, setDateParts] = useState(getShamsiDateFromIso(bijak.date));
+    const safeDate = bijak.date || new Date().toISOString();
+    const [dateParts, setDateParts] = useState(() => {
+        try { return getShamsiDateFromIso(safeDate); }
+        catch { const d = getCurrentShamsiDate(); return { year: d.year, month: d.month, day: d.day }; }
+    });
+    const [formData, setFormData] = useState({ ...bijak, items: bijak.items || [] });
 
     const handleSave = () => {
         try {
@@ -531,6 +539,7 @@ const EditBijakForm: React.FC<{ bijak: WarehouseTransaction, items: WarehouseIte
 
     const updateItem = (idx: number, field: string, val: any) => {
         const newItems = [...formData.items];
+        if (!newItems[idx]) return;
         // @ts-ignore
         newItems[idx][field] = val;
         if(field === 'itemId') {
@@ -582,8 +591,12 @@ const EditBijakForm: React.FC<{ bijak: WarehouseTransaction, items: WarehouseIte
 
 // Helper Component for Editing Receipt (IN)
 const EditReceiptForm: React.FC<{ receipt: WarehouseTransaction, items: WarehouseItem[], companyList: string[], onSave: (tx: WarehouseTransaction) => void, onCancel: () => void }> = ({ receipt, items, companyList, onSave, onCancel }) => {
-    const [formData, setFormData] = useState(receipt);
-    const [dateParts, setDateParts] = useState(getShamsiDateFromIso(receipt.date));
+    const safeDate = receipt.date || new Date().toISOString();
+    const [dateParts, setDateParts] = useState(() => {
+        try { return getShamsiDateFromIso(safeDate); }
+        catch { const d = getCurrentShamsiDate(); return { year: d.year, month: d.month, day: d.day }; }
+    });
+    const [formData, setFormData] = useState({ ...receipt, items: receipt.items || [] });
 
     const handleSave = () => {
         try {
@@ -594,6 +607,7 @@ const EditReceiptForm: React.FC<{ receipt: WarehouseTransaction, items: Warehous
 
     const updateItem = (idx: number, field: string, val: any) => {
         const newItems = [...formData.items];
+        if (!newItems[idx]) return;
         // @ts-ignore
         newItems[idx][field] = val;
         if(field === 'itemId') {
