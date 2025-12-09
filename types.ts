@@ -211,8 +211,16 @@ export interface SystemSettings {
   
   // Warehouse Settings
   warehouseSequences?: Record<string, number>; // Company Name -> Next Bijak Number
-  defaultWarehouseGroup?: string; // WhatsApp ID
-  defaultSalesManager?: string; // WhatsApp ID
+  
+  // Per-Company Notification Settings
+  companyNotifications?: Record<string, {
+      salesManager?: string; // WhatsApp ID/Number
+      warehouseGroup?: string; // WhatsApp ID/Number
+  }>;
+  
+  // Deprecated global settings (kept for backward compatibility if needed, but UI will use per-company)
+  defaultWarehouseGroup?: string; 
+  defaultSalesManager?: string; 
 }
 
 export interface DashboardStats {

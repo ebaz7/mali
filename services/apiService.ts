@@ -133,6 +133,17 @@ export const apiCall = async <T>(endpoint: string, method: string = 'GET', body?
         if (endpoint.startsWith('/warehouse/items/')) {
             const id = endpoint.split('/').pop();
             let items = getLocalData<WarehouseItem[]>(LS_KEYS.WH_ITEMS, []);
+            
+            // --- NEW PUT HANDLER FOR ITEMS ---
+            if (method === 'PUT') {
+                const idx = items.findIndex(i => i.id === id);
+                if (idx !== -1) {
+                    items[idx] = body;
+                    setLocalData(LS_KEYS.WH_ITEMS, items);
+                }
+                return items as unknown as T;
+            }
+
             if (method === 'DELETE') {
                 items = items.filter(i => i.id !== id);
                 setLocalData(LS_KEYS.WH_ITEMS, items);
@@ -152,7 +163,6 @@ export const apiCall = async <T>(endpoint: string, method: string = 'GET', body?
             const id = endpoint.split('/').pop();
             let txs = getLocalData<WarehouseTransaction[]>(LS_KEYS.WH_TX, []);
             
-            // --- FIX: ADDED PUT HANDLER ---
             if (method === 'PUT') {
                 const idx = txs.findIndex(t => t.id === id);
                 if (idx !== -1) { 

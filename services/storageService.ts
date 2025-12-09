@@ -137,6 +137,10 @@ export const saveWarehouseItem = async (item: WarehouseItem): Promise<WarehouseI
     return await apiCall<WarehouseItem[]>('/warehouse/items', 'POST', item);
 };
 
+export const updateWarehouseItem = async (item: WarehouseItem): Promise<WarehouseItem[]> => {
+    return await apiCall<WarehouseItem[]>(`/warehouse/items/${item.id}`, 'PUT', item);
+};
+
 export const deleteWarehouseItem = async (id: string): Promise<WarehouseItem[]> => {
     return await apiCall<WarehouseItem[]>(`/warehouse/items/${id}`, 'DELETE');
 };

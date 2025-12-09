@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { User, SystemSettings, WarehouseItem, WarehouseTransaction, WarehouseTransactionItem } from '../types';
-import { getWarehouseItems, saveWarehouseItem, deleteWarehouseItem, getWarehouseTransactions, saveWarehouseTransaction, deleteWarehouseTransaction, updateWarehouseTransaction, getNextBijakNumber } from '../services/storageService';
+import { getWarehouseItems, saveWarehouseItem, deleteWarehouseItem, getWarehouseTransactions, saveWarehouseTransaction, deleteWarehouseTransaction, updateWarehouseTransaction, getNextBijakNumber, updateWarehouseItem } from '../services/storageService';
 import { generateUUID, getCurrentShamsiDate, jalaliToGregorian, formatNumberString, deformatNumberString, formatDate, parsePersianDate, getShamsiDateFromIso } from '../constants';
 import { Package, Plus, Trash2, ArrowDownCircle, ArrowUpCircle, FileText, BarChart3, Eye, Loader2, AlertTriangle, Settings, ArrowLeftRight, Search, FileClock, Printer, FileDown, Share2, LayoutGrid, Archive, Edit, Save, X, Container } from 'lucide-react';
 import PrintBijak from './PrintBijak';
@@ -20,6 +20,9 @@ const WarehouseModule: React.FC<Props> = ({ currentUser, settings }) => {
     const [newItemCode, setNewItemCode] = useState('');
     const [newItemUnit, setNewItemUnit] = useState('عدد');
     const [newItemContainerCapacity, setNewItemContainerCapacity] = useState('');
+
+    // Editing Item State
+    const [editingItem, setEditingItem] = useState<WarehouseItem | null>(null);
 
     // Transaction State
     const currentShamsi = getCurrentShamsiDate();
@@ -55,6 +58,7 @@ const WarehouseModule: React.FC<Props> = ({ currentUser, settings }) => {
     const updateNextBijak = async () => { if(selectedCompany) { const num = await getNextBijakNumber(selectedCompany); setNextBijakNum(num); } };
     const getIsoDate = () => { try { const date = jalaliToGregorian(txDate.year, txDate.month, txDate.day); return date.toISOString(); } catch { return new Date().toISOString(); } };
     
+    // --- ITEM MANAGEMENT ---
     const handleAddItem = async () => { 
         if(!newItemName) return; 
         await saveWarehouseItem({ 
@@ -69,6 +73,14 @@ const WarehouseModule: React.FC<Props> = ({ currentUser, settings }) => {
         setNewItemContainerCapacity('');
         loadData(); 
     };
+    
+    const handleEditItem = async () => {
+        if (!editingItem) return;
+        await updateWarehouseItem(editingItem);
+        setEditingItem(null);
+        loadData();
+    };
+
     const handleDeleteItem = async (id: string) => { if(confirm('حذف شود؟')) { await deleteWarehouseItem(id); loadData(); } };
     
     const handleAddTxItemRow = () => setTxItems([...txItems, { itemId: '', quantity: 0, weight: 0, unitPrice: 0 }]);
@@ -105,31 +117,35 @@ const WarehouseModule: React.FC<Props> = ({ currentUser, settings }) => {
                 if(tx.plateNumber) commonDetails += `🔢 پلاک: ${tx.plateNumber}\n`;
                 if(tx.destination) commonDetails += `📍 مقصد: ${tx.destination}`;
 
-                if (settings) {
+                if (settings && settings.companyNotifications) {
+                    const companyConfig = settings.companyNotifications[tx.company];
+                    const managerNumber = companyConfig?.salesManager;
+                    const groupNumber = companyConfig?.warehouseGroup;
+
                     try {
                         // 1. Send to SALES MANAGER (With Price)
-                        if (settings.defaultSalesManager && managerElement) {
+                        if (managerNumber && managerElement) {
                             // @ts-ignore
                             const canvas = await window.html2canvas(managerElement, { scale: 2, backgroundColor: '#ffffff' });
                             const base64 = canvas.toDataURL('image/png').split(',')[1];
                             const managerCaption = `🏭 *شرکت: ${tx.company}*\n📑 *حواله خروج (نسخه مدیریت - با فی)*\n${commonDetails}`;
                             
                             await apiCall('/send-whatsapp', 'POST', { 
-                                number: settings.defaultSalesManager, 
+                                number: managerNumber, 
                                 message: managerCaption, 
                                 mediaData: { data: base64, mimeType: 'image/png', filename: `Bijak_${tx.number}_Price.png` } 
                             });
                         }
 
                         // 2. Send to WAREHOUSE GROUP (No Price)
-                        if (settings.defaultWarehouseGroup && warehouseElement) {
+                        if (groupNumber && warehouseElement) {
                             // @ts-ignore
                             const canvas = await window.html2canvas(warehouseElement, { scale: 2, backgroundColor: '#ffffff' });
                             const base64 = canvas.toDataURL('image/png').split(',')[1];
                             const warehouseCaption = `🏭 *شرکت: ${tx.company}*\n📦 *حواله خروج (نسخه انبار - بدون فی)*\n${commonDetails}`;
 
                             await apiCall('/send-whatsapp', 'POST', { 
-                                number: settings.defaultWarehouseGroup, 
+                                number: groupNumber, 
                                 message: warehouseCaption, 
                                 mediaData: { data: base64, mimeType: 'image/png', filename: `Bijak_${tx.number}.png` } 
                             });
@@ -196,7 +212,6 @@ const WarehouseModule: React.FC<Props> = ({ currentUser, settings }) => {
                 }); 
             }); 
         }); 
-        // Sort Ascending (Oldest First)
         movements.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()); 
         
         const calculated = movements.map(m => { 
@@ -204,11 +219,10 @@ const WarehouseModule: React.FC<Props> = ({ currentUser, settings }) => {
             return { ...m, balance: runningBalance }; 
         }); 
         
-        // Return Ascending (Top to Bottom: Oldest to Newest) as requested
         return calculated; 
     }, [transactions, reportFilterCompany, reportFilterItem]);
 
-    // --- ALL WAREHOUSES REPORT LOGIC (UPDATED FOR SIDE-BY-SIDE ALL ITEMS) ---
+    // --- ALL WAREHOUSES REPORT LOGIC ---
     const allWarehousesStock = useMemo(() => {
         const companies = settings?.companyNames || [];
         const result = companies.map(company => {
@@ -216,7 +230,6 @@ const WarehouseModule: React.FC<Props> = ({ currentUser, settings }) => {
                 let quantity = 0;
                 let weight = 0;
                 
-                // Calculate balance for this item in this company
                 transactions.filter(tx => tx.company === company).forEach(tx => {
                     tx.items.forEach(txItem => {
                         if (txItem.itemId === catalogItem.id) {
@@ -231,7 +244,6 @@ const WarehouseModule: React.FC<Props> = ({ currentUser, settings }) => {
                     });
                 });
 
-                // Calculate Containers
                 const containerCapacity = catalogItem.containerCapacity || 0;
                 const containerCount = (containerCapacity > 0 && quantity > 0) ? (quantity / containerCapacity) : 0;
 
@@ -240,7 +252,7 @@ const WarehouseModule: React.FC<Props> = ({ currentUser, settings }) => {
                     name: catalogItem.name,
                     quantity,
                     weight,
-                    containerCount // NEW
+                    containerCount
                 };
             });
 
@@ -319,8 +331,7 @@ const WarehouseModule: React.FC<Props> = ({ currentUser, settings }) => {
                 <button onClick={() => setActiveTab('stock_report')} className={`px-4 py-2 rounded-lg text-sm font-bold whitespace-nowrap ${activeTab === 'stock_report' ? 'bg-white text-orange-600 shadow' : 'text-gray-600 hover:bg-gray-200'}`}>موجودی کل انبارها (A4)</button>
             </div>
 
-            <div className="flex-1 overflow-y-auto p-6 printable-content">
-                {/* ... (Previous tabs content: dashboard, items, entry, exit, reports, stock_report) ... */}
+            <div className="flex-1 overflow-y-auto p-6">
                 {activeTab === 'dashboard' && (
                     <div className="space-y-6">
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -331,7 +342,7 @@ const WarehouseModule: React.FC<Props> = ({ currentUser, settings }) => {
                         <div className="bg-white border rounded-2xl overflow-hidden shadow-sm"><div className="bg-gray-50 p-4 border-b flex justify-between items-center"><h3 className="font-bold text-gray-800 flex items-center gap-2"><FileClock size={20}/> آخرین بیجک‌های صادر شده</h3><button onClick={() => setActiveTab('archive')} className="text-xs text-blue-600 hover:underline font-bold border border-blue-200 px-3 py-1 rounded bg-white">مشاهده و مدیریت کامل بایگانی</button></div><table className="w-full text-sm text-right"><thead className="bg-gray-100 text-gray-600"><tr><th className="p-3">شماره</th><th className="p-3">تاریخ</th><th className="p-3">شرکت</th><th className="p-3">گیرنده</th><th className="p-3">عملیات</th></tr></thead><tbody className="divide-y">{recentBijaks.length === 0 ? (<tr><td colSpan={5} className="p-6 text-center text-gray-400">هیچ بیجکی صادر نشده است.</td></tr>) : (recentBijaks.map(tx => (<tr key={tx.id} className="hover:bg-gray-50"><td className="p-3 font-mono font-bold text-red-600">#{tx.number}</td><td className="p-3 text-xs">{formatDate(tx.date)}</td><td className="p-3 text-xs font-bold">{tx.company}</td><td className="p-3 text-xs">{tx.recipientName}</td><td className="p-3"><button onClick={() => setViewBijak(tx)} className="text-blue-600 hover:text-blue-800 p-1 flex items-center gap-1"><Eye size={14}/> مشاهده</button></td></tr>)))}</tbody></table></div>
                     </div>
                 )}
-                {activeTab === 'items' && (<div className="max-w-4xl mx-auto"><div className="bg-gray-50 p-4 rounded-xl border mb-6 flex items-end gap-3 flex-wrap"><div className="flex-1 min-w-[200px] space-y-1"><label className="text-xs font-bold text-gray-500">نام کالا</label><input className="w-full border rounded p-2" value={newItemName} onChange={e=>setNewItemName(e.target.value)}/></div><div className="w-32 space-y-1"><label className="text-xs font-bold text-gray-500">کد کالا</label><input className="w-full border rounded p-2" value={newItemCode} onChange={e=>setNewItemCode(e.target.value)}/></div><div className="w-32 space-y-1"><label className="text-xs font-bold text-gray-500">واحد</label><select className="w-full border rounded p-2 bg-white" value={newItemUnit} onChange={e=>setNewItemUnit(e.target.value)}><option>عدد</option><option>کارتن</option><option>کیلوگرم</option><option>دستگاه</option></select></div><div className="w-32 space-y-1"><label className="text-xs font-bold text-gray-500">گنجایش کانتینر</label><input type="number" className="w-full border rounded p-2 dir-ltr" placeholder="تعداد" value={newItemContainerCapacity} onChange={e=>setNewItemContainerCapacity(e.target.value)}/></div><button onClick={handleAddItem} className="bg-blue-600 text-white p-2 rounded hover:bg-blue-700 h-[42px] w-12 flex items-center justify-center"><Plus/></button></div><div className="bg-white border rounded-xl overflow-hidden"><table className="w-full text-sm text-right"><thead className="bg-gray-100"><tr><th className="p-3">کد</th><th className="p-3">نام کالا</th><th className="p-3">واحد</th><th className="p-3">ظرفیت کانتینر</th><th className="p-3 w-10"></th></tr></thead><tbody>{items.map(i => (<tr key={i.id} className="border-t hover:bg-gray-50"><td className="p-3 font-mono">{i.code}</td><td className="p-3 font-bold">{i.name}</td><td className="p-3">{i.unit}</td><td className="p-3 font-mono">{i.containerCapacity ? i.containerCapacity : '-'}</td><td className="p-3"><button onClick={()=>handleDeleteItem(i.id)} className="text-red-500"><Trash2 size={16}/></button></td></tr>))}</tbody></table></div></div>)}
+                {activeTab === 'items' && (<div className="max-w-4xl mx-auto"><div className="bg-gray-50 p-4 rounded-xl border mb-6 flex items-end gap-3 flex-wrap"><div className="flex-1 min-w-[200px] space-y-1"><label className="text-xs font-bold text-gray-500">نام کالا</label><input className="w-full border rounded p-2" value={newItemName} onChange={e=>setNewItemName(e.target.value)}/></div><div className="w-32 space-y-1"><label className="text-xs font-bold text-gray-500">کد کالا</label><input className="w-full border rounded p-2" value={newItemCode} onChange={e=>setNewItemCode(e.target.value)}/></div><div className="w-32 space-y-1"><label className="text-xs font-bold text-gray-500">واحد</label><select className="w-full border rounded p-2 bg-white" value={newItemUnit} onChange={e=>setNewItemUnit(e.target.value)}><option>عدد</option><option>کارتن</option><option>کیلوگرم</option><option>دستگاه</option></select></div><div className="w-32 space-y-1"><label className="text-xs font-bold text-gray-500">گنجایش کانتینر</label><input type="number" className="w-full border rounded p-2 dir-ltr" placeholder="تعداد" value={newItemContainerCapacity} onChange={e=>setNewItemContainerCapacity(e.target.value)}/></div><button onClick={handleAddItem} className="bg-blue-600 text-white p-2 rounded hover:bg-blue-700 h-[42px] w-12 flex items-center justify-center"><Plus/></button></div><div className="bg-white border rounded-xl overflow-hidden"><table className="w-full text-sm text-right"><thead className="bg-gray-100"><tr><th className="p-3">کد</th><th className="p-3">نام کالا</th><th className="p-3">واحد</th><th className="p-3">ظرفیت کانتینر</th><th className="p-3 text-center">عملیات</th></tr></thead><tbody>{items.map(i => (<tr key={i.id} className="border-t hover:bg-gray-50"><td className="p-3 font-mono">{i.code}</td><td className="p-3 font-bold">{i.name}</td><td className="p-3">{i.unit}</td><td className="p-3 font-mono">{i.containerCapacity ? i.containerCapacity : '-'}</td><td className="p-3 text-center"><div className="flex justify-center gap-2"><button onClick={() => setEditingItem(i)} className="text-amber-500 hover:text-amber-700" title="ویرایش"><Edit size={16}/></button><button onClick={()=>handleDeleteItem(i.id)} className="text-red-500 hover:text-red-700" title="حذف"><Trash2 size={16}/></button></div></td></tr>))}</tbody></table></div></div>)}
                 {activeTab === 'entry' && (<div className="max-w-4xl mx-auto bg-green-50 p-6 rounded-2xl border border-green-200"><h3 className="font-bold text-green-800 mb-4 flex items-center gap-2"><ArrowDownCircle/> ثبت ورود کالا (رسید انبار)</h3><div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4"><div><label className="block text-xs font-bold mb-1">شرکت مالک</label><select className="w-full border rounded p-2 bg-white" value={selectedCompany} onChange={e=>setSelectedCompany(e.target.value)}><option value="">انتخاب...</option>{companyList.map(c=><option key={c} value={c}>{c}</option>)}</select></div><div><label className="block text-xs font-bold mb-1">شماره پروفرما / سند</label><input className="w-full border rounded p-2 bg-white" value={proformaNumber} onChange={e=>setProformaNumber(e.target.value)}/></div><div><label className="block text-xs font-bold mb-1">تاریخ ورود</label><div className="flex gap-1 dir-ltr"><select className="border rounded p-1 text-sm flex-1" value={txDate.year} onChange={e=>setTxDate({...txDate, year:Number(e.target.value)})}>{years.map(y=><option key={y} value={y}>{y}</option>)}</select><select className="border rounded p-1 text-sm flex-1" value={txDate.month} onChange={e=>setTxDate({...txDate, month:Number(e.target.value)})}>{months.map(m=><option key={m} value={m}>{m}</option>)}</select><select className="border rounded p-1 text-sm flex-1" value={txDate.day} onChange={e=>setTxDate({...txDate, day:Number(e.target.value)})}>{days.map(d=><option key={d} value={d}>{d}</option>)}</select></div></div></div><div className="space-y-2 bg-white p-4 rounded-xl border">{txItems.map((row, idx) => (<div key={idx} className="flex gap-2 items-end"><div className="flex-1"><label className="text-[10px] text-gray-500">کالا</label><select className="w-full border rounded p-2 text-sm" value={row.itemId} onChange={e=>updateTxItem(idx, 'itemId', e.target.value)}><option value="">انتخاب کالا...</option>{items.map(i=><option key={i.id} value={i.id}>{i.name}</option>)}</select></div><div className="w-24"><label className="text-[10px] text-gray-500">تعداد</label><input type="number" className="w-full border rounded p-2 text-sm dir-ltr" value={row.quantity} onChange={e=>updateTxItem(idx, 'quantity', e.target.value)}/></div><div className="w-24"><label className="text-[10px] text-gray-500">وزن (KG)</label><input type="number" className="w-full border rounded p-2 text-sm dir-ltr" value={row.weight} onChange={e=>updateTxItem(idx, 'weight', e.target.value)}/></div>{idx > 0 && <button onClick={()=>handleRemoveTxItemRow(idx)} className="text-red-500 p-2"><Trash2 size={16}/></button>}</div>))}<button onClick={handleAddTxItemRow} className="text-xs text-blue-600 font-bold flex items-center gap-1 mt-2"><Plus size={14}/> افزودن ردیف کالا</button></div><button onClick={()=>handleSubmitTx('IN')} className="w-full bg-green-600 text-white font-bold py-3 rounded-xl mt-4 hover:bg-green-700 shadow-lg">ثبت رسید انبار</button></div>)}
                 {activeTab === 'exit' && (<div className="max-w-4xl mx-auto bg-red-50 p-6 rounded-2xl border border-red-200"><h3 className="font-bold text-red-800 mb-4 flex items-center gap-2"><ArrowUpCircle/> ثبت خروج کالا (صدور بیجک)</h3><div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4"><div><label className="block text-xs font-bold mb-1">شرکت فرستنده</label><select className="w-full border rounded p-2 bg-white" value={selectedCompany} onChange={e=>setSelectedCompany(e.target.value)}><option value="">انتخاب...</option>{companyList.map(c=><option key={c} value={c}>{c}</option>)}</select></div><div><label className="block text-xs font-bold mb-1">شماره بیجک (سیستمی)</label><div className="bg-white p-2 rounded border font-mono text-center text-red-600 font-bold">{nextBijakNum > 0 ? nextBijakNum : '---'}</div></div><div><label className="block text-xs font-bold mb-1">تاریخ خروج</label><div className="flex gap-1 dir-ltr"><select className="border rounded p-1 text-sm flex-1" value={txDate.year} onChange={e=>setTxDate({...txDate, year:Number(e.target.value)})}>{years.map(y=><option key={y} value={y}>{y}</option>)}</select><select className="border rounded p-1 text-sm flex-1" value={txDate.month} onChange={e=>setTxDate({...txDate, month:Number(e.target.value)})}>{months.map(m=><option key={m} value={m}>{m}</option>)}</select><select className="border rounded p-1 text-sm flex-1" value={txDate.day} onChange={e=>setTxDate({...txDate, day:Number(e.target.value)})}>{days.map(d=><option key={d} value={d}>{d}</option>)}</select></div></div><div><label className="block text-xs font-bold mb-1">تحویل گیرنده</label><input className="w-full border rounded p-2 bg-white" value={recipientName} onChange={e=>setRecipientName(e.target.value)}/></div></div><div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4"><div><label className="block text-xs font-bold mb-1">راننده</label><input className="w-full border rounded p-2 bg-white" value={driverName} onChange={e=>setDriverName(e.target.value)}/></div><div><label className="block text-xs font-bold mb-1">پلاک</label><input className="w-full border rounded p-2 bg-white dir-ltr" value={plateNumber} onChange={e=>setPlateNumber(e.target.value)}/></div><div><label className="block text-xs font-bold mb-1">مقصد</label><input className="w-full border rounded p-2 bg-white" value={destination} onChange={e=>setDestination(e.target.value)}/></div></div><div className="space-y-2 bg-white p-4 rounded-xl border">{txItems.map((row, idx) => (<div key={idx} className="flex gap-2 items-end"><div className="flex-1"><label className="text-[10px] text-gray-500">کالا</label><select className="w-full border rounded p-2 text-sm" value={row.itemId} onChange={e=>updateTxItem(idx, 'itemId', e.target.value)}><option value="">انتخاب...</option>{items.map(i=><option key={i.id} value={i.id}>{i.name}</option>)}</select></div><div className="w-20"><label className="text-[10px] text-gray-500">تعداد</label><input type="number" className="w-full border rounded p-2 text-sm dir-ltr" value={row.quantity} onChange={e=>updateTxItem(idx, 'quantity', e.target.value)}/></div><div className="w-20"><label className="text-[10px] text-gray-500">وزن</label><input type="number" className="w-full border rounded p-2 text-sm dir-ltr" value={row.weight} onChange={e=>updateTxItem(idx, 'weight', e.target.value)}/></div><div className="w-32"><label className="text-[10px] text-gray-500">فی (ریال)</label><input type="text" className="w-full border rounded p-2 text-sm dir-ltr font-bold text-blue-600" value={formatNumberString(row.unitPrice)} onChange={e=>updateTxItem(idx, 'unitPrice', deformatNumberString(e.target.value))}/></div>{idx > 0 && <button onClick={()=>handleRemoveTxItemRow(idx)} className="text-red-500 p-2"><Trash2 size={16}/></button>}</div>))}<button onClick={handleAddTxItemRow} className="text-xs text-blue-600 font-bold flex items-center gap-1 mt-2"><Plus size={14}/> افزودن ردیف کالا</button></div><button onClick={()=>handleSubmitTx('OUT')} className="w-full bg-red-600 text-white font-bold py-3 rounded-xl mt-4 hover:bg-red-700 shadow-lg">ثبت و صدور بیجک</button></div>)}
                 
@@ -408,12 +419,41 @@ const WarehouseModule: React.FC<Props> = ({ currentUser, settings }) => {
                 {/* STOCK REPORT TAB (Redesigned A4 Landscape - Single Page Optimized) */}
                 {activeTab === 'stock_report' && (
                     <div className="flex flex-col h-full">
-                        <style>{`@media print { @page { size: landscape; margin: 0; } body { margin: 0; padding: 0; } .print-landscape-container { width: 100% !important; min-height: 100% !important; transform: scale(0.95); transform-origin: top center; } .printable-content { padding: 0 !important; } }`}</style>
+                        <style>{`
+                            @media print { 
+                                @page { size: landscape; margin: 0; } 
+                                body, html { width: 100%; height: 100%; overflow: hidden; background: white; margin: 0; padding: 0; } 
+                                
+                                /* Aggressively hide everything */
+                                body > * { visibility: hidden; height: 0; overflow: hidden; display: none !important; }
+                                
+                                /* Show ONLY the report container */
+                                #root { display: block !important; visibility: visible; height: auto; }
+                                #stock-report-print-container { 
+                                    visibility: visible !important;
+                                    display: block !important;
+                                    position: fixed;
+                                    top: 0;
+                                    left: 0;
+                                    width: 297mm;
+                                    height: 210mm;
+                                    margin: 0;
+                                    padding: 5mm;
+                                    transform: scale(0.95);
+                                    transform-origin: center top;
+                                    background: white;
+                                    z-index: 9999999;
+                                }
+                                #stock-report-print-container * { visibility: visible !important; }
+                            }
+                        `}</style>
                         <div className="flex justify-between items-center mb-4 no-print">
                             <h2 className="text-xl font-bold">گزارش موجودی کلی انبارها (تفکیکی)</h2>
                             <button onClick={handlePrintStock} className="bg-blue-600 text-white px-4 py-2 rounded flex items-center gap-2 hover:bg-blue-700"><Printer size={18}/> چاپ (افقی)</button>
                         </div>
-                        <div className="bg-white p-2 shadow-lg mx-auto w-full md:w-[297mm] min-h-[210mm] print-landscape-container print:shadow-none print:w-full print:p-1">
+                        
+                        {/* ID specifically for print target */}
+                        <div id="stock-report-print-container" className="bg-white p-2 shadow-lg mx-auto w-full md:w-[297mm] min-h-[210mm] print:shadow-none print:w-full print:p-1">
                             {/* Header */}
                             <div className="text-center bg-yellow-300 border border-black py-1 mb-1 font-black text-lg">موجودی بنگاه ها</div>
                             
@@ -579,10 +619,35 @@ const WarehouseModule: React.FC<Props> = ({ currentUser, settings }) => {
                     </div>
                 </div>
             )}
+
+            {/* Edit Item Modal */}
+            {editingItem && (
+                <div className="fixed inset-0 bg-black/50 z-[100] flex items-center justify-center p-4">
+                    <div className="bg-white rounded-xl shadow-xl w-full max-w-sm p-6">
+                        <div className="flex justify-between items-center mb-4"><h3 className="font-bold text-lg">ویرایش کالا</h3><button onClick={() => setEditingItem(null)}><X size={20}/></button></div>
+                        <div className="space-y-3">
+                            <div>
+                                <label className="text-xs font-bold block mb-1">نام کالا</label>
+                                <input className="w-full border rounded p-2 text-sm" value={editingItem.name} onChange={e => setEditingItem({...editingItem, name: e.target.value})} />
+                            </div>
+                            <div>
+                                <label className="text-xs font-bold block mb-1">کد کالا</label>
+                                <input className="w-full border rounded p-2 text-sm" value={editingItem.code} onChange={e => setEditingItem({...editingItem, code: e.target.value})} />
+                            </div>
+                            <div>
+                                <label className="text-xs font-bold block mb-1">ظرفیت کانتینر</label>
+                                <input type="number" className="w-full border rounded p-2 text-sm dir-ltr" value={editingItem.containerCapacity} onChange={e => setEditingItem({...editingItem, containerCapacity: Number(e.target.value)})} />
+                            </div>
+                            <button onClick={handleEditItem} className="w-full bg-blue-600 text-white py-2 rounded font-bold mt-2">ذخیره تغییرات</button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };
 
+// ... (EditBijakForm and EditReceiptForm remain same) ...
 // Helper Component for Editing Bijak (OUT)
 const EditBijakForm: React.FC<{ bijak: WarehouseTransaction, items: WarehouseItem[], companyList: string[], onSave: (tx: WarehouseTransaction) => void, onCancel: () => void }> = ({ bijak, items, companyList, onSave, onCancel }) => {
     const safeDate = bijak.date || new Date().toISOString();

@@ -29,6 +29,7 @@ const Settings: React.FC = () => {
       whatsappNumber: '', 
       geminiApiKey: '',
       warehouseSequences: {},
+      companyNotifications: {},
       defaultWarehouseGroup: '',
       defaultSalesManager: ''
   });
@@ -75,6 +76,7 @@ const Settings: React.FC = () => {
               safeData.companies = safeData.companyNames.map(name => ({ id: generateUUID(), name }));
           }
           if(!safeData.warehouseSequences) safeData.warehouseSequences = {};
+          if(!safeData.companyNotifications) safeData.companyNotifications = {};
           setSettings(safeData); 
       } catch (e) { console.error("Failed to load settings"); } 
   };
@@ -258,32 +260,72 @@ const Settings: React.FC = () => {
                 {activeCategory === 'warehouse' && (
                     <div className="space-y-8 animate-fade-in">
                         <div className="space-y-4">
-                            <h3 className="font-bold text-gray-800 border-b pb-2 flex items-center gap-2"><Warehouse size={20}/> تنظیمات انبار</h3>
+                            <h3 className="font-bold text-gray-800 border-b pb-2 flex items-center gap-2"><Warehouse size={20}/> تنظیمات انبار و ارسال خودکار</h3>
                             
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <div>
-                                    <label className="text-sm font-bold text-gray-700 block mb-1">واتساپ گروه انبار (پیش‌فرض)</label>
-                                    <select className="w-full border rounded-lg p-2 text-sm bg-white" value={settings.defaultWarehouseGroup || ''} onChange={e => setSettings({...settings, defaultWarehouseGroup: e.target.value})}>
-                                        <option value="">انتخاب کنید...</option>
-                                        {getMergedContactOptions().map(c => (
-                                            <option key={c.number} value={c.number}>{c.name} {c.isGroup ? '(گروه)' : ''}</option>
-                                        ))}
-                                    </select>
-                                    <p className="text-[10px] text-gray-500 mt-1">شامل مخاطبین ذخیره شده و کاربران نرم‌افزار</p>
-                                </div>
-                                <div>
-                                    <label className="text-sm font-bold text-gray-700 block mb-1">واتساپ مدیر فروش (پیش‌فرض)</label>
-                                    <select className="w-full border rounded-lg p-2 text-sm bg-white" value={settings.defaultSalesManager || ''} onChange={e => setSettings({...settings, defaultSalesManager: e.target.value})}>
-                                        <option value="">انتخاب کنید...</option>
-                                        {getMergedContactOptions().map(c => (
-                                            <option key={c.number} value={c.number}>{c.name} {c.isGroup ? '(گروه)' : ''}</option>
-                                        ))}
-                                    </select>
-                                    <p className="text-[10px] text-gray-500 mt-1">شامل مخاطبین ذخیره شده و کاربران نرم‌افزار</p>
-                                </div>
+                            {/* Per Company Notification Settings */}
+                            <div className="space-y-6">
+                                {settings.companies?.map(company => (
+                                    <div key={company.id} className="bg-gray-50 p-4 rounded-xl border border-gray-200">
+                                        <h4 className="font-bold text-base text-gray-800 mb-3 border-b pb-2 flex justify-between">
+                                            <span>شرکت: {company.name}</span>
+                                            {company.logo && <img src={company.logo} className="h-6 object-contain"/>}
+                                        </h4>
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                            <div>
+                                                <label className="text-xs font-bold text-blue-700 block mb-1">مدیر فروش (جهت ارسال با قیمت)</label>
+                                                <select 
+                                                    className="w-full border rounded-lg p-2 text-sm bg-white"
+                                                    value={settings.companyNotifications?.[company.name]?.salesManager || ''}
+                                                    onChange={e => setSettings({
+                                                        ...settings,
+                                                        companyNotifications: {
+                                                            ...settings.companyNotifications,
+                                                            [company.name]: {
+                                                                ...settings.companyNotifications?.[company.name],
+                                                                salesManager: e.target.value
+                                                            }
+                                                        }
+                                                    })}
+                                                >
+                                                    <option value="">-- ارسال نشود --</option>
+                                                    {getMergedContactOptions().map(c => (
+                                                        <option key={`${company.id}_sm_${c.number}`} value={c.number}>{c.name} {c.isGroup ? '(گروه)' : ''}</option>
+                                                    ))}
+                                                </select>
+                                            </div>
+                                            <div>
+                                                <label className="text-xs font-bold text-orange-700 block mb-1">گروه انبار (جهت ارسال بدون قیمت)</label>
+                                                <select 
+                                                    className="w-full border rounded-lg p-2 text-sm bg-white"
+                                                    value={settings.companyNotifications?.[company.name]?.warehouseGroup || ''}
+                                                    onChange={e => setSettings({
+                                                        ...settings,
+                                                        companyNotifications: {
+                                                            ...settings.companyNotifications,
+                                                            [company.name]: {
+                                                                ...settings.companyNotifications?.[company.name],
+                                                                warehouseGroup: e.target.value
+                                                            }
+                                                        }
+                                                    })}
+                                                >
+                                                    <option value="">-- ارسال نشود --</option>
+                                                    {getMergedContactOptions().map(c => (
+                                                        <option key={`${company.id}_wg_${c.number}`} value={c.number}>{c.name} {c.isGroup ? '(گروه)' : ''}</option>
+                                                    ))}
+                                                </select>
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))}
+                                {(!settings.companies || settings.companies.length === 0) && (
+                                    <div className="text-center p-4 text-gray-500 border rounded-lg border-dashed">
+                                        هنوز هیچ شرکتی تعریف نشده است. لطفا ابتدا در بخش "اطلاعات پایه" شرکت‌ها را تعریف کنید.
+                                    </div>
+                                )}
                             </div>
 
-                            <div className="bg-orange-50 p-4 rounded-xl border border-orange-200">
+                            <div className="bg-orange-50 p-4 rounded-xl border border-orange-200 mt-6">
                                 <h4 className="font-bold text-sm text-orange-800 mb-3">شماره آخرین بیجک صادر شده (به تفکیک شرکت)</h4>
                                 <div className="space-y-2">
                                     {settings.companies?.map(c => (
@@ -306,7 +348,6 @@ const Settings: React.FC = () => {
                                             </div>
                                         </div>
                                     ))}
-                                    {(!settings.companies || settings.companies.length === 0) && <div className="text-sm text-gray-500">شرکتی تعریف نشده است.</div>}
                                 </div>
                             </div>
                         </div>
