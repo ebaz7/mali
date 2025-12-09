@@ -92,19 +92,20 @@ const handleAIProcessing = async (text, db) => {
         }
         `;
 
-        // CORRECT SDK USAGE:
         const response = await ai.models.generateContent({
             model: "gemini-2.5-flash",
             contents: [{ role: 'user', parts: [{ text: prompt }] }]
         });
 
-        // Get text directly from the property
         const responseText = response.text;
         
         const jsonMatch = responseText.match(/\{[\s\S]*\}/);
         if (jsonMatch) return JSON.parse(jsonMatch[0]);
     } catch (e) {
-        console.error("AI Error:", e);
+        console.error("AI Error:", e.message);
+        if (e.message && e.message.includes('403')) {
+            console.error(">>> HINT: 403 Forbidden means API Key issue or IP Block (Need VPN). Fallback mode will be used.");
+        }
     }
     return null;
 };
@@ -170,13 +171,20 @@ export const initWhatsApp = (authDir) => {
             
             if (processingMsg) processingMsg.delete(true); // Remove "Processing..."
 
+            // 3. FALLBACK & EXECUTION
             if (!aiResult) {
-                // Fallback for simple commands if AI fails or no API key
-                if (body === '!گزارش') { /* ... simple report logic ... */ }
+                // Fallback Logic if AI fails (e.g. 403 Forbidden or no Key)
+                if (body.includes('گزارش') || body.includes('وضعیت') || body === '!گزارش') {
+                     const pendingOrders = db.orders.filter(o => o.status !== 'تایید نهایی' && o.status !== 'رد شده').length;
+                     const pendingExits = db.exitPermits.filter(p => p.status !== 'خارج شده (بایگانی)' && p.status !== 'رد شده').length;
+                     msg.reply(`📊 *گزارش وضعیت (دسترسی محدود)*\n\n💰 کارتابل پرداخت: ${pendingOrders} سند باز\n🚛 کارتابل خروج: ${pendingExits} مجوز فعال\n\n⚠️ هوش مصنوعی پاسخ نداد (خطای اتصال).`);
+                } else if (body.includes('بیجک') || body.includes('پرداخت')) {
+                     msg.reply("⚠️ خطا در ارتباط با هوش مصنوعی. لطفا از پنل تحت وب استفاده کنید یا اتصال سرور (VPN) را بررسی کنید.");
+                }
                 return;
             }
 
-            // 3. EXECUTE INTENTS
+            // 4. EXECUTE AI INTENTS
             const { intent, args, reply } = aiResult;
 
             if (intent === 'ASK_MORE') {
