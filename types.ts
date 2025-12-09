@@ -120,6 +120,7 @@ export interface WarehouseItem {
     code: string;
     name: string;
     unit: string; // e.g., Kg, Carton, Pcs
+    containerCapacity?: number; // Capacity per container
     description?: string;
 }
 
