@@ -405,17 +405,17 @@ const WarehouseModule: React.FC<Props> = ({ currentUser, settings }) => {
                     </div>
                 )}
 
-                {/* STOCK REPORT TAB (Redesigned A4 Landscape) */}
+                {/* STOCK REPORT TAB (Redesigned A4 Landscape - Single Page Optimized) */}
                 {activeTab === 'stock_report' && (
                     <div className="flex flex-col h-full">
-                        <style>{`@media print { @page { size: landscape; margin: 0; } body { margin: 0; padding: 0; } .print-landscape-container { width: 100% !important; min-height: 210mm !important; } }`}</style>
+                        <style>{`@media print { @page { size: landscape; margin: 0; } body { margin: 0; padding: 0; } .print-landscape-container { width: 100% !important; min-height: 100% !important; transform: scale(0.95); transform-origin: top center; } .printable-content { padding: 0 !important; } }`}</style>
                         <div className="flex justify-between items-center mb-4 no-print">
                             <h2 className="text-xl font-bold">گزارش موجودی کلی انبارها (تفکیکی)</h2>
                             <button onClick={handlePrintStock} className="bg-blue-600 text-white px-4 py-2 rounded flex items-center gap-2 hover:bg-blue-700"><Printer size={18}/> چاپ (افقی)</button>
                         </div>
-                        <div className="bg-white p-4 shadow-lg mx-auto w-full md:w-[297mm] min-h-[210mm] print-landscape-container print:shadow-none print:w-full print:p-2">
+                        <div className="bg-white p-2 shadow-lg mx-auto w-full md:w-[297mm] min-h-[210mm] print-landscape-container print:shadow-none print:w-full print:p-1">
                             {/* Header */}
-                            <div className="text-center bg-yellow-300 border border-black py-2 mb-2 font-black text-xl">موجودی بنگاه ها</div>
+                            <div className="text-center bg-yellow-300 border border-black py-1 mb-1 font-black text-lg">موجودی بنگاه ها</div>
                             
                             <div className="flex flex-row border border-black gap-0">
                                 {allWarehousesStock.map((group, index) => {
@@ -424,8 +424,8 @@ const WarehouseModule: React.FC<Props> = ({ currentUser, settings }) => {
                                     
                                     return (
                                         <div key={group.company} className="flex-1 border-l border-black last:border-l-0 flex flex-col">
-                                            <div className={`${headerColor} text-black font-bold p-1 text-center border-b border-black text-lg`}>{group.company}</div>
-                                            <div className="grid grid-cols-4 bg-gray-100 font-bold text-xs border-b border-black text-center">
+                                            <div className={`${headerColor} text-black font-bold p-1 text-center border-b border-black text-sm`}>{group.company}</div>
+                                            <div className="grid grid-cols-4 bg-gray-100 font-bold text-[10px] border-b border-black text-center">
                                                 <div className="p-1 border-l border-black">نخ</div>
                                                 <div className="p-1 border-l border-black">کارتن</div>
                                                 <div className="p-1 border-l border-black">وزن</div>
@@ -433,23 +433,23 @@ const WarehouseModule: React.FC<Props> = ({ currentUser, settings }) => {
                                             </div>
                                             <div className="flex-1">
                                                 {group.items.map((item, i) => (
-                                                    <div key={i} className="grid grid-cols-4 text-xs border-b border-gray-400 last:border-b-0 text-center hover:bg-gray-50">
+                                                    <div key={i} className="grid grid-cols-4 text-[10px] border-b border-gray-400 last:border-b-0 text-center hover:bg-gray-50 leading-tight">
                                                         <div className="p-1 border-l border-black font-bold truncate text-right pr-2">{item.name}</div>
                                                         <div className="p-1 border-l border-black font-mono">{item.quantity}</div>
                                                         <div className="p-1 border-l border-black font-mono">{item.weight > 0 ? item.weight : 0}</div>
-                                                        <div className="p-1 font-mono text-[10px] text-gray-400">
+                                                        <div className="p-1 font-mono text-gray-500">
                                                             {item.containerCount > 0 ? item.containerCount.toFixed(2) : '-'}
                                                         </div>
                                                     </div>
                                                 ))}
-                                                {group.items.length === 0 && <div className="p-4 text-center text-gray-400 text-xs">-</div>}
+                                                {group.items.length === 0 && <div className="p-2 text-center text-gray-400 text-[10px]">-</div>}
                                             </div>
                                         </div>
                                     );
                                 })}
                             </div>
                             
-                            <div className="text-center bg-yellow-300 border border-black py-1 mt-2 font-bold text-sm">موجودی کل</div>
+                            <div className="text-center bg-yellow-300 border border-black py-1 mt-1 font-bold text-xs">موجودی کل</div>
                         </div>
                     </div>
                 )}

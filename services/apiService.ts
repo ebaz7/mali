@@ -151,6 +151,17 @@ export const apiCall = async <T>(endpoint: string, method: string = 'GET', body?
         if (endpoint.startsWith('/warehouse/transactions/')) {
             const id = endpoint.split('/').pop();
             let txs = getLocalData<WarehouseTransaction[]>(LS_KEYS.WH_TX, []);
+            
+            // --- FIX: ADDED PUT HANDLER ---
+            if (method === 'PUT') {
+                const idx = txs.findIndex(t => t.id === id);
+                if (idx !== -1) { 
+                    txs[idx] = body; 
+                    setLocalData(LS_KEYS.WH_TX, txs); 
+                }
+                return txs as unknown as T;
+            }
+            
             if (method === 'DELETE') {
                 txs = txs.filter(t => t.id !== id);
                 setLocalData(LS_KEYS.WH_TX, txs);
