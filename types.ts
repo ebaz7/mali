@@ -28,7 +28,7 @@ export enum UserRole {
   FINANCIAL = 'financial',
   SALES_MANAGER = 'sales_manager', 
   FACTORY_MANAGER = 'factory_manager',
-  WAREHOUSE_KEEPER = 'warehouse_keeper', // Added Role
+  WAREHOUSE_KEEPER = 'warehouse_keeper', 
   USER = 'user'           
 }
 
@@ -172,6 +172,8 @@ export interface RolePermissions {
     canCreateExitPermit?: boolean; 
     canApproveExitCeo?: boolean; 
     canApproveExitFactory?: boolean;
+    canViewExitArchive?: boolean; // New
+    canEditExitArchive?: boolean; // New
     
     // Warehouse Permissions
     canManageWarehouse?: boolean; // Full Access

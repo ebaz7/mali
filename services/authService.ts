@@ -75,6 +75,10 @@ export const getRolePermissions = (userRole: string, settings: SystemSettings | 
         canApproveExitCeo: userRole === UserRole.CEO || userRole === UserRole.ADMIN,
         canApproveExitFactory: userRole === UserRole.FACTORY_MANAGER || userRole === UserRole.ADMIN,
         
+        // Exit Archive Permissions
+        canViewExitArchive: userRole === UserRole.ADMIN || userRole === UserRole.CEO || userRole === UserRole.FACTORY_MANAGER,
+        canEditExitArchive: userRole === UserRole.ADMIN,
+
         // Warehouse Permissions
         canManageWarehouse: userRole === UserRole.ADMIN || userRole === UserRole.WAREHOUSE_KEEPER || userRole === UserRole.FACTORY_MANAGER, // Full Access
         canViewWarehouseReports: userRole === UserRole.ADMIN || userRole === UserRole.WAREHOUSE_KEEPER || userRole === UserRole.FACTORY_MANAGER || userRole === UserRole.CEO || userRole === UserRole.SALES_MANAGER // Read Only

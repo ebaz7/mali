@@ -65,7 +65,7 @@ const WarehouseModule: React.FC<Props> = ({ currentUser, settings }) => {
             id: generateUUID(), 
             name: newItemName, 
             code: newItemCode, 
-            unit: newItemUnit,
+            unit: newItemUnit, 
             containerCapacity: Number(newItemContainerCapacity) || 0 
         }); 
         setNewItemName(''); 
@@ -273,7 +273,7 @@ const WarehouseModule: React.FC<Props> = ({ currentUser, settings }) => {
         setProcessingExport(true);
         try {
             // @ts-ignore
-            const canvas = await window.html2canvas(element, { scale: 2, backgroundColor: '#ffffff' });
+            const canvas = await window.html2canvas(element, { scale: 3, backgroundColor: '#ffffff' }); // Increased scale
             const imgData = canvas.toDataURL('image/png');
             // @ts-ignore
             const { jsPDF } = window.jspdf;
@@ -308,7 +308,7 @@ const WarehouseModule: React.FC<Props> = ({ currentUser, settings }) => {
         setProcessingExport(true);
         try {
             // @ts-ignore
-            const canvas = await window.html2canvas(element, { scale: 2, backgroundColor: '#ffffff', useCORS: true });
+            const canvas = await window.html2canvas(element, { scale: 3, backgroundColor: '#ffffff', useCORS: true }); // Increased scale for better PDF quality
             const imgData = canvas.toDataURL('image/png');
             // @ts-ignore
             const { jsPDF } = window.jspdf;
@@ -440,7 +440,7 @@ const WarehouseModule: React.FC<Props> = ({ currentUser, settings }) => {
                     <div className="flex flex-col h-full">
                         <style>{`
                             @media print { 
-                                @page { size: landscape; margin: 0; }
+                                @page { size: 297mm 210mm; margin: 0; }
                                 body { margin: 0; padding: 0; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
                                 body * { visibility: hidden; }
                                 
@@ -452,15 +452,12 @@ const WarehouseModule: React.FC<Props> = ({ currentUser, settings }) => {
                                     position: fixed;
                                     top: 0;
                                     left: 0;
-                                    width: 100%;
-                                    height: 100%;
+                                    width: 297mm;
+                                    height: 210mm;
                                     margin: 0;
                                     padding: 5mm;
                                     background: white;
                                     z-index: 99999;
-                                    /* Slightly scale down to fit A4 if needed */
-                                    transform: scale(0.95);
-                                    transform-origin: top center;
                                 }
                                 /* Ensure colors print */
                                 #stock-report-container .bg-yellow-300 { background-color: #fde047 !important; }
