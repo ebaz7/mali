@@ -165,162 +165,169 @@ export const initWhatsApp = (authDir) => {
         });
 
         client.on('message', async msg => {
-            const body = msg.body.trim();
-            if (msg.from.includes('@g.us') && !body.startsWith('!')) return;
+            try {
+                const body = msg.body.trim();
+                if (msg.from.includes('@g.us') && !body.startsWith('!')) return;
 
-            const db = getDb();
-            if (!db) return;
+                const db = getDb();
+                if (!db) return;
 
-            // 1. Help Command
-            if (body === '!راهنما' || body === 'راهنما') {
-                msg.reply(`🤖 *دستیار هوشمند سیستم مالی*\n\n` +
-                    `💰 *ثبت دستور پرداخت کامل:*\n"دستور پرداخت [مبلغ] به [نام] بابت [توضیحات] از [بانک]"\nمثال: دستور پرداخت 5000000 به علی رضایی بابت خرید لوازم از بانک ملی\n\n` +
-                    `🚛 *ثبت بیجک خروج کالا:*\n"بیجک [تعداد] [کالا] برای [گیرنده] راننده [نام] پلاک [پلاک]"\nمثال: بیجک 50 کارتن لامپ برای فروشگاه نور راننده حسینی پلاک 66-345\n\n` +
-                    `📊 *گزارش کارتابل:*\nارسال کلمه "گزارش" یا "کارتابل"`);
-                return;
-            }
+                // 1. Help Command
+                if (body === '!راهنما' || body === 'راهنما') {
+                    msg.reply(`🤖 *دستیار هوشمند سیستم مالی*\n\n` +
+                        `💰 *ثبت دستور پرداخت کامل:*\n"دستور پرداخت [مبلغ] به [نام] بابت [توضیحات] از [بانک]"\nمثال: دستور پرداخت 5000000 به علی رضایی بابت خرید لوازم از بانک ملی\n\n` +
+                        `🚛 *ثبت بیجک خروج کالا:*\n"بیجک [تعداد] [کالا] برای [گیرنده] راننده [نام] پلاک [پلاک]"\nمثال: بیجک 50 کارتن لامپ برای فروشگاه نور راننده حسینی پلاک 66-345\n\n` +
+                        `📊 *گزارش کارتابل:*\nارسال کلمه "گزارش" یا "کارتابل"`);
+                    return;
+                }
 
-            // 2. Process Intent
-            const processingMsg = body.length > 20 ? await msg.reply('⏳ ...') : null;
-            const result = await handleAIProcessing(body, db);
-            if (processingMsg) processingMsg.delete(true);
+                // 2. Process Intent
+                const processingMsg = body.length > 20 ? await msg.reply('⏳ ...') : null;
+                
+                // CORRECTED FUNCTION CALL HERE:
+                const result = await handleMessageProcessing(body, db);
+                
+                if (processingMsg) processingMsg.delete(true);
 
-            if (!result) {
-                if (body.length > 5) msg.reply("⚠️ دستور نامفهوم. برای راهنما کلمه «راهنما» را ارسال کنید.");
-                return;
-            }
+                if (!result) {
+                    if (body.length > 5) msg.reply("⚠️ دستور نامفهوم. برای راهنما کلمه «راهنما» را ارسال کنید.");
+                    return;
+                }
 
-            const { intent, args } = result;
+                const { intent, args } = result;
 
-            // --- COMMAND: CREATE PAYMENT ---
-            if (intent === 'CREATE_PAYMENT') {
-                const trackingNum = (db.settings.currentTrackingNumber || 1000) + 1;
-                db.settings.currentTrackingNumber = trackingNum;
+                // --- COMMAND: CREATE PAYMENT ---
+                if (intent === 'CREATE_PAYMENT') {
+                    const trackingNum = (db.settings.currentTrackingNumber || 1000) + 1;
+                    db.settings.currentTrackingNumber = trackingNum;
 
-                const amount = typeof args.amount === 'string' ? parseInt(args.amount.replace(/[^0-9]/g, '')) : args.amount;
+                    const amount = typeof args.amount === 'string' ? parseInt(args.amount.replace(/[^0-9]/g, '')) : args.amount;
 
-                const newOrder = {
-                    id: generateUUID(),
-                    trackingNumber: trackingNum,
-                    date: new Date().toISOString().split('T')[0],
-                    payee: args.payee,
-                    totalAmount: amount,
-                    description: args.description || 'ثبت شده از طریق واتساپ',
-                    status: 'در انتظار بررسی مالی',
-                    requester: `WhatsApp User (${msg.from.replace('@c.us', '').slice(0,5)}...)`,
-                    payingCompany: args.company || db.settings.defaultCompany || db.settings.companyNames?.[0] || 'شرکت اصلی',
-                    paymentDetails: [{
+                    const newOrder = {
                         id: generateUUID(),
-                        method: 'حواله بانکی',
-                        amount: amount,
-                        bankName: args.bank || '',
-                        description: 'ثبت خودکار'
-                    }],
-                    createdAt: Date.now()
-                };
+                        trackingNumber: trackingNum,
+                        date: new Date().toISOString().split('T')[0],
+                        payee: args.payee,
+                        totalAmount: amount,
+                        description: args.description || 'ثبت شده از طریق واتساپ',
+                        status: 'در انتظار بررسی مالی',
+                        requester: `WhatsApp User (${msg.from.replace('@c.us', '').slice(0,5)}...)`,
+                        payingCompany: args.company || db.settings.defaultCompany || db.settings.companyNames?.[0] || 'شرکت اصلی',
+                        paymentDetails: [{
+                            id: generateUUID(),
+                            method: 'حواله بانکی',
+                            amount: amount,
+                            bankName: args.bank || '',
+                            description: 'ثبت خودکار'
+                        }],
+                        createdAt: Date.now()
+                    };
 
-                db.orders.unshift(newOrder);
-                saveDb(db);
-                msg.reply(`✅ *دستور پرداخت با موفقیت ثبت شد*\n\n🔢 شماره: ${trackingNum}\n👤 ذینفع: ${args.payee}\n💰 مبلغ: ${formatCurrency(amount)}\n📝 بابت: ${newOrder.description}\n🏦 بانک: ${args.bank || 'تعیین نشده'}`);
-            }
-
-            // --- COMMAND: CREATE BIJAK ---
-            else if (intent === 'CREATE_BIJAK') {
-                const company = db.settings.defaultCompany || (db.settings.companyNames?.[0]) || 'نامشخص';
-                const currentSeq = db.settings.warehouseSequences?.[company] || 1000;
-                const nextSeq = currentSeq + 1;
-                db.settings.warehouseSequences = { ...db.settings.warehouseSequences, [company]: nextSeq };
-
-                const newTx = {
-                    id: generateUUID(),
-                    type: 'OUT',
-                    date: new Date().toISOString(),
-                    company: company,
-                    number: nextSeq,
-                    recipientName: args.recipient,
-                    destination: args.address || '',
-                    driverName: args.driver || '',
-                    plateNumber: args.plate || '',
-                    items: [{
-                        itemId: generateUUID(),
-                        itemName: args.itemName || 'کالای عمومی',
-                        quantity: Number(args.count) || 1,
-                        weight: 0,
-                        unitPrice: 0
-                    }],
-                    createdAt: Date.now(),
-                    createdBy: `WhatsApp User`
-                };
-
-                db.warehouseTransactions.unshift(newTx);
-                saveDb(db);
-                msg.reply(`📦 *حواله خروج (بیجک) صادر شد*\n\n📄 شماره: ${nextSeq}\n👤 گیرنده: ${args.recipient}\n📦 کالا: ${args.itemName} (${args.count})\n🚛 راننده: ${args.driver || '-'}\n🔢 پلاک: ${args.plate || '-'}`);
-            }
-
-            // --- COMMAND: REPORT (DETAILED) ---
-            else if (intent === 'REPORT') {
-                // 1. Payments Report
-                const pendingOrders = db.orders.filter(o => o.status !== 'تایید نهایی' && o.status !== 'رد شده');
-                
-                let paymentMsg = `📊 *گزارش کارتابل دستور پرداخت‌ها*\nوضعیت: ${new Date().toLocaleDateString('fa-IR')}\n---------------------------`;
-                if (pendingOrders.length === 0) {
-                    paymentMsg += "\n✅ هیچ دستور پرداخت بازی وجود ندارد.";
-                } else {
-                    pendingOrders.forEach(o => {
-                        paymentMsg += `\n🔹 *شماره: ${o.trackingNumber}*`;
-                        paymentMsg += `\n👤 ذینفع: ${o.payee}`;
-                        paymentMsg += `\n💰 مبلغ: ${formatCurrency(o.totalAmount)}`;
-                        paymentMsg += `\n📝 بابت: ${o.description}`;
-                        paymentMsg += `\n👤 ثبت‌کننده: ${o.requester}`;
-                        paymentMsg += `\n⏳ وضعیت: ${o.status}`;
-                        paymentMsg += `\n---------------------------`;
-                    });
-                }
-                await msg.reply(paymentMsg);
-
-                // 2. Exits (Bijak) Report (Separate Message)
-                const pendingExits = db.exitPermits.filter(p => p.status !== 'خارج شده (بایگانی)' && p.status !== 'رد شده');
-                const recentBijaks = db.warehouseTransactions.filter(t => t.type === 'OUT').slice(0, 5); // Last 5 Bijaks
-
-                let exitMsg = `🚛 *گزارش حواله و خروج کالا*\n---------------------------`;
-                
-                if (pendingExits.length > 0) {
-                    exitMsg += `\n🔴 *مجوزهای خروج در انتظار:*`;
-                    pendingExits.forEach(p => {
-                        exitMsg += `\n🔸 مجوز #${p.permitNumber} | گیرنده: ${p.recipientName}`;
-                        exitMsg += `\n   وضعیت: ${p.status}`;
-                    });
-                    exitMsg += `\n---------------------------`;
-                }
-
-                exitMsg += `\n📦 *آخرین بیجک‌های صادر شده:*`;
-                recentBijaks.forEach(b => {
-                    const itemSummary = b.items.map(i => `${i.quantity} ${i.itemName}`).join('، ');
-                    exitMsg += `\n🔹 بیجک #${b.number} | ${itemSummary}`;
-                    exitMsg += `\n   گیرنده: ${b.recipientName}`;
-                    if(b.driverName) exitMsg += ` | راننده: ${b.driverName}`;
-                });
-
-                // Small delay to ensure order
-                setTimeout(() => msg.reply(exitMsg), 500);
-            }
-
-            // --- COMMAND: APPROVE ---
-            else if (intent === 'APPROVE_ORDER') {
-                const order = db.orders.find(o => o.trackingNumber == args.trackingNumber);
-                if (order) {
-                    // Simple state machine for approval
-                    if (order.status === 'در انتظار بررسی مالی') order.status = 'تایید مالی / در انتظار مدیریت';
-                    else if (order.status === 'تایید مالی / در انتظار مدیریت') order.status = 'تایید مدیریت / در انتظار مدیرعامل';
-                    else if (order.status === 'تایید مدیریت / در انتظار مدیرعامل') order.status = 'تایید نهایی';
-                    
+                    db.orders.unshift(newOrder);
                     saveDb(db);
-                    msg.reply(`✅ دستور پرداخت ${args.trackingNumber} به مرحله "${order.status}" منتقل شد.`);
-                } else {
-                    msg.reply("❌ شماره سند یافت نشد.");
+                    msg.reply(`✅ *دستور پرداخت با موفقیت ثبت شد*\n\n🔢 شماره: ${trackingNum}\n👤 ذینفع: ${args.payee}\n💰 مبلغ: ${formatCurrency(amount)}\n📝 بابت: ${newOrder.description}\n🏦 بانک: ${args.bank || 'تعیین نشده'}`);
                 }
-            }
 
+                // --- COMMAND: CREATE BIJAK ---
+                else if (intent === 'CREATE_BIJAK') {
+                    const company = db.settings.defaultCompany || (db.settings.companyNames?.[0]) || 'نامشخص';
+                    const currentSeq = db.settings.warehouseSequences?.[company] || 1000;
+                    const nextSeq = currentSeq + 1;
+                    db.settings.warehouseSequences = { ...db.settings.warehouseSequences, [company]: nextSeq };
+
+                    const newTx = {
+                        id: generateUUID(),
+                        type: 'OUT',
+                        date: new Date().toISOString(),
+                        company: company,
+                        number: nextSeq,
+                        recipientName: args.recipient,
+                        destination: args.address || '',
+                        driverName: args.driver || '',
+                        plateNumber: args.plate || '',
+                        items: [{
+                            itemId: generateUUID(),
+                            itemName: args.itemName || 'کالای عمومی',
+                            quantity: Number(args.count) || 1,
+                            weight: 0,
+                            unitPrice: 0
+                        }],
+                        createdAt: Date.now(),
+                        createdBy: `WhatsApp User`
+                    };
+
+                    db.warehouseTransactions.unshift(newTx);
+                    saveDb(db);
+                    msg.reply(`📦 *حواله خروج (بیجک) صادر شد*\n\n📄 شماره: ${nextSeq}\n👤 گیرنده: ${args.recipient}\n📦 کالا: ${args.itemName} (${args.count})\n🚛 راننده: ${args.driver || '-'}\n🔢 پلاک: ${args.plate || '-'}`);
+                }
+
+                // --- COMMAND: REPORT (DETAILED) ---
+                else if (intent === 'REPORT') {
+                    // 1. Payments Report
+                    const pendingOrders = db.orders.filter(o => o.status !== 'تایید نهایی' && o.status !== 'رد شده');
+                    
+                    let paymentMsg = `📊 *گزارش کارتابل دستور پرداخت‌ها*\nوضعیت: ${new Date().toLocaleDateString('fa-IR')}\n---------------------------`;
+                    if (pendingOrders.length === 0) {
+                        paymentMsg += "\n✅ هیچ دستور پرداخت بازی وجود ندارد.";
+                    } else {
+                        pendingOrders.forEach(o => {
+                            paymentMsg += `\n🔹 *شماره: ${o.trackingNumber}*`;
+                            paymentMsg += `\n👤 ذینفع: ${o.payee}`;
+                            paymentMsg += `\n💰 مبلغ: ${formatCurrency(o.totalAmount)}`;
+                            paymentMsg += `\n📝 بابت: ${o.description}`;
+                            paymentMsg += `\n👤 ثبت‌کننده: ${o.requester}`;
+                            paymentMsg += `\n⏳ وضعیت: ${o.status}`;
+                            paymentMsg += `\n---------------------------`;
+                        });
+                    }
+                    await msg.reply(paymentMsg);
+
+                    // 2. Exits (Bijak) Report (Separate Message)
+                    const pendingExits = db.exitPermits.filter(p => p.status !== 'خارج شده (بایگانی)' && p.status !== 'رد شده');
+                    const recentBijaks = db.warehouseTransactions.filter(t => t.type === 'OUT').slice(0, 5); // Last 5 Bijaks
+
+                    let exitMsg = `🚛 *گزارش حواله و خروج کالا*\n---------------------------`;
+                    
+                    if (pendingExits.length > 0) {
+                        exitMsg += `\n🔴 *مجوزهای خروج در انتظار:*`;
+                        pendingExits.forEach(p => {
+                            exitMsg += `\n🔸 مجوز #${p.permitNumber} | گیرنده: ${p.recipientName}`;
+                            exitMsg += `\n   وضعیت: ${p.status}`;
+                        });
+                        exitMsg += `\n---------------------------`;
+                    }
+
+                    exitMsg += `\n📦 *آخرین بیجک‌های صادر شده:*`;
+                    recentBijaks.forEach(b => {
+                        const itemSummary = b.items.map(i => `${i.quantity} ${i.itemName}`).join('، ');
+                        exitMsg += `\n🔹 بیجک #${b.number} | ${itemSummary}`;
+                        exitMsg += `\n   گیرنده: ${b.recipientName}`;
+                        if(b.driverName) exitMsg += ` | راننده: ${b.driverName}`;
+                    });
+
+                    // Small delay to ensure order
+                    setTimeout(() => msg.reply(exitMsg), 500);
+                }
+
+                // --- COMMAND: APPROVE ---
+                else if (intent === 'APPROVE_ORDER') {
+                    const order = db.orders.find(o => o.trackingNumber == args.trackingNumber);
+                    if (order) {
+                        // Simple state machine for approval
+                        if (order.status === 'در انتظار بررسی مالی') order.status = 'تایید مالی / در انتظار مدیریت';
+                        else if (order.status === 'تایید مالی / در انتظار مدیریت') order.status = 'تایید مدیریت / در انتظار مدیرعامل';
+                        else if (order.status === 'تایید مدیریت / در انتظار مدیرعامل') order.status = 'تایید نهایی';
+                        
+                        saveDb(db);
+                        msg.reply(`✅ دستور پرداخت ${args.trackingNumber} به مرحله "${order.status}" منتقل شد.`);
+                    } else {
+                        msg.reply("❌ شماره سند یافت نشد.");
+                    }
+                }
+            } catch (error) {
+                console.error("Error processing message:", error);
+                // Optional: msg.reply("خطا در پردازش درخواست.");
+            }
         });
 
         client.initialize().catch(e => console.error(">>> WA Init Fail:", e.message));
