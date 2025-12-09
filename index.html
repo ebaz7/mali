@@ -29,40 +29,35 @@
       
       @media print {
         @page {
-          size: landscape;
-          margin: 0;
+          size: auto;
+          margin: 0mm;
         }
         
         body {
-          margin: 0;
-          padding: 0;
           background: white;
-          overflow: visible;
+          height: auto;
         }
 
-        /* Hide everything by default */
-        body > * {
-          display: none !important;
+        /* Hide everything by changing visibility, keeping layout flow if needed, 
+           but absolute positioning of print area overrides flow */
+        body * {
+          visibility: hidden;
         }
 
-        /* Only show the print area */
+        /* Force show the print area and its children */
+        #print-area, #print-area * {
+          visibility: visible !important;
+        }
+
         #print-area {
-          display: block !important;
-          position: fixed;
-          top: 0;
-          right: 0;
+          position: absolute;
           left: 0;
-          width: 100% !important;
-          height: auto !important;
-          margin: 0 !important;
-          padding: 10mm !important;
-          background: white;
+          top: 0;
+          width: 100%;
+          margin: 0;
+          padding: 5mm;
           z-index: 9999;
-          visibility: visible !important;
-        }
-
-        #print-area * {
-          visibility: visible !important;
+          background: white;
         }
 
         .no-print {
