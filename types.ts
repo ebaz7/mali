@@ -27,7 +27,8 @@ export enum UserRole {
   MANAGER = 'manager',    
   FINANCIAL = 'financial',
   SALES_MANAGER = 'sales_manager', 
-  FACTORY_MANAGER = 'factory_manager', 
+  FACTORY_MANAGER = 'factory_manager',
+  WAREHOUSE_KEEPER = 'warehouse_keeper', // Added Role
   USER = 'user'           
 }
 

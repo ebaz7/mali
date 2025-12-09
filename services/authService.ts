@@ -47,11 +47,14 @@ export const hasPermission = (user: User | null, permissionType: string): boolea
 
 export const getRolePermissions = (userRole: string, settings: SystemSettings | null, userObject?: User): RolePermissions => {
     const defaults: RolePermissions = {
-        canViewAll: userRole !== UserRole.USER && userRole !== UserRole.SALES_MANAGER,
+        canViewAll: userRole !== UserRole.USER && userRole !== UserRole.SALES_MANAGER && userRole !== UserRole.WAREHOUSE_KEEPER,
         
         // Default View Permissions
-        canViewPaymentOrders: userRole !== UserRole.FACTORY_MANAGER, // Factory Manager usually doesn't need payments
-        canViewExitPermits: userRole === UserRole.ADMIN || userRole === UserRole.CEO || userRole === UserRole.SALES_MANAGER || userRole === UserRole.FACTORY_MANAGER,
+        // Warehouse keeper doesn't need to see payment orders by default
+        canViewPaymentOrders: userRole !== UserRole.FACTORY_MANAGER && userRole !== UserRole.WAREHOUSE_KEEPER, 
+        
+        // Warehouse keeper and Factory Manager need to see exit permits
+        canViewExitPermits: userRole === UserRole.ADMIN || userRole === UserRole.CEO || userRole === UserRole.SALES_MANAGER || userRole === UserRole.FACTORY_MANAGER || userRole === UserRole.WAREHOUSE_KEEPER,
 
         canApproveFinancial: userRole === UserRole.FINANCIAL || userRole === UserRole.ADMIN,
         canApproveManager: userRole === UserRole.MANAGER || userRole === UserRole.ADMIN,
@@ -61,12 +64,20 @@ export const getRolePermissions = (userRole: string, settings: SystemSettings | 
         canEditAll: userRole === UserRole.ADMIN || userRole === UserRole.CEO,
         canDeleteOwn: true,
         canDeleteAll: userRole === UserRole.ADMIN,
-        canManageTrade: userRole === UserRole.ADMIN || userRole === UserRole.CEO || userRole === UserRole.MANAGER,
+        
+        // Sales Manager, CEO, Manager, Admin can manage trade
+        canManageTrade: userRole === UserRole.ADMIN || userRole === UserRole.CEO || userRole === UserRole.MANAGER || userRole === UserRole.SALES_MANAGER,
+        
         canManageSettings: userRole === UserRole.ADMIN,
         
-        canCreateExitPermit: userRole === UserRole.SALES_MANAGER || userRole === UserRole.ADMIN,
+        // Sales Manager creates requests
+        canCreateExitPermit: userRole === UserRole.SALES_MANAGER || userRole === UserRole.ADMIN || userRole === UserRole.CEO,
         canApproveExitCeo: userRole === UserRole.CEO || userRole === UserRole.ADMIN,
-        canApproveExitFactory: userRole === UserRole.FACTORY_MANAGER || userRole === UserRole.ADMIN
+        canApproveExitFactory: userRole === UserRole.FACTORY_MANAGER || userRole === UserRole.ADMIN,
+        
+        // Warehouse Permissions
+        canManageWarehouse: userRole === UserRole.ADMIN || userRole === UserRole.WAREHOUSE_KEEPER || userRole === UserRole.FACTORY_MANAGER, // Full Access
+        canViewWarehouseReports: userRole === UserRole.ADMIN || userRole === UserRole.WAREHOUSE_KEEPER || userRole === UserRole.FACTORY_MANAGER || userRole === UserRole.CEO || userRole === UserRole.SALES_MANAGER // Read Only
     };
 
     if (!settings || !settings.rolePermissions || !settings.rolePermissions[userRole]) {

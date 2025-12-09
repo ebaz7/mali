@@ -164,7 +164,17 @@ const Settings: React.FC = () => {
   const handleRestoreClick = () => { if (confirm('بازگردانی اطلاعات کامل (شامل عکس‌ها)؟ همه اطلاعات فعلی پاک می‌شود.')) fileInputRef.current?.click(); };
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => { const file = e.target.files?.[0]; if (!file) return; setRestoring(true); const reader = new FileReader(); reader.onload = async (ev) => { const base64 = ev.target?.result as string; try { const response = await apiCall<{success: boolean}>('/full-restore', 'POST', { fileData: base64 }); if (response.success) { alert('بازگردانی کامل با موفقیت انجام شد. سیستم رفرش می‌شود.'); window.location.reload(); } } catch (error) { alert('خطا در بازگردانی فایل Zip'); } finally { setRestoring(false); } }; reader.readAsDataURL(file); };
 
-  const roles = [ { id: UserRole.USER, label: 'کاربر عادی' }, { id: UserRole.FINANCIAL, label: 'مدیر مالی' }, { id: UserRole.MANAGER, label: 'مدیر داخلی' }, { id: UserRole.CEO, label: 'مدیر عامل' }, { id: UserRole.SALES_MANAGER, label: 'مدیر فروش' }, { id: UserRole.FACTORY_MANAGER, label: 'مدیر کارخانه' }, { id: UserRole.ADMIN, label: 'مدیر سیستم' }, ];
+  const roles = [ 
+      { id: UserRole.USER, label: 'کاربر عادی' }, 
+      { id: UserRole.FINANCIAL, label: 'مدیر مالی' }, 
+      { id: UserRole.MANAGER, label: 'مدیر داخلی' }, 
+      { id: UserRole.CEO, label: 'مدیر عامل' }, 
+      { id: UserRole.SALES_MANAGER, label: 'مدیر فروش' },
+      { id: UserRole.FACTORY_MANAGER, label: 'مدیر کارخانه' },
+      { id: UserRole.WAREHOUSE_KEEPER, label: 'انباردار' },
+      { id: UserRole.ADMIN, label: 'مدیر سیستم' }, 
+  ];
+  
   const permissionsList = [ 
       { id: 'canViewPaymentOrders', label: 'مشاهده کارتابل پرداخت' },
       { id: 'canViewExitPermits', label: 'مشاهده کارتابل خروج بار' },

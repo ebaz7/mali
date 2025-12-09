@@ -302,6 +302,25 @@ const WarehouseModule: React.FC<Props> = ({ currentUser, settings }) => {
 
     const handlePrintStock = () => { window.print(); };
 
+    const handleDownloadStockPDF = async () => {
+        const element = document.getElementById('stock-report-container');
+        if (!element) return;
+        setProcessingExport(true);
+        try {
+            // @ts-ignore
+            const canvas = await window.html2canvas(element, { scale: 2, backgroundColor: '#ffffff', useCORS: true });
+            const imgData = canvas.toDataURL('image/png');
+            // @ts-ignore
+            const { jsPDF } = window.jspdf;
+            const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+            const pdfWidth = pdf.internal.pageSize.getWidth();
+            const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+            pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
+            pdf.save(`Stock_Report_${new Date().toISOString().split('T')[0]}.pdf`);
+        } catch(e) { console.error(e); alert('خطا در ایجاد PDF'); }
+        finally { setProcessingExport(false); }
+    };
+
     if (!settings || loadingData) return <div className="flex flex-col items-center justify-center h-[50vh] text-gray-500 gap-2"><Loader2 className="animate-spin text-blue-600" size={32}/><span className="text-sm font-bold">در حال بارگذاری اطلاعات انبار...</span></div>;
     const companyList = settings.companyNames || [];
     if (companyList.length === 0) return (<div className="flex flex-col items-center justify-center h-[60vh] text-center p-6 animate-fade-in"><div className="bg-amber-100 p-4 rounded-full text-amber-600 mb-4 shadow-sm"><AlertTriangle size={48}/></div><h2 className="text-xl font-bold text-gray-800 mb-2">هنوز شرکتی تعریف نشده است</h2><p className="text-gray-600 max-w-md mb-6 leading-relaxed">برای استفاده از سیستم انبار (ثبت رسید و بیجک)، ابتدا باید نام شرکت‌ها را در بخش تنظیمات سیستم وارد کنید.</p><div className="flex gap-2"><button onClick={() => window.location.hash = '#settings'} className="bg-blue-600 text-white px-6 py-3 rounded-xl font-bold flex items-center gap-2 hover:bg-blue-700 transition-colors shadow-lg"><Settings size={20}/><span>رفتن به تنظیمات &gt; مدیریت شرکت‌ها</span></button></div></div>);
@@ -422,7 +441,7 @@ const WarehouseModule: React.FC<Props> = ({ currentUser, settings }) => {
                         <style>{`
                             @media print { 
                                 @page { size: landscape; margin: 0; }
-                                body { margin: 0; padding: 0; }
+                                body { margin: 0; padding: 0; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
                                 body * { visibility: hidden; }
                                 
                                 /* The Container */
@@ -439,18 +458,29 @@ const WarehouseModule: React.FC<Props> = ({ currentUser, settings }) => {
                                     padding: 5mm;
                                     background: white;
                                     z-index: 99999;
+                                    /* Slightly scale down to fit A4 if needed */
+                                    transform: scale(0.95);
+                                    transform-origin: top center;
                                 }
-                                /* Hide everything else explicitly to be safe */
+                                /* Ensure colors print */
+                                #stock-report-container .bg-yellow-300 { background-color: #fde047 !important; }
+                                #stock-report-container .bg-purple-300 { background-color: #d8b4fe !important; }
+                                #stock-report-container .bg-orange-300 { background-color: #fdba74 !important; }
+                                #stock-report-container .bg-blue-300 { background-color: #93c5fd !important; }
+                                #stock-report-container .bg-gray-100 { background-color: #f3f4f6 !important; }
+                                
                                 .no-print, .sidebar, header, .tabs { display: none !important; }
                             }
                         `}</style>
                         <div className="flex justify-between items-center mb-4 no-print">
                             <h2 className="text-xl font-bold">گزارش موجودی کلی انبارها (تفکیکی)</h2>
-                            <button onClick={handlePrintStock} className="bg-blue-600 text-white px-4 py-2 rounded flex items-center gap-2 hover:bg-blue-700"><Printer size={18}/> چاپ (افقی)</button>
+                            <div className="flex gap-2">
+                                <button onClick={handleDownloadStockPDF} disabled={processingExport} className="bg-red-600 text-white px-4 py-2 rounded flex items-center gap-2 hover:bg-red-700">{processingExport ? <Loader2 size={18} className="animate-spin"/> : <FileDown size={18}/>} دانلود PDF</button>
+                                <button onClick={handlePrintStock} className="bg-blue-600 text-white px-4 py-2 rounded flex items-center gap-2 hover:bg-blue-700"><Printer size={18}/> چاپ (افقی)</button>
+                            </div>
                         </div>
                         
                         <div id="stock-report-container" className="bg-white p-2 shadow-lg mx-auto w-full md:w-[297mm] min-h-[210mm]">
-                             {/* The Grid Content matching previous "shape" */}
                              {/* Header */}
                             <div className="text-center bg-yellow-300 border border-black py-1 mb-1 font-black text-lg">موجودی بنگاه ها</div>
                             
