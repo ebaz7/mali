@@ -37,6 +37,8 @@
           background: white;
           height: auto;
           overflow: visible;
+          -webkit-print-color-adjust: exact;
+          print-color-adjust: exact;
         }
 
         /* Hide everything by default */
@@ -45,19 +47,19 @@
         }
 
         /* Specifically show the print area */
-        #print-area, #print-area * {
+        #print-area, #print-area *, #print-area-exit, #print-area-exit * {
           visibility: visible !important;
         }
 
-        #print-area {
-          position: fixed; /* Fixed ensures it starts at top-left of page 1 */
+        #print-area, #print-area-exit {
+          position: absolute;
           left: 0;
           top: 0;
           width: 100%;
           margin: 0;
           padding: 5mm;
           z-index: 99999;
-          background: white;
+          background: white !important;
           display: block !important;
         }
 

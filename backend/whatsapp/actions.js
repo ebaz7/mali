@@ -16,6 +16,7 @@ const saveDb = (data) => {
 
 const generateUUID = () => Date.now().toString(36) + Math.random().toString(36).substr(2);
 const formatCurrency = (amount) => new Intl.NumberFormat('fa-IR').format(amount) + ' ریال';
+const formatDate = () => new Date().toLocaleDateString('fa-IR');
 
 // --- ACTIONS ---
 
@@ -25,7 +26,7 @@ export const handleCreatePayment = (db, args) => {
     
     const amount = typeof args.amount === 'string' ? parseInt(args.amount.replace(/[^0-9]/g, '')) : args.amount;
     
-    // Create detailed payment structure
+    // Create detailed payment structure exactly like UI
     const newOrder = { 
         id: generateUUID(), 
         trackingNumber: trackingNum, 
@@ -39,10 +40,10 @@ export const handleCreatePayment = (db, args) => {
         paymentDetails: [
             {
                 id: generateUUID(), 
-                method: 'حواله بانکی', 
+                method: 'حواله بانکی', // Default to Transfer
                 amount: amount, 
                 bankName: args.bank || 'نامشخص',
-                description: 'ثبت خودکار'
+                description: args.description || 'ثبت خودکار'
             }
         ], 
         createdAt: Date.now() 
@@ -50,7 +51,7 @@ export const handleCreatePayment = (db, args) => {
     
     db.orders.unshift(newOrder);
     saveDb(db);
-    return `✅ *دستور پرداخت ثبت شد*\nشماره: ${trackingNum}\nمبلغ: ${formatCurrency(amount)}\nذینفع: ${args.payee}\nبانک: ${args.bank || '-'}`;
+    return `✅ *دستور پرداخت ثبت شد*\n🔹 شماره: ${trackingNum}\n💰 مبلغ: ${formatCurrency(amount)}\n👤 ذینفع: ${args.payee}\n🏦 بانک: ${args.bank || '-'}`;
 };
 
 export const handleCreateBijak = (db, args) => {
@@ -65,8 +66,9 @@ export const handleCreateBijak = (db, args) => {
         company: company, 
         number: nextSeq, 
         recipientName: args.recipient,
-        driverName: args.driver,   // Capture Driver
-        plateNumber: args.plate,   // Capture Plate
+        driverName: args.driver || '',   // Capture Driver
+        plateNumber: args.plate || '',   // Capture Plate
+        destination: args.destination || '', // Capture Destination if provided
         items: [
             {
                 itemId: generateUUID(), 
@@ -83,9 +85,9 @@ export const handleCreateBijak = (db, args) => {
     db.warehouseTransactions.unshift(newTx);
     saveDb(db);
     
-    let msg = `📦 *حواله خروج (بیجک) صادر شد*\nشماره: ${nextSeq}\nکالا: ${args.count} عدد ${args.itemName}\nگیرنده: ${args.recipient}`;
-    if (args.driver) msg += `\nراننده: ${args.driver}`;
-    if (args.plate) msg += `\nپلاک: ${args.plate}`;
+    let msg = `📦 *حواله خروج (بیجک) صادر شد*\n🔹 شماره: ${nextSeq}\n📦 کالا: ${args.count} عدد ${args.itemName}\n👤 گیرنده: ${args.recipient}`;
+    if (args.driver) msg += `\n🚛 راننده: ${args.driver}`;
+    if (args.plate) msg += `\n🔢 پلاک: ${args.plate}`;
     return msg;
 };
 
@@ -137,32 +139,49 @@ export const handleRejectExit = (db, number) => {
 export const handleReport = (db) => {
     const pendingOrders = db.orders.filter(o => o.status !== 'تایید نهایی' && o.status !== 'رد شده');
     const pendingExits = db.exitPermits.filter(p => p.status !== 'خارج شده (بایگانی)' && p.status !== 'رد شده');
+    const recentBijaks = db.warehouseTransactions.filter(t => t.type === 'OUT').slice(0, 5);
     
-    let report = `📊 *گزارش وضعیت سیستم*\n\n`;
+    let report = `📊 گزارش کارتابل دستور پرداخت‌ها\n`;
+    report += `وضعیت: ${formatDate()}\n`;
+    report += `---------------------------\n`;
     
     // Payments Detail
-    report += `💰 *دستور پرداخت‌های باز (${pendingOrders.length}):*\n`;
     if (pendingOrders.length > 0) {
-        pendingOrders.slice(0, 5).forEach(o => {
-            report += `- #${o.trackingNumber} | ${o.payee} | ${formatCurrency(o.totalAmount)}\n  وضعیت: ${o.status}\n`;
+        pendingOrders.forEach(o => {
+            report += `🔹 شماره: ${o.trackingNumber}\n`;
+            report += `👤 ذینفع: ${o.payee}\n`;
+            report += `💰 مبلغ: ${formatCurrency(o.totalAmount)}\n`;
+            report += `📝 بابت: ${o.description || '-'}\n`;
+            report += `👤 ثبت‌کننده: ${o.requester}\n`;
+            report += `⏳ وضعیت: ${o.status}\n`;
+            report += `---------------------------\n`;
         });
-        if (pendingOrders.length > 5) report += `... و ${pendingOrders.length - 5} مورد دیگر\n`;
     } else {
-        report += "موردی نیست.\n";
+        report += "هیچ دستور پرداخت بازی وجود ندارد.\n---------------------------\n";
     }
     
-    report += `\n----------------\n\n`;
+    report += `🚛 گزارش حواله و خروج کالا\n`;
+    report += `---------------------------\n`;
 
-    // Exits Detail
-    report += `🚛 *مجوزهای خروج باز (${pendingExits.length}):*\n`;
+    // Exits Detail (Permits)
     if (pendingExits.length > 0) {
-        pendingExits.slice(0, 5).forEach(p => {
-            const items = p.items?.map(i => i.goodsName).join(',') || p.goodsName || 'کالا';
-            report += `- #${p.permitNumber} | ${items} | ${p.recipientName}\n  وضعیت: ${p.status}\n`;
+        report += `🔴 مجوزهای خروج در انتظار:\n`;
+        pendingExits.forEach(p => {
+            const items = p.items?.map(i => i.goodsName).join('، ') || p.goodsName || 'کالا';
+            report += `🔸 مجوز #${p.permitNumber} | گیرنده: ${p.recipientName}\n`;
+            report += `   وضعیت: ${p.status}\n`;
         });
-        if (pendingExits.length > 5) report += `... و ${pendingExits.length - 5} مورد دیگر\n`;
-    } else {
-        report += "موردی نیست.\n";
+        report += `---------------------------\n`;
+    }
+
+    // Recent Bijaks
+    if (recentBijaks.length > 0) {
+        report += `📦 آخرین بیجک‌های صادر شده:\n`;
+        recentBijaks.forEach(b => {
+            const itemsSummary = b.items.map(i => `${i.quantity} ${i.itemName}`).join('، ');
+            report += `🔹 بیجک #${b.number} | ${itemsSummary}\n`;
+            report += `   گیرنده: ${b.recipientName}\n`;
+        });
     }
 
     return report;
