@@ -68,12 +68,12 @@ const findNextAvailableNumber = (arr, key, base) => {
 // --- INITIALIZE BOTS ---
 const db = getDb();
 
-// 1. Telegram (Initialize immediately if token exists)
+// 1. Telegram
 if (db.settings?.telegramBotToken) {
     initTelegram(db.settings.telegramBotToken);
 }
 
-// 2. WhatsApp (Initialize with delay to let server start)
+// 2. WhatsApp
 setTimeout(() => {
     initWhatsApp(WAUTH_DIR);
 }, 3000);
@@ -81,21 +81,23 @@ setTimeout(() => {
 
 // --- SMART NOTIFICATION LOGIC ---
 
-// Find a user by role to get their phone number
+// Find a user phone by role
 const findUserPhoneByRole = (db, role) => {
-    // Priority: Specific setting (like defaultSalesManager) -> User with Role
     const user = db.users.find(u => u.role === role && u.phoneNumber);
     return user ? user.phoneNumber : null;
 };
 
-// Find user by name to get phone
+// Find user phone by name
 const findUserPhoneByName = (db, fullName) => {
     const user = db.users.find(u => u.fullName === fullName && u.phoneNumber);
     return user ? user.phoneNumber : null;
 };
 
 const sendSmartNotification = async (targetNumber, message) => {
-    if (!targetNumber) return;
+    if (!targetNumber) {
+        console.log(">>> Notification Skipped: No target number provided.");
+        return;
+    }
     try {
         console.log(`>>> Sending Smart Notification to ${targetNumber}`);
         await sendWhatsAppMessage(targetNumber, message);
@@ -110,7 +112,7 @@ const formatCurrency = (amount) => {
 
 // --- ROUTES ---
 
-// 1. Order Routes with Auto-Notification
+// 1. Order Routes
 app.get('/api/orders', (req, res) => res.json(getDb().orders));
 app.post('/api/orders', (req, res) => {
     const db = getDb();
@@ -153,17 +155,17 @@ app.put('/api/orders/:id', async (req, res) => {
                 let msg = '';
 
                 // 1. Financial Approved -> Notify Manager
-                if (newStatus === 'تایید مالی / در انتظار مدیریت') { // OrderStatus.APPROVED_FINANCE
+                if (newStatus === 'تایید مالی / در انتظار مدیریت') {
                     targetPhone = findUserPhoneByRole(db, 'manager'); 
                     msg = `✅ *تایید مالی انجام شد*\nدستور پرداخت: ${newOrder.trackingNumber}\nمبلغ: ${formatCurrency(newOrder.totalAmount)}\n\nمنتظر تایید مدیریت.`;
                 }
                 // 2. Manager Approved -> Notify CEO
-                else if (newStatus === 'تایید مدیریت / در انتظار مدیرعامل') { // OrderStatus.APPROVED_MANAGER
-                    targetPhone = findUserPhoneByRole(db, 'ceo') || db.settings?.defaultSalesManager; // Fallback
+                else if (newStatus === 'تایید مدیریت / در انتظار مدیرعامل') {
+                    targetPhone = findUserPhoneByRole(db, 'ceo') || db.settings?.defaultSalesManager; 
                     msg = `✅ *تایید مدیریت انجام شد*\nدستور پرداخت: ${newOrder.trackingNumber}\nمبلغ: ${formatCurrency(newOrder.totalAmount)}\nذی‌نفع: ${newOrder.payee}\n\nمنتظر تایید نهایی مدیرعامل.`;
                 }
-                // 3. CEO Approved -> Notify Requester & Finance (for action)
-                else if (newStatus === 'تایید نهایی') { // OrderStatus.APPROVED_CEO
+                // 3. CEO Approved -> Notify Requester & Finance
+                else if (newStatus === 'تایید نهایی') {
                     // Notify Requester
                     const reqPhone = findUserPhoneByName(db, newOrder.requester);
                     if (reqPhone) {
@@ -174,7 +176,7 @@ app.put('/api/orders/:id', async (req, res) => {
                     msg = `💰 *دستور پرداخت تایید نهایی شد*\nشماره: ${newOrder.trackingNumber}\nمبلغ: ${formatCurrency(newOrder.totalAmount)}\n\nلطفا نسبت به پرداخت اقدام نمایید.`;
                 }
                 // 4. Rejected -> Notify Requester
-                else if (newStatus === 'رد شده') { // OrderStatus.REJECTED
+                else if (newStatus === 'رد شده') {
                     targetPhone = findUserPhoneByName(db, newOrder.requester);
                     msg = `⛔ *درخواست پرداخت رد شد*\nشماره: ${newOrder.trackingNumber}\nدلیل: ${newOrder.rejectionReason || 'نامشخص'}`;
                 }
@@ -196,7 +198,7 @@ app.delete('/api/orders/:id', (req, res) => { const db = getDb(); db.orders = db
 app.get('/api/next-tracking-number', (req, res) => res.json({ nextTrackingNumber: findNextAvailableNumber(getDb().orders, 'trackingNumber', getDb().settings.currentTrackingNumber || 1000) }));
 
 
-// 2. Exit Permit Routes with Auto-Notification
+// 2. Exit Permit Routes
 app.get('/api/exit-permits', (req, res) => res.json(getDb().exitPermits));
 app.post('/api/exit-permits', (req, res) => {
     const db = getDb();
@@ -237,12 +239,12 @@ app.put('/api/exit-permits/:id', async (req, res) => {
             let msg = '';
 
             // CEO Approved -> Notify Factory Manager
-            if (newStatus === 'تایید مدیرعامل / در انتظار خروج (کارخانه)') { // ExitPermitStatus.PENDING_FACTORY
+            if (newStatus === 'تایید مدیرعامل / در انتظار خروج (کارخانه)') {
                 targetPhone = findUserPhoneByRole(db, 'factory_manager');
                 msg = `🏭 *مجوز خروج تایید شد*\nشماره: ${newPermit.permitNumber}\nراننده: ${newPermit.driverName || '-'}\nپلاک: ${newPermit.plateNumber || '-'}\n\nمجاز به خروج از درب کارخانه.`;
             }
             // Exited -> Notify Sales Manager / Requester
-            else if (newStatus === 'خارج شده (بایگانی)') { // ExitPermitStatus.EXITED
+            else if (newStatus === 'خارج شده (بایگانی)') {
                 targetPhone = findUserPhoneByName(db, newPermit.requester);
                 msg = `✅ *بار خارج شد*\nمجوز شماره: ${newPermit.permitNumber}\nوضعیت: خروج از کارخانه ثبت شد.`;
             }
@@ -259,7 +261,7 @@ app.delete('/api/exit-permits/:id', (req, res) => { const db = getDb(); db.exitP
 app.get('/api/next-exit-permit-number', (req, res) => res.json({ nextNumber: findNextAvailableNumber(getDb().exitPermits, 'permitNumber', getDb().settings.currentExitPermitNumber || 1000) }));
 
 
-// 3. Warehouse Routes with Auto-Notification (Bijak)
+// 3. Warehouse Routes
 app.get('/api/warehouse/items', (req, res) => res.json(getDb().warehouseItems));
 app.post('/api/warehouse/items', (req, res) => { const db = getDb(); const item = req.body; item.id = item.id || Date.now().toString(); db.warehouseItems.push(item); saveDb(db); res.json(db.warehouseItems); });
 app.delete('/api/warehouse/items/:id', (req, res) => { const db = getDb(); db.warehouseItems = db.warehouseItems.filter(x => x.id !== req.params.id); saveDb(db); res.json(db.warehouseItems); });
@@ -285,11 +287,11 @@ app.post('/api/warehouse/transactions', async (req, res) => {
     if (tx.type === 'OUT') {
         const msg = `📦 *حواله خروج (بیجک) صادر شد*\nشرکت: ${tx.company}\nشماره بیجک: ${tx.number}\nگیرنده: ${tx.recipientName}\nتعداد اقلام: ${tx.items.length}\nراننده: ${tx.driverName || '-'}`;
         
-        // 1. Notify Warehouse Group (if defined)
+        // Notify Warehouse Group
         if (db.settings.defaultWarehouseGroup) {
             sendSmartNotification(db.settings.defaultWarehouseGroup, msg);
         }
-        // 2. Notify Sales Manager (if defined)
+        // Notify Sales Manager
         if (db.settings.defaultSalesManager) {
             sendSmartNotification(db.settings.defaultSalesManager, msg);
         }
@@ -312,7 +314,6 @@ app.post('/api/settings', (req, res) => {
     const db = getDb(); 
     db.settings = req.body; 
     saveDb(db); 
-    // Re-init Telegram if token changed
     if (req.body.telegramBotToken) initTelegram(req.body.telegramBotToken);
     res.json(db.settings); 
 });
@@ -324,7 +325,7 @@ app.post('/api/trade', (req, res) => { const db = getDb(); const t = req.body; t
 app.put('/api/trade/:id', (req, res) => { const db = getDb(); const idx = db.tradeRecords.findIndex(x => x.id === req.params.id); if(idx!==-1){ db.tradeRecords[idx] = {...db.tradeRecords[idx], ...req.body}; saveDb(db); res.json(db.tradeRecords); } else res.sendStatus(404); });
 app.delete('/api/trade/:id', (req, res) => { const db = getDb(); db.tradeRecords = db.tradeRecords.filter(x => x.id !== req.params.id); saveDb(db); res.json(db.tradeRecords); });
 
-// Standard Group/Task routes... (omitted for brevity but assumed present in standard REST pattern)
+// Standard Group/Task routes
 ['groups', 'tasks'].forEach(key => {
     app.get(`/api/${key}`, (req, res) => res.json(getDb()[key]));
     app.post(`/api/${key}`, (req, res) => { const db = getDb(); const i = req.body; i.id = i.id || Date.now().toString(); db[key].push(i); saveDb(db); res.json(db[key]); });
@@ -353,7 +354,7 @@ app.get('/api/whatsapp/groups', async (req, res) => {
     }
 });
 
-// Gemini Route
+// --- GEMINI AI ROUTE (FIXED FOR @google/genai) ---
 app.post('/api/ai-request', async (req, res) => { 
     try { 
         const { message, audio, mimeType, username } = req.body;
@@ -378,12 +379,17 @@ app.post('/api/ai-request', async (req, res) => {
             parts.push({ text: message || "Hello" });
         }
 
-        const model = ai.getGenerativeModel({ model: "gemini-2.5-flash" });
-        const result = await model.generateContent({
+        // CORRECT NEW SYNTAX:
+        const response = await ai.models.generateContent({
+            model: "gemini-2.5-flash",
             contents: [{ role: 'user', parts }]
         });
 
-        res.json({ reply: result.response.text() }); 
+        // Use response.text directly (getter property, not function)
+        const responseText = response.text;
+        
+        res.json({ reply: responseText }); 
+
     } catch (e) { 
         console.error("AI Error:", e);
         res.status(500).json({ error: e.message }); 
