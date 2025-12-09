@@ -421,30 +421,27 @@ const WarehouseModule: React.FC<Props> = ({ currentUser, settings }) => {
                     <div className="flex flex-col h-full">
                         <style>{`
                             @media print { 
-                                @page { size: landscape; margin: 0; } 
-                                body, html { width: 100%; height: 100%; overflow: hidden; background: white; margin: 0; padding: 0; } 
+                                @page { size: landscape; margin: 0; }
+                                body { margin: 0; padding: 0; }
+                                body * { visibility: hidden; }
                                 
-                                /* Aggressively hide everything */
-                                body > * { visibility: hidden; height: 0; overflow: hidden; display: none !important; }
-                                
-                                /* Show ONLY the report container */
-                                #root { display: block !important; visibility: visible; height: auto; }
-                                #stock-report-print-container { 
-                                    visibility: visible !important;
-                                    display: block !important;
+                                /* The Container */
+                                #stock-report-container, #stock-report-container * {
+                                    visibility: visible;
+                                }
+                                #stock-report-container {
                                     position: fixed;
                                     top: 0;
                                     left: 0;
-                                    width: 297mm;
-                                    height: 210mm;
+                                    width: 100%;
+                                    height: 100%;
                                     margin: 0;
                                     padding: 5mm;
-                                    transform: scale(0.95);
-                                    transform-origin: center top;
                                     background: white;
-                                    z-index: 9999999;
+                                    z-index: 99999;
                                 }
-                                #stock-report-print-container * { visibility: visible !important; }
+                                /* Hide everything else explicitly to be safe */
+                                .no-print, .sidebar, header, .tabs { display: none !important; }
                             }
                         `}</style>
                         <div className="flex justify-between items-center mb-4 no-print">
@@ -452,9 +449,9 @@ const WarehouseModule: React.FC<Props> = ({ currentUser, settings }) => {
                             <button onClick={handlePrintStock} className="bg-blue-600 text-white px-4 py-2 rounded flex items-center gap-2 hover:bg-blue-700"><Printer size={18}/> چاپ (افقی)</button>
                         </div>
                         
-                        {/* ID specifically for print target */}
-                        <div id="stock-report-print-container" className="bg-white p-2 shadow-lg mx-auto w-full md:w-[297mm] min-h-[210mm] print:shadow-none print:w-full print:p-1">
-                            {/* Header */}
+                        <div id="stock-report-container" className="bg-white p-2 shadow-lg mx-auto w-full md:w-[297mm] min-h-[210mm]">
+                             {/* The Grid Content matching previous "shape" */}
+                             {/* Header */}
                             <div className="text-center bg-yellow-300 border border-black py-1 mb-1 font-black text-lg">موجودی بنگاه ها</div>
                             
                             <div className="flex flex-row border border-black gap-0">
