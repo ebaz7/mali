@@ -57,7 +57,7 @@ const WarehouseModule: React.FC<Props> = ({ currentUser, settings }) => {
         await saveWarehouseTransaction(tx);
         await loadData();
         
-        // Auto Send Logic with Detailed Caption and Dual Images
+        // Auto Send Logic with Detailed Caption
         if(type === 'OUT') {
             setCreatedTxForAutoSend(tx);
             setTimeout(async () => {
@@ -67,13 +67,18 @@ const WarehouseModule: React.FC<Props> = ({ currentUser, settings }) => {
                 // Detailed Caption Construction
                 let caption = `📦 *حواله خروج کالا (بیجک)*\n`;
                 caption += `📄 شماره: ${tx.number}\n`;
-                caption += `📅 تاریخ: ${formatDate(tx.date)}\n`;
                 caption += `🏭 شرکت: ${tx.company}\n`;
+                caption += `📅 تاریخ: ${formatDate(tx.date)}\n`;
                 caption += `👤 گیرنده: ${tx.recipientName}\n`;
-                if(tx.driverName) caption += `🚛 راننده: ${tx.driverName}\n`;
-                if(tx.plateNumber) caption += `🔢 پلاک: ${tx.plateNumber}\n`;
-                caption += `📦 تعداد اقلام: ${tx.items.length} مورد\n`;
-                if(tx.destination) caption += `📍 مقصد: ${tx.destination}`;
+                
+                caption += `\n📝 *لیست اقلام:* \n`;
+                tx.items.forEach((item, idx) => {
+                    caption += `${idx + 1}. ${item.itemName} | تعداد: ${item.quantity}\n`;
+                });
+
+                if(tx.driverName) caption += `\n🚛 راننده: ${tx.driverName}`;
+                if(tx.plateNumber) caption += ` | پلاک: ${tx.plateNumber}`;
+                if(tx.destination) caption += `\n📍 مقصد: ${tx.destination}`;
 
                 if (settings) {
                     try {
@@ -105,7 +110,7 @@ const WarehouseModule: React.FC<Props> = ({ currentUser, settings }) => {
                     } catch(e) { console.error("Auto send error", e); }
                 }
                 setViewBijak(tx);
-            }, 1500); // 1.5s delay to ensure both components rendered
+            }, 1500); 
             
             setRecipientName(''); setDriverName(''); setPlateNumber(''); setDestination('');
         } else {

@@ -34,32 +34,34 @@
         }
         
         body {
-          background: white;
-          height: auto;
-          overflow: visible;
+          background-color: white !important;
           -webkit-print-color-adjust: exact;
           print-color-adjust: exact;
         }
 
-        /* Hide everything by default */
+        /* Hide EVERYTHING by default */
         body * {
           visibility: hidden;
+          height: 0;
+          overflow: hidden;
         }
 
-        /* Specifically show the print area */
-        #print-area, #print-area *, #print-area-exit, #print-area-exit * {
+        /* Only show specific printable content */
+        .printable-content, .printable-content * {
           visibility: visible !important;
+          height: auto !important;
+          overflow: visible !important;
         }
 
-        #print-area, #print-area-exit {
-          position: absolute;
+        .printable-content {
+          position: fixed;
           left: 0;
           top: 0;
-          width: 100%;
-          margin: 0;
-          padding: 5mm;
+          width: 100% !important;
           z-index: 99999;
-          background: white !important;
+          background-color: white !important;
+          margin: 0 !important;
+          padding: 5mm !important;
           display: block !important;
         }
 

@@ -124,7 +124,7 @@ const PrintBijak: React.FC<PrintBijakProps> = ({ tx, onClose, settings, embed, f
 
   // The Invoice Content
   const content = (
-      <div id={containerId} className="bg-white w-[148mm] min-h-[210mm] mx-auto p-6 shadow-2xl rounded-sm relative text-gray-900 flex flex-col print:shadow-none print:w-full print:h-auto" style={{ direction: 'rtl' }}>
+      <div id={containerId} className={`printable-content bg-white w-[148mm] mx-auto p-6 shadow-2xl rounded-sm relative text-gray-900 flex flex-col print:shadow-none print:w-full print:h-auto ${embed ? '' : 'min-h-[210mm]'}`} style={{ direction: 'rtl' }}>
             <div className="border-b-2 border-black pb-4 mb-4 flex justify-between items-start">
                 <div className="flex items-center gap-3">{companyLogo && <img src={companyLogo} className="w-16 h-16 object-contain"/>}<div><h1 className="text-xl font-black">{tx.company}</h1><p className="text-sm font-bold text-gray-600">حواله خروج کالا (بیجک)</p></div></div>
                 <div className="text-left space-y-1"><div className="text-lg font-black border-2 border-black px-3 py-1 rounded">NO: {tx.number}</div><div className="text-sm font-bold">تاریخ: {formatDate(tx.date)}</div></div>
