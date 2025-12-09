@@ -3,7 +3,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { User, SystemSettings, WarehouseItem, WarehouseTransaction, WarehouseTransactionItem } from '../types';
 import { getWarehouseItems, saveWarehouseItem, deleteWarehouseItem, getWarehouseTransactions, saveWarehouseTransaction, deleteWarehouseTransaction, updateWarehouseTransaction, getNextBijakNumber } from '../services/storageService';
 import { generateUUID, getCurrentShamsiDate, jalaliToGregorian, formatNumberString, deformatNumberString, formatDate, parsePersianDate, getShamsiDateFromIso } from '../constants';
-import { Package, Plus, Trash2, ArrowDownCircle, ArrowUpCircle, FileText, BarChart3, Eye, Loader2, AlertTriangle, Settings, ArrowLeftRight, Search, FileClock, Printer, FileDown, Share2, LayoutGrid, Archive, Edit, Save, X } from 'lucide-react';
+import { Package, Plus, Trash2, ArrowDownCircle, ArrowUpCircle, FileText, BarChart3, Eye, Loader2, AlertTriangle, Settings, ArrowLeftRight, Search, FileClock, Printer, FileDown, Share2, LayoutGrid, Archive, Edit, Save, X, Container } from 'lucide-react';
 import PrintBijak from './PrintBijak';
 import { apiCall } from '../services/apiService';
 
@@ -11,7 +11,7 @@ interface Props { currentUser: User; settings?: SystemSettings; }
 
 const WarehouseModule: React.FC<Props> = ({ currentUser, settings }) => {
     const [loadingData, setLoadingData] = useState(true);
-    const [activeTab, setActiveTab] = useState<'dashboard' | 'items' | 'entry' | 'exit' | 'reports' | 'stock_report' | 'archive'>('dashboard');
+    const [activeTab, setActiveTab] = useState<'dashboard' | 'items' | 'entry' | 'exit' | 'reports' | 'stock_report' | 'archive' | 'entry_archive'>('dashboard');
     const [items, setItems] = useState<WarehouseItem[]>([]);
     const [transactions, setTransactions] = useState<WarehouseTransaction[]>([]);
     
@@ -34,7 +34,8 @@ const WarehouseModule: React.FC<Props> = ({ currentUser, settings }) => {
     
     // View/Edit State
     const [viewBijak, setViewBijak] = useState<WarehouseTransaction | null>(null);
-    const [editingBijak, setEditingBijak] = useState<WarehouseTransaction | null>(null); // For Edit Modal
+    const [editingBijak, setEditingBijak] = useState<WarehouseTransaction | null>(null); // For Edit Modal (OUT)
+    const [editingReceipt, setEditingReceipt] = useState<WarehouseTransaction | null>(null); // For Edit Modal (IN)
     
     // Reports State
     const [reportFilterCompany, setReportFilterCompany] = useState('');
@@ -76,11 +77,19 @@ const WarehouseModule: React.FC<Props> = ({ currentUser, settings }) => {
                 const managerElement = document.getElementById(`print-bijak-${tx.id}-price`);
                 const warehouseElement = document.getElementById(`print-bijak-${tx.id}-noprice`);
                 
-                let caption = `📦 *حواله خروج کالا (بیجک)*\n📄 شماره: ${tx.number}\n🏭 شرکت: ${tx.company}\n📅 تاریخ: ${formatDate(tx.date)}\n👤 گیرنده: ${tx.recipientName}\n\n📝 *لیست اقلام:* \n`;
-                tx.items.forEach((item, idx) => { caption += `${idx + 1}. ${item.itemName} | تعداد: ${item.quantity}\n`; });
-                if(tx.driverName) caption += `\n🚛 راننده: ${tx.driverName}`;
-                if(tx.plateNumber) caption += ` | پلاک: ${tx.plateNumber}`;
-                if(tx.destination) caption += `\n📍 مقصد: ${tx.destination}`;
+                // UPDATED CAPTION GENERATION
+                let caption = `🏭 *شرکت: ${tx.company}*\n`;
+                caption += `📦 *حواله خروج کالا (بیجک)*\n`;
+                caption += `🔢 شماره: ${tx.number}\n`;
+                caption += `📅 تاریخ: ${formatDate(tx.date)}\n`;
+                caption += `👤 گیرنده: ${tx.recipientName}\n`;
+                caption += `------------------\n`;
+                caption += `📋 *لیست اقلام:* \n`;
+                tx.items.forEach((item, idx) => { caption += `${idx + 1}️⃣ ${item.itemName} | تعداد: ${item.quantity}\n`; });
+                caption += `------------------\n`;
+                if(tx.driverName) caption += `🚛 راننده: ${tx.driverName}\n`;
+                if(tx.plateNumber) caption += `🔢 پلاک: ${tx.plateNumber}\n`;
+                if(tx.destination) caption += `📍 مقصد: ${tx.destination}`;
 
                 if (settings) {
                     try {
@@ -110,7 +119,7 @@ const WarehouseModule: React.FC<Props> = ({ currentUser, settings }) => {
 
     const handleDeleteTx = async (id: string) => { if(confirm('حذف تراکنش؟')) { await deleteWarehouseTransaction(id); loadData(); } };
     
-    // --- EDIT BIJAK LOGIC ---
+    // --- EDIT BIJAK (OUT) LOGIC ---
     const handleEditBijakSave = async (updatedTx: WarehouseTransaction) => {
         try {
             await updateWarehouseTransaction(updatedTx);
@@ -122,9 +131,21 @@ const WarehouseModule: React.FC<Props> = ({ currentUser, settings }) => {
         }
     };
 
+    // --- EDIT RECEIPT (IN) LOGIC ---
+    const handleEditReceiptSave = async (updatedTx: WarehouseTransaction) => {
+        try {
+            await updateWarehouseTransaction(updatedTx);
+            setEditingReceipt(null);
+            loadData();
+            alert('رسید با موفقیت ویرایش شد.');
+        } catch (e) {
+            alert('خطا در ویرایش رسید');
+        }
+    };
+
     // --- KARDEX LOGIC (Sorted by Date) ---
     const kardexData = useMemo(() => {
-        if (!reportFilterCompany) return []; // Only show if company selected
+        if (!reportFilterCompany) return []; 
         let runningBalance = 0; 
         const movements: any[] = []; 
         transactions.forEach(tx => { 
@@ -144,35 +165,26 @@ const WarehouseModule: React.FC<Props> = ({ currentUser, settings }) => {
                 }); 
             }); 
         }); 
-        
-        // Sort Ascending Date for Running Balance
         movements.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()); 
-        
         const calculated = movements.map(m => { 
             if (m.type === 'IN') runningBalance += m.quantity; else runningBalance -= m.quantity; 
             return { ...m, balance: runningBalance }; 
         }); 
-        
-        // Return reverse for display (newest first) BUT running balance logic is correct
         return calculated.reverse(); 
     }, [transactions, reportFilterCompany, reportFilterItem]);
 
     // --- ALL WAREHOUSES REPORT LOGIC ---
     const allWarehousesStock = useMemo(() => {
-        const stockMap: Record<string, Record<string, number>> = {}; // Company -> ItemName -> Count
-        
+        const stockMap: Record<string, Record<string, number>> = {};
         transactions.forEach(tx => {
             const company = tx.company || 'نامشخص';
             if (!stockMap[company]) stockMap[company] = {};
-            
             tx.items.forEach(item => {
                 const current = stockMap[company][item.itemName] || 0;
                 if (tx.type === 'IN') stockMap[company][item.itemName] = current + item.quantity;
                 else stockMap[company][item.itemName] = current - item.quantity;
             });
         });
-
-        // Convert to array format
         return Object.entries(stockMap).map(([company, items]) => ({
             company,
             items: Object.entries(items).filter(([_, count]) => count !== 0).map(([name, count]) => ({ name, count }))
@@ -181,6 +193,7 @@ const WarehouseModule: React.FC<Props> = ({ currentUser, settings }) => {
 
     const recentBijaks = useMemo(() => transactions.filter(t => t.type === 'OUT').slice(0, 5), [transactions]);
     const filteredArchiveBijaks = useMemo(() => transactions.filter(t => t.type === 'OUT' && (!archiveFilterCompany || t.company === archiveFilterCompany) && (String(t.number).includes(reportSearch) || t.recipientName?.includes(reportSearch))), [transactions, archiveFilterCompany, reportSearch]);
+    const filteredArchiveReceipts = useMemo(() => transactions.filter(t => t.type === 'IN' && (!archiveFilterCompany || t.company === archiveFilterCompany) && (String(t.proformaNumber).includes(reportSearch))), [transactions, archiveFilterCompany, reportSearch]);
 
     // Export Handlers
     const handleExportKardexPDF = async () => {
@@ -216,9 +229,7 @@ const WarehouseModule: React.FC<Props> = ({ currentUser, settings }) => {
         } catch(e) { alert("خطا"); } finally { setProcessingExport(false); }
     };
 
-    const handlePrintStock = () => {
-        window.print();
-    };
+    const handlePrintStock = () => { window.print(); };
 
     if (!settings || loadingData) return <div className="flex flex-col items-center justify-center h-[50vh] text-gray-500 gap-2"><Loader2 className="animate-spin text-blue-600" size={32}/><span className="text-sm font-bold">در حال بارگذاری اطلاعات انبار...</span></div>;
     const companyList = settings.companyNames || [];
@@ -242,6 +253,7 @@ const WarehouseModule: React.FC<Props> = ({ currentUser, settings }) => {
                 <button onClick={() => setActiveTab('dashboard')} className={`px-4 py-2 rounded-lg text-sm font-bold whitespace-nowrap ${activeTab === 'dashboard' ? 'bg-white text-blue-600 shadow' : 'text-gray-600 hover:bg-gray-200'}`}>داشبورد</button>
                 <button onClick={() => setActiveTab('items')} className={`px-4 py-2 rounded-lg text-sm font-bold whitespace-nowrap ${activeTab === 'items' ? 'bg-white text-blue-600 shadow' : 'text-gray-600 hover:bg-gray-200'}`}>تعریف کالا</button>
                 <button onClick={() => setActiveTab('entry')} className={`px-4 py-2 rounded-lg text-sm font-bold whitespace-nowrap ${activeTab === 'entry' ? 'bg-white text-green-600 shadow' : 'text-gray-600 hover:bg-gray-200'}`}>ورود کالا (رسید)</button>
+                <button onClick={() => setActiveTab('entry_archive')} className={`px-4 py-2 rounded-lg text-sm font-bold whitespace-nowrap ${activeTab === 'entry_archive' ? 'bg-white text-emerald-600 shadow' : 'text-gray-600 hover:bg-gray-200'}`}>مدیریت رسیدها (ورودی)</button>
                 <button onClick={() => setActiveTab('exit')} className={`px-4 py-2 rounded-lg text-sm font-bold whitespace-nowrap ${activeTab === 'exit' ? 'bg-white text-red-600 shadow' : 'text-gray-600 hover:bg-gray-200'}`}>خروج کالا (بیجک)</button>
                 <button onClick={() => setActiveTab('archive')} className={`px-4 py-2 rounded-lg text-sm font-bold whitespace-nowrap ${activeTab === 'archive' ? 'bg-white text-gray-800 shadow' : 'text-gray-600 hover:bg-gray-200'}`}>مدیریت بیجک‌ها (بایگانی)</button>
                 <button onClick={() => setActiveTab('reports')} className={`px-4 py-2 rounded-lg text-sm font-bold whitespace-nowrap ${activeTab === 'reports' ? 'bg-white text-purple-600 shadow' : 'text-gray-600 hover:bg-gray-200'}`}>گزارش کاردکس</button>
@@ -249,6 +261,7 @@ const WarehouseModule: React.FC<Props> = ({ currentUser, settings }) => {
             </div>
 
             <div className="flex-1 overflow-y-auto p-6 printable-content">
+                {/* ... (Previous tabs content: dashboard, items, entry, exit, reports, stock_report) ... */}
                 {activeTab === 'dashboard' && (
                     <div className="space-y-6">
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -263,7 +276,6 @@ const WarehouseModule: React.FC<Props> = ({ currentUser, settings }) => {
                 {activeTab === 'entry' && (<div className="max-w-4xl mx-auto bg-green-50 p-6 rounded-2xl border border-green-200"><h3 className="font-bold text-green-800 mb-4 flex items-center gap-2"><ArrowDownCircle/> ثبت ورود کالا (رسید انبار)</h3><div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4"><div><label className="block text-xs font-bold mb-1">شرکت مالک</label><select className="w-full border rounded p-2 bg-white" value={selectedCompany} onChange={e=>setSelectedCompany(e.target.value)}><option value="">انتخاب...</option>{companyList.map(c=><option key={c} value={c}>{c}</option>)}</select></div><div><label className="block text-xs font-bold mb-1">شماره پروفرما / سند</label><input className="w-full border rounded p-2 bg-white" value={proformaNumber} onChange={e=>setProformaNumber(e.target.value)}/></div><div><label className="block text-xs font-bold mb-1">تاریخ ورود</label><div className="flex gap-1 dir-ltr"><select className="border rounded p-1 text-sm flex-1" value={txDate.year} onChange={e=>setTxDate({...txDate, year:Number(e.target.value)})}>{years.map(y=><option key={y} value={y}>{y}</option>)}</select><select className="border rounded p-1 text-sm flex-1" value={txDate.month} onChange={e=>setTxDate({...txDate, month:Number(e.target.value)})}>{months.map(m=><option key={m} value={m}>{m}</option>)}</select><select className="border rounded p-1 text-sm flex-1" value={txDate.day} onChange={e=>setTxDate({...txDate, day:Number(e.target.value)})}>{days.map(d=><option key={d} value={d}>{d}</option>)}</select></div></div></div><div className="space-y-2 bg-white p-4 rounded-xl border">{txItems.map((row, idx) => (<div key={idx} className="flex gap-2 items-end"><div className="flex-1"><label className="text-[10px] text-gray-500">کالا</label><select className="w-full border rounded p-2 text-sm" value={row.itemId} onChange={e=>updateTxItem(idx, 'itemId', e.target.value)}><option value="">انتخاب کالا...</option>{items.map(i=><option key={i.id} value={i.id}>{i.name}</option>)}</select></div><div className="w-24"><label className="text-[10px] text-gray-500">تعداد</label><input type="number" className="w-full border rounded p-2 text-sm dir-ltr" value={row.quantity} onChange={e=>updateTxItem(idx, 'quantity', e.target.value)}/></div><div className="w-24"><label className="text-[10px] text-gray-500">وزن (KG)</label><input type="number" className="w-full border rounded p-2 text-sm dir-ltr" value={row.weight} onChange={e=>updateTxItem(idx, 'weight', e.target.value)}/></div>{idx > 0 && <button onClick={()=>handleRemoveTxItemRow(idx)} className="text-red-500 p-2"><Trash2 size={16}/></button>}</div>))}<button onClick={handleAddTxItemRow} className="text-xs text-blue-600 font-bold flex items-center gap-1 mt-2"><Plus size={14}/> افزودن ردیف کالا</button></div><button onClick={()=>handleSubmitTx('IN')} className="w-full bg-green-600 text-white font-bold py-3 rounded-xl mt-4 hover:bg-green-700 shadow-lg">ثبت رسید انبار</button></div>)}
                 {activeTab === 'exit' && (<div className="max-w-4xl mx-auto bg-red-50 p-6 rounded-2xl border border-red-200"><h3 className="font-bold text-red-800 mb-4 flex items-center gap-2"><ArrowUpCircle/> ثبت خروج کالا (صدور بیجک)</h3><div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4"><div><label className="block text-xs font-bold mb-1">شرکت فرستنده</label><select className="w-full border rounded p-2 bg-white" value={selectedCompany} onChange={e=>setSelectedCompany(e.target.value)}><option value="">انتخاب...</option>{companyList.map(c=><option key={c} value={c}>{c}</option>)}</select></div><div><label className="block text-xs font-bold mb-1">شماره بیجک (سیستمی)</label><div className="bg-white p-2 rounded border font-mono text-center text-red-600 font-bold">{nextBijakNum > 0 ? nextBijakNum : '---'}</div></div><div><label className="block text-xs font-bold mb-1">تاریخ خروج</label><div className="flex gap-1 dir-ltr"><select className="border rounded p-1 text-sm flex-1" value={txDate.year} onChange={e=>setTxDate({...txDate, year:Number(e.target.value)})}>{years.map(y=><option key={y} value={y}>{y}</option>)}</select><select className="border rounded p-1 text-sm flex-1" value={txDate.month} onChange={e=>setTxDate({...txDate, month:Number(e.target.value)})}>{months.map(m=><option key={m} value={m}>{m}</option>)}</select><select className="border rounded p-1 text-sm flex-1" value={txDate.day} onChange={e=>setTxDate({...txDate, day:Number(e.target.value)})}>{days.map(d=><option key={d} value={d}>{d}</option>)}</select></div></div><div><label className="block text-xs font-bold mb-1">تحویل گیرنده</label><input className="w-full border rounded p-2 bg-white" value={recipientName} onChange={e=>setRecipientName(e.target.value)}/></div></div><div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4"><div><label className="block text-xs font-bold mb-1">راننده</label><input className="w-full border rounded p-2 bg-white" value={driverName} onChange={e=>setDriverName(e.target.value)}/></div><div><label className="block text-xs font-bold mb-1">پلاک</label><input className="w-full border rounded p-2 bg-white dir-ltr" value={plateNumber} onChange={e=>setPlateNumber(e.target.value)}/></div><div><label className="block text-xs font-bold mb-1">مقصد</label><input className="w-full border rounded p-2 bg-white" value={destination} onChange={e=>setDestination(e.target.value)}/></div></div><div className="space-y-2 bg-white p-4 rounded-xl border">{txItems.map((row, idx) => (<div key={idx} className="flex gap-2 items-end"><div className="flex-1"><label className="text-[10px] text-gray-500">کالا</label><select className="w-full border rounded p-2 text-sm" value={row.itemId} onChange={e=>updateTxItem(idx, 'itemId', e.target.value)}><option value="">انتخاب...</option>{items.map(i=><option key={i.id} value={i.id}>{i.name}</option>)}</select></div><div className="w-20"><label className="text-[10px] text-gray-500">تعداد</label><input type="number" className="w-full border rounded p-2 text-sm dir-ltr" value={row.quantity} onChange={e=>updateTxItem(idx, 'quantity', e.target.value)}/></div><div className="w-20"><label className="text-[10px] text-gray-500">وزن</label><input type="number" className="w-full border rounded p-2 text-sm dir-ltr" value={row.weight} onChange={e=>updateTxItem(idx, 'weight', e.target.value)}/></div><div className="w-32"><label className="text-[10px] text-gray-500">فی (ریال)</label><input type="text" className="w-full border rounded p-2 text-sm dir-ltr font-bold text-blue-600" value={formatNumberString(row.unitPrice)} onChange={e=>updateTxItem(idx, 'unitPrice', deformatNumberString(e.target.value))}/></div>{idx > 0 && <button onClick={()=>handleRemoveTxItemRow(idx)} className="text-red-500 p-2"><Trash2 size={16}/></button>}</div>))}<button onClick={handleAddTxItemRow} className="text-xs text-blue-600 font-bold flex items-center gap-1 mt-2"><Plus size={14}/> افزودن ردیف کالا</button></div><button onClick={()=>handleSubmitTx('OUT')} className="w-full bg-red-600 text-white font-bold py-3 rounded-xl mt-4 hover:bg-red-700 shadow-lg">ثبت و صدور بیجک</button></div>)}
                 
-                {/* REFACTORED REPORTS TAB (KARDEX) */}
                 {activeTab === 'reports' && (
                     <div className="space-y-6">
                         <div className="bg-white p-4 rounded-xl border shadow-sm flex flex-col md:flex-row gap-4 items-end no-print">
@@ -376,7 +388,7 @@ const WarehouseModule: React.FC<Props> = ({ currentUser, settings }) => {
                     </div>
                 )}
 
-                {/* ARCHIVE TAB */}
+                {/* ARCHIVE TAB (OUT - BIJAK) */}
                 {activeTab === 'archive' && (
                     <div className="space-y-4">
                         <div className="bg-white p-4 rounded-xl border shadow-sm flex flex-col md:flex-row gap-4 items-center no-print">
@@ -419,12 +431,52 @@ const WarehouseModule: React.FC<Props> = ({ currentUser, settings }) => {
                         </div>
                     </div>
                 )}
+
+                {/* NEW: ENTRY ARCHIVE TAB (IN - RECEIPTS) */}
+                {activeTab === 'entry_archive' && (
+                    <div className="space-y-4">
+                        <div className="bg-white p-4 rounded-xl border shadow-sm flex flex-col md:flex-row gap-4 items-center no-print">
+                            <h3 className="font-bold text-gray-800 flex items-center gap-2"><Container size={20} className="text-emerald-600"/> مدیریت رسیدها (ورودی)</h3>
+                            <div className="flex-1 w-full relative">
+                                <Search size={16} className="absolute left-3 top-3 text-gray-400"/>
+                                <input className="w-full border rounded-lg p-2 pl-9" placeholder="جستجو (شماره پروفرما...)" value={reportSearch} onChange={e=>setReportSearch(e.target.value)}/>
+                            </div>
+                            <div className="w-full md:w-64">
+                                <select className="w-full border rounded-lg p-2" value={archiveFilterCompany} onChange={e=>setArchiveFilterCompany(e.target.value)}>
+                                    <option value="">همه شرکت‌ها</option>
+                                    {companyList.map(c=><option key={c} value={c}>{c}</option>)}
+                                </select>
+                            </div>
+                        </div>
+
+                        <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
+                            <table className="w-full text-sm text-right">
+                                <thead className="bg-gray-100 text-gray-600"><tr><th className="p-4">تاریخ ورود</th><th className="p-4">شرکت مالک</th><th className="p-4">شماره پروفرما</th><th className="p-4">خلاصه کالا</th><th className="p-4 text-center">عملیات</th></tr></thead>
+                                <tbody className="divide-y">
+                                    {filteredArchiveReceipts.map(tx => (
+                                        <tr key={tx.id} className="hover:bg-gray-50">
+                                            <td className="p-4 text-xs font-mono">{formatDate(tx.date)}</td>
+                                            <td className="p-4 text-xs font-bold">{tx.company}</td>
+                                            <td className="p-4 text-xs font-mono">{tx.proformaNumber}</td>
+                                            <td className="p-4 text-xs text-gray-600">{tx.items.length} قلم ({tx.items[0]?.itemName}...)</td>
+                                            <td className="p-4 text-center flex justify-center gap-2">
+                                                <button onClick={() => setEditingReceipt(tx)} className="bg-amber-100 text-amber-600 p-2 rounded hover:bg-amber-200" title="ویرایش"><Edit size={16}/></button>
+                                                <button onClick={() => handleDeleteTx(tx.id)} className="bg-red-100 text-red-600 p-2 rounded hover:bg-red-200" title="حذف"><Trash2 size={16}/></button>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                    {filteredArchiveReceipts.length === 0 && <tr><td colSpan={5} className="p-8 text-center text-gray-400">موردی یافت نشد.</td></tr>}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                )}
             </div>
             
-            {/* View Modal */}
+            {/* View Bijak Modal */}
             {viewBijak && (<PrintBijak tx={viewBijak} onClose={() => setViewBijak(null)} settings={settings} />)}
 
-            {/* Edit Modal */}
+            {/* Edit Bijak Modal (OUT) */}
             {editingBijak && (
                 <div className="fixed inset-0 bg-black/50 z-[100] flex items-center justify-center p-4">
                     <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
@@ -435,8 +487,28 @@ const WarehouseModule: React.FC<Props> = ({ currentUser, settings }) => {
                         <EditBijakForm 
                             bijak={editingBijak} 
                             items={items} 
+                            companyList={companyList}
                             onSave={handleEditBijakSave} 
                             onCancel={() => setEditingBijak(null)} 
+                        />
+                    </div>
+                </div>
+            )}
+
+            {/* Edit Receipt Modal (IN) */}
+            {editingReceipt && (
+                <div className="fixed inset-0 bg-black/50 z-[100] flex items-center justify-center p-4">
+                    <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+                        <div className="p-4 border-b flex justify-between items-center bg-green-50">
+                            <h3 className="font-bold text-lg text-green-800">ویرایش رسید ورودی</h3>
+                            <button onClick={() => setEditingReceipt(null)}><X size={20}/></button>
+                        </div>
+                        <EditReceiptForm 
+                            receipt={editingReceipt} 
+                            items={items} 
+                            companyList={companyList}
+                            onSave={handleEditReceiptSave} 
+                            onCancel={() => setEditingReceipt(null)} 
                         />
                     </div>
                 </div>
@@ -445,8 +517,8 @@ const WarehouseModule: React.FC<Props> = ({ currentUser, settings }) => {
     );
 };
 
-// Helper Component for Editing Bijak
-const EditBijakForm: React.FC<{ bijak: WarehouseTransaction, items: WarehouseItem[], onSave: (tx: WarehouseTransaction) => void, onCancel: () => void }> = ({ bijak, items, onSave, onCancel }) => {
+// Helper Component for Editing Bijak (OUT)
+const EditBijakForm: React.FC<{ bijak: WarehouseTransaction, items: WarehouseItem[], companyList: string[], onSave: (tx: WarehouseTransaction) => void, onCancel: () => void }> = ({ bijak, items, companyList, onSave, onCancel }) => {
     const [formData, setFormData] = useState(bijak);
     const [dateParts, setDateParts] = useState(getShamsiDateFromIso(bijak.date));
 
@@ -479,6 +551,7 @@ const EditBijakForm: React.FC<{ bijak: WarehouseTransaction, items: WarehouseIte
         <div className="p-6 space-y-4">
             <div className="grid grid-cols-2 gap-4">
                 <div><label className="text-xs font-bold block mb-1">تاریخ</label><div className="flex gap-1"><select className="border rounded p-1 w-full" value={dateParts.day} onChange={e=>setDateParts({...dateParts, day: +e.target.value})}>{days.map(d=><option key={d} value={d}>{d}</option>)}</select><select className="border rounded p-1 w-full" value={dateParts.month} onChange={e=>setDateParts({...dateParts, month: +e.target.value})}>{months.map(m=><option key={m} value={m}>{m}</option>)}</select><select className="border rounded p-1 w-full" value={dateParts.year} onChange={e=>setDateParts({...dateParts, year: +e.target.value})}>{years.map(y=><option key={y} value={y}>{y}</option>)}</select></div></div>
+                <div><label className="text-xs font-bold block mb-1">شرکت فرستنده</label><select className="w-full border rounded p-2 bg-white" value={formData.company} onChange={e=>setFormData({...formData, company: e.target.value})}>{companyList.map(c=><option key={c} value={c}>{c}</option>)}</select></div>
                 <div><label className="text-xs font-bold block mb-1">گیرنده</label><input className="w-full border rounded p-2" value={formData.recipientName} onChange={e=>setFormData({...formData, recipientName: e.target.value})}/></div>
                 <div><label className="text-xs font-bold block mb-1">راننده</label><input className="w-full border rounded p-2" value={formData.driverName} onChange={e=>setFormData({...formData, driverName: e.target.value})}/></div>
                 <div><label className="text-xs font-bold block mb-1">پلاک</label><input className="w-full border rounded p-2 dir-ltr" value={formData.plateNumber} onChange={e=>setFormData({...formData, plateNumber: e.target.value})}/></div>
@@ -502,6 +575,65 @@ const EditBijakForm: React.FC<{ bijak: WarehouseTransaction, items: WarehouseIte
             <div className="flex justify-end gap-2 pt-4 border-t">
                 <button onClick={onCancel} className="px-4 py-2 border rounded text-gray-600">انصراف</button>
                 <button onClick={handleSave} className="px-4 py-2 bg-blue-600 text-white rounded font-bold">ذخیره تغییرات</button>
+            </div>
+        </div>
+    );
+}
+
+// Helper Component for Editing Receipt (IN)
+const EditReceiptForm: React.FC<{ receipt: WarehouseTransaction, items: WarehouseItem[], companyList: string[], onSave: (tx: WarehouseTransaction) => void, onCancel: () => void }> = ({ receipt, items, companyList, onSave, onCancel }) => {
+    const [formData, setFormData] = useState(receipt);
+    const [dateParts, setDateParts] = useState(getShamsiDateFromIso(receipt.date));
+
+    const handleSave = () => {
+        try {
+            const isoDate = jalaliToGregorian(dateParts.year, dateParts.month, dateParts.day).toISOString();
+            onSave({ ...formData, date: isoDate });
+        } catch(e) { alert("تاریخ نامعتبر"); }
+    };
+
+    const updateItem = (idx: number, field: string, val: any) => {
+        const newItems = [...formData.items];
+        // @ts-ignore
+        newItems[idx][field] = val;
+        if(field === 'itemId') {
+            const found = items.find(i => i.id === val);
+            if(found) newItems[idx].itemName = found.name;
+        }
+        setFormData({ ...formData, items: newItems });
+    };
+
+    const addItem = () => setFormData({ ...formData, items: [...formData.items, { itemId: '', itemName: '', quantity: 0, weight: 0, unitPrice: 0 }] });
+    const removeItem = (idx: number) => setFormData({ ...formData, items: formData.items.filter((_, i) => i !== idx) });
+
+    const years = Array.from({length:10},(_,i)=>1400+i);
+    const months = Array.from({length:12},(_,i)=>i+1);
+    const days = Array.from({length:31},(_,i)=>i+1);
+
+    return (
+        <div className="p-6 space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+                <div><label className="text-xs font-bold block mb-1">تاریخ ورود</label><div className="flex gap-1"><select className="border rounded p-1 w-full" value={dateParts.day} onChange={e=>setDateParts({...dateParts, day: +e.target.value})}>{days.map(d=><option key={d} value={d}>{d}</option>)}</select><select className="border rounded p-1 w-full" value={dateParts.month} onChange={e=>setDateParts({...dateParts, month: +e.target.value})}>{months.map(m=><option key={m} value={m}>{m}</option>)}</select><select className="border rounded p-1 w-full" value={dateParts.year} onChange={e=>setDateParts({...dateParts, year: +e.target.value})}>{years.map(y=><option key={y} value={y}>{y}</option>)}</select></div></div>
+                <div><label className="text-xs font-bold block mb-1">شرکت مالک</label><select className="w-full border rounded p-2 bg-white" value={formData.company} onChange={e=>setFormData({...formData, company: e.target.value})}>{companyList.map(c=><option key={c} value={c}>{c}</option>)}</select></div>
+                <div className="col-span-2"><label className="text-xs font-bold block mb-1">شماره پروفرما / سند</label><input className="w-full border rounded p-2" value={formData.proformaNumber} onChange={e=>setFormData({...formData, proformaNumber: e.target.value})}/></div>
+            </div>
+            
+            <div className="bg-gray-50 p-4 rounded border">
+                <h4 className="font-bold text-sm mb-2">اقلام ورودی</h4>
+                {formData.items.map((item, idx) => (
+                    <div key={idx} className="flex gap-2 mb-2 items-end">
+                        <div className="flex-1"><select className="w-full border rounded p-1 text-sm" value={item.itemId} onChange={e=>updateItem(idx, 'itemId', e.target.value)}><option value="">انتخاب...</option>{items.map(i=><option key={i.id} value={i.id}>{i.name}</option>)}</select></div>
+                        <div className="w-24"><input type="number" className="w-full border rounded p-1 text-sm text-center" value={item.quantity} onChange={e=>updateItem(idx, 'quantity', +e.target.value)} placeholder="تعداد"/></div>
+                        <div className="w-24"><input type="number" className="w-full border rounded p-1 text-sm text-center" value={item.weight} onChange={e=>updateItem(idx, 'weight', +e.target.value)} placeholder="وزن"/></div>
+                        <button onClick={()=>removeItem(idx)} className="text-red-500"><Trash2 size={16}/></button>
+                    </div>
+                ))}
+                <button onClick={addItem} className="text-blue-600 text-xs font-bold flex items-center gap-1 mt-2"><Plus size={14}/> افزودن سطر</button>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-4 border-t">
+                <button onClick={onCancel} className="px-4 py-2 border rounded text-gray-600">انصراف</button>
+                <button onClick={handleSave} className="px-4 py-2 bg-green-600 text-white rounded font-bold">ذخیره تغییرات</button>
             </div>
         </div>
     );
