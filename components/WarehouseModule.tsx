@@ -19,7 +19,7 @@ const WarehouseModule: React.FC<Props> = ({ currentUser, settings }) => {
     const [newItemName, setNewItemName] = useState('');
     const [newItemCode, setNewItemCode] = useState('');
     const [newItemUnit, setNewItemUnit] = useState('عدد');
-    const [newItemContainerCapacity, setNewItemContainerCapacity] = useState(''); // NEW
+    const [newItemContainerCapacity, setNewItemContainerCapacity] = useState('');
 
     // Transaction State
     const currentShamsi = getCurrentShamsiDate();
@@ -87,37 +87,52 @@ const WarehouseModule: React.FC<Props> = ({ currentUser, settings }) => {
         
         if(type === 'OUT') {
             setCreatedTxForAutoSend(tx);
+            
+            // Allow time for DOM to render the hidden elements
             setTimeout(async () => {
                 const managerElement = document.getElementById(`print-bijak-${tx.id}-price`);
                 const warehouseElement = document.getElementById(`print-bijak-${tx.id}-noprice`);
                 
-                // UPDATED CAPTION GENERATION
-                let caption = `🏭 *شرکت: ${tx.company}*\n`;
-                caption += `📦 *حواله خروج کالا (بیجک)*\n`;
-                caption += `🔢 شماره: ${tx.number}\n`;
-                caption += `📅 تاریخ: ${formatDate(tx.date)}\n`;
-                caption += `👤 گیرنده: ${tx.recipientName}\n`;
-                caption += `------------------\n`;
-                caption += `📋 *لیست اقلام:* \n`;
-                tx.items.forEach((item, idx) => { caption += `${idx + 1}️⃣ ${item.itemName} | تعداد: ${item.quantity}\n`; });
-                caption += `------------------\n`;
-                if(tx.driverName) caption += `🚛 راننده: ${tx.driverName}\n`;
-                if(tx.plateNumber) caption += `🔢 پلاک: ${tx.plateNumber}\n`;
-                if(tx.destination) caption += `📍 مقصد: ${tx.destination}`;
+                // Construct Common Details
+                let commonDetails = `🔢 شماره: ${tx.number}\n`;
+                commonDetails += `📅 تاریخ: ${formatDate(tx.date)}\n`;
+                commonDetails += `👤 گیرنده: ${tx.recipientName}\n`;
+                commonDetails += `------------------\n`;
+                commonDetails += `📋 *لیست اقلام:* \n`;
+                tx.items.forEach((item, idx) => { commonDetails += `${idx + 1}️⃣ ${item.itemName} | تعداد: ${item.quantity}\n`; });
+                commonDetails += `------------------\n`;
+                if(tx.driverName) commonDetails += `🚛 راننده: ${tx.driverName}\n`;
+                if(tx.plateNumber) commonDetails += `🔢 پلاک: ${tx.plateNumber}\n`;
+                if(tx.destination) commonDetails += `📍 مقصد: ${tx.destination}`;
 
                 if (settings) {
                     try {
+                        // 1. Send to SALES MANAGER (With Price)
                         if (settings.defaultSalesManager && managerElement) {
                             // @ts-ignore
                             const canvas = await window.html2canvas(managerElement, { scale: 2, backgroundColor: '#ffffff' });
                             const base64 = canvas.toDataURL('image/png').split(',')[1];
-                            await apiCall('/send-whatsapp', 'POST', { number: settings.defaultSalesManager, message: caption + "\n\n(نسخه مدیریتی - همراه با قیمت)", mediaData: { data: base64, mimeType: 'image/png', filename: `Bijak_${tx.number}_Price.png` } });
+                            const managerCaption = `🏭 *شرکت: ${tx.company}*\n📑 *حواله خروج (نسخه مدیریت - با فی)*\n${commonDetails}`;
+                            
+                            await apiCall('/send-whatsapp', 'POST', { 
+                                number: settings.defaultSalesManager, 
+                                message: managerCaption, 
+                                mediaData: { data: base64, mimeType: 'image/png', filename: `Bijak_${tx.number}_Price.png` } 
+                            });
                         }
+
+                        // 2. Send to WAREHOUSE GROUP (No Price)
                         if (settings.defaultWarehouseGroup && warehouseElement) {
                             // @ts-ignore
                             const canvas = await window.html2canvas(warehouseElement, { scale: 2, backgroundColor: '#ffffff' });
                             const base64 = canvas.toDataURL('image/png').split(',')[1];
-                            await apiCall('/send-whatsapp', 'POST', { number: settings.defaultWarehouseGroup, message: caption + "\n\n(نسخه انبار - بدون قیمت)", mediaData: { data: base64, mimeType: 'image/png', filename: `Bijak_${tx.number}.png` } });
+                            const warehouseCaption = `🏭 *شرکت: ${tx.company}*\n📦 *حواله خروج (نسخه انبار - بدون فی)*\n${commonDetails}`;
+
+                            await apiCall('/send-whatsapp', 'POST', { 
+                                number: settings.defaultWarehouseGroup, 
+                                message: warehouseCaption, 
+                                mediaData: { data: base64, mimeType: 'image/png', filename: `Bijak_${tx.number}.png` } 
+                            });
                         }
                     } catch(e) { console.error("Auto send error", e); }
                 }
