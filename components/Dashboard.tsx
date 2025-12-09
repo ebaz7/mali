@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo } from 'react';
 import { PaymentOrder, OrderStatus, PaymentMethod, SystemSettings } from '../types';
 import { formatCurrency, parsePersianDate, formatNumberString, getShamsiDateFromIso, jalaliToGregorian, getCurrentShamsiDate } from '../constants';
@@ -358,35 +359,58 @@ const Dashboard: React.FC<DashboardProps> = ({ orders, settings, onViewArchive, 
           </div>
       )}
 
-      {/* Calendar Modal */}
+      {/* Calendar Modal - UPDATED FOR GOOGLE CALENDAR SUPPORT */}
       {showCalendarModal && (
           <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-              <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg p-6 animate-fade-in">
-                  <div className="flex justify-between items-center mb-6">
-                      <div className="flex gap-2 items-center">
-                          <button onClick={() => { if(calendarMonth.month===1) setCalendarMonth({year: calendarMonth.year-1, month: 12}); else setCalendarMonth({...calendarMonth, month: calendarMonth.month-1})}} className="p-1 hover:bg-gray-100 rounded"><ChevronRight/></button>
-                          <h3 className="font-bold text-lg w-32 text-center">{MONTHS[calendarMonth.month - 1]} {calendarMonth.year}</h3>
-                          <button onClick={() => { if(calendarMonth.month===12) setCalendarMonth({year: calendarMonth.year+1, month: 1}); else setCalendarMonth({...calendarMonth, month: calendarMonth.month+1})}} className="p-1 hover:bg-gray-100 rounded"><ChevronLeft/></button>
+              <div className={`bg-white rounded-2xl shadow-2xl w-full ${settings?.googleCalendarId ? 'max-w-4xl h-[80vh]' : 'max-w-lg'} p-6 animate-fade-in relative`}>
+                  <button onClick={() => setShowCalendarModal(false)} className="absolute top-4 right-4 text-gray-400 hover:text-red-500"><X size={24}/></button>
+                  
+                  {settings?.googleCalendarId ? (
+                      <div className="w-full h-full flex flex-col">
+                          <h3 className="font-bold text-lg mb-4 text-center">تقویم گوگل (Gmail)</h3>
+                          <div className="flex-1 bg-white border rounded-xl overflow-hidden">
+                              <iframe 
+                                  src={`https://calendar.google.com/calendar/embed?src=${encodeURIComponent(settings.googleCalendarId)}&ctz=Asia/Tehran`} 
+                                  style={{border: 0}} 
+                                  width="100%" 
+                                  height="100%" 
+                                  frameBorder="0" 
+                                  scrolling="no"
+                              ></iframe>
+                          </div>
                       </div>
-                      <button onClick={() => setShowCalendarModal(false)}><X size={20}/></button>
-                  </div>
-                  <div className="grid grid-cols-7 gap-1 text-center mb-2">
-                      {['ش', 'ی', 'د', 'س', 'چ', 'پ', 'ج'].map(d => <div key={d} className="text-xs font-bold text-gray-500">{d}</div>)}
-                  </div>
-                  <div className="grid grid-cols-7 gap-1">
-                      {Array.from({ length: startDayOfWeek }).map((_, i) => <div key={`empty-${i}`}></div>)}
-                      {daysArray.map(d => {
-                          const events = getEventsForDay(d);
-                          const hasEvent = events.length > 0;
-                          const total = events.reduce((sum, e) => sum + e.totalAmount, 0);
-                          return (
-                              <div key={d} className={`aspect-square rounded-lg flex flex-col items-center justify-center border relative ${hasEvent ? 'bg-blue-50 border-blue-200 cursor-pointer hover:bg-blue-100' : 'bg-white border-gray-100'}`} title={hasEvent ? `${events.length} پرداخت: ${formatCurrency(total)}` : ''}>
-                                  <span className={`text-sm ${hasEvent ? 'font-bold text-blue-600' : 'text-gray-600'}`}>{d}</span>
-                                  {hasEvent && <div className="w-1.5 h-1.5 bg-blue-500 rounded-full mt-1"></div>}
+                  ) : (
+                      // Fallback Internal Calendar
+                      <>
+                          <div className="flex justify-between items-center mb-6 mt-6">
+                              <div className="flex gap-2 items-center mx-auto">
+                                  <button onClick={() => { if(calendarMonth.month===1) setCalendarMonth({year: calendarMonth.year-1, month: 12}); else setCalendarMonth({...calendarMonth, month: calendarMonth.month-1})}} className="p-1 hover:bg-gray-100 rounded"><ChevronRight/></button>
+                                  <h3 className="font-bold text-lg w-32 text-center">{MONTHS[calendarMonth.month - 1]} {calendarMonth.year}</h3>
+                                  <button onClick={() => { if(calendarMonth.month===12) setCalendarMonth({year: calendarMonth.year+1, month: 1}); else setCalendarMonth({...calendarMonth, month: calendarMonth.month+1})}} className="p-1 hover:bg-gray-100 rounded"><ChevronLeft/></button>
                               </div>
-                          );
-                      })}
-                  </div>
+                          </div>
+                          <div className="grid grid-cols-7 gap-1 text-center mb-2">
+                              {['ش', 'ی', 'د', 'س', 'چ', 'پ', 'ج'].map(d => <div key={d} className="text-xs font-bold text-gray-500">{d}</div>)}
+                          </div>
+                          <div className="grid grid-cols-7 gap-1">
+                              {Array.from({ length: startDayOfWeek }).map((_, i) => <div key={`empty-${i}`}></div>)}
+                              {daysArray.map(d => {
+                                  const events = getEventsForDay(d);
+                                  const hasEvent = events.length > 0;
+                                  const total = events.reduce((sum, e) => sum + e.totalAmount, 0);
+                                  return (
+                                      <div key={d} className={`aspect-square rounded-lg flex flex-col items-center justify-center border relative ${hasEvent ? 'bg-blue-50 border-blue-200 cursor-pointer hover:bg-blue-100' : 'bg-white border-gray-100'}`} title={hasEvent ? `${events.length} پرداخت: ${formatCurrency(total)}` : ''}>
+                                          <span className={`text-sm ${hasEvent ? 'font-bold text-blue-600' : 'text-gray-600'}`}>{d}</span>
+                                          {hasEvent && <div className="w-1.5 h-1.5 bg-blue-500 rounded-full mt-1"></div>}
+                                      </div>
+                                  );
+                              })}
+                          </div>
+                          <div className="mt-6 text-center">
+                              <p className="text-xs text-gray-500">نکته: برای مشاهده تقویم گوگل، شناسه تقویم (Calendar ID) را در تنظیمات وارد کنید.</p>
+                          </div>
+                      </>
+                  )}
               </div>
           </div>
       )}

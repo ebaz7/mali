@@ -440,7 +440,7 @@ const WarehouseModule: React.FC<Props> = ({ currentUser, settings }) => {
                     <div className="flex flex-col h-full">
                         <style>{`
                             @media print { 
-                                @page { size: 297mm 210mm; margin: 0; }
+                                @page { size: A4 landscape; margin: 5mm; }
                                 body { margin: 0; padding: 0; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
                                 body * { visibility: hidden; }
                                 
@@ -449,23 +449,15 @@ const WarehouseModule: React.FC<Props> = ({ currentUser, settings }) => {
                                     visibility: visible;
                                 }
                                 #stock-report-container {
-                                    position: fixed;
-                                    top: 0;
-                                    left: 0;
-                                    width: 297mm;
-                                    height: 210mm;
-                                    margin: 0;
-                                    padding: 5mm;
+                                    position: static !important;
+                                    width: 100% !important;
+                                    margin: 0 auto;
+                                    padding: 0;
                                     background: white;
-                                    z-index: 99999;
+                                    display: block !important;
                                 }
-                                /* Ensure colors print */
-                                #stock-report-container .bg-yellow-300 { background-color: #fde047 !important; }
-                                #stock-report-container .bg-purple-300 { background-color: #d8b4fe !important; }
-                                #stock-report-container .bg-orange-300 { background-color: #fdba74 !important; }
-                                #stock-report-container .bg-blue-300 { background-color: #93c5fd !important; }
-                                #stock-report-container .bg-gray-100 { background-color: #f3f4f6 !important; }
                                 
+                                /* Remove any flex or weird positioning that causes issues */
                                 .no-print, .sidebar, header, .tabs { display: none !important; }
                             }
                         `}</style>
@@ -477,27 +469,28 @@ const WarehouseModule: React.FC<Props> = ({ currentUser, settings }) => {
                             </div>
                         </div>
                         
-                        <div id="stock-report-container" className="bg-white p-2 shadow-lg mx-auto w-full md:w-[297mm] min-h-[210mm]">
+                        <div id="stock-report-container" className="bg-white p-2 shadow-lg mx-auto w-full md:w-[297mm] min-h-[210mm] text-[10px]">
                              {/* Header */}
                             <div className="text-center bg-yellow-300 border border-black py-1 mb-1 font-black text-lg">موجودی بنگاه ها</div>
                             
-                            <div className="flex flex-row border border-black gap-0">
+                            {/* CSS Grid for proper columns printing */}
+                            <div style={{ display: 'grid', gridTemplateColumns: `repeat(${allWarehousesStock.length}, 1fr)`, border: '1px solid black' }}>
                                 {allWarehousesStock.map((group, index) => {
                                     // Coloring based on company order (Purple, Orange, Blue, etc.)
                                     const headerColor = index === 0 ? 'bg-purple-300' : index === 1 ? 'bg-orange-300' : 'bg-blue-300';
                                     
                                     return (
-                                        <div key={group.company} className="flex-1 border-l border-black last:border-l-0 flex flex-col">
+                                        <div key={group.company} className="border-l border-black last:border-l-0">
                                             <div className={`${headerColor} text-black font-bold p-1 text-center border-b border-black text-sm`}>{group.company}</div>
-                                            <div className="grid grid-cols-4 bg-gray-100 font-bold text-[10px] border-b border-black text-center">
+                                            <div className="grid grid-cols-4 bg-gray-100 font-bold border-b border-black text-center">
                                                 <div className="p-1 border-l border-black">نخ</div>
                                                 <div className="p-1 border-l border-black">کارتن</div>
                                                 <div className="p-1 border-l border-black">وزن</div>
                                                 <div className="p-1">کانتینر</div>
                                             </div>
-                                            <div className="flex-1">
+                                            <div>
                                                 {group.items.map((item, i) => (
-                                                    <div key={i} className="grid grid-cols-4 text-[10px] border-b border-gray-400 last:border-b-0 text-center hover:bg-gray-50 leading-tight">
+                                                    <div key={i} className="grid grid-cols-4 border-b border-gray-400 last:border-b-0 text-center hover:bg-gray-50 leading-tight break-inside-avoid">
                                                         <div className="p-1 border-l border-black font-bold truncate text-right pr-2">{item.name}</div>
                                                         <div className="p-1 border-l border-black font-mono">{item.quantity}</div>
                                                         <div className="p-1 border-l border-black font-mono">{item.weight > 0 ? item.weight : 0}</div>
@@ -506,7 +499,7 @@ const WarehouseModule: React.FC<Props> = ({ currentUser, settings }) => {
                                                         </div>
                                                     </div>
                                                 ))}
-                                                {group.items.length === 0 && <div className="p-2 text-center text-gray-400 text-[10px]">-</div>}
+                                                {group.items.length === 0 && <div className="p-2 text-center text-gray-400">-</div>}
                                             </div>
                                         </div>
                                     );
