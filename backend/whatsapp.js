@@ -35,78 +35,96 @@ const saveDb = (data) => {
     } catch (e) { console.error("DB Write Error", e); }
 };
 
-// --- AI LOGIC ---
-const handleAIProcessing = async (text, db) => {
-    if (!db.settings.geminiApiKey) return null;
-    try {
-        const ai = new GoogleGenAI({ apiKey: db.settings.geminiApiKey });
-        
-        // Context Data
-        const itemsList = db.warehouseItems.map(i => i.name).join(', ');
-        const companiesList = (db.settings.companyNames || []).join(', ');
-        const banksList = (db.settings.bankNames || []).join(', ');
+const formatCurrency = (amount) => {
+    return new Intl.NumberFormat('fa-IR').format(amount) + ' ریال';
+};
 
-        const prompt = `
-        You are an intelligent assistant for a Payment & Warehouse Automation System.
-        Current Date: ${new Date().toLocaleDateString('fa-IR')}
-        
-        User Message: "${text}"
-        
-        System Context:
-        - Registered Items: ${itemsList}
-        - Registered Companies: ${companiesList}
-        - Registered Banks: ${banksList}
-
-        Your Goal: Identify the user's intent and extract entities.
-        
-        Supported Intents:
-        1. CREATE_BIJAK (For: خروج کالا, بیجک, حواله فروش)
-           - REQUIRED: recipient (گیرنده), items (Array of {name, count, weight}), company (شرکت)
-           - OPTIONAL: address, driver, plate
-           - NOTE: If company is missing, try to infer or ask. If item name is fuzzy, match closest from "Registered Items".
-        
-        2. CREATE_PAYMENT (For: دستور پرداخت, واریز, پرداخت)
-           - REQUIRED: payee (ذینفع), amount (مبلغ), bank (بانک)
-           - OPTIONAL: description, company
-        
-        3. APPROVE_ORDER (For: تایید سند, تایید بیجک)
-           - REQUIRED: trackingNumber (شماره)
-        
-        4. REJECT_ORDER (For: رد سند)
-           - REQUIRED: trackingNumber, reason
-        
-        5. REPORT (For: گزارش, وضعیت)
-        
-        6. HELP (For: راهنما, کمک)
-
-        CRITICAL INSTRUCTION:
-        - If REQUIRED fields are missing for an intent, set intent to "ASK_MORE" and in "reply" specify exactly what is missing in Persian.
-        - Example: If user says "Create bijak for Ali", return intent="ASK_MORE", reply="لطفا نام کالا، تعداد و نام شرکت را مشخص کنید."
-        - If all data is present, return the intent and the extracted args in JSON.
-
-        Output JSON Format ONLY:
-        { 
-          "intent": "CREATE_BIJAK" | "CREATE_PAYMENT" | "APPROVE_ORDER" | "REJECT_ORDER" | "REPORT" | "HELP" | "ASK_MORE" | "UNKNOWN",
-          "args": { ... },
-          "reply": "Persian confirmation or question"
-        }
-        `;
-
-        const response = await ai.models.generateContent({
-            model: "gemini-2.5-flash",
-            contents: [{ role: 'user', parts: [{ text: prompt }] }]
-        });
-
-        const responseText = response.text;
-        
-        const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-        if (jsonMatch) return JSON.parse(jsonMatch[0]);
-    } catch (e) {
-        console.error("AI Error:", e.message);
-        if (e.message && e.message.includes('403')) {
-            console.error(">>> HINT: 403 Forbidden means API Key issue or IP Block (Need VPN). Fallback mode will be used.");
+// --- PARSING LOGIC (Hybrid: AI + Regex Fallback) ---
+const handleMessageProcessing = async (text, db) => {
+    // 1. Try AI First (If API Key exists & Working)
+    if (db.settings.geminiApiKey && !text.startsWith('!')) {
+        try {
+            const ai = new GoogleGenAI({ apiKey: db.settings.geminiApiKey });
+            const prompt = `
+            Extract entities from this Persian Payment/Warehouse command.
+            Input: "${text}"
+            
+            Detect Intent:
+            - CREATE_PAYMENT: Needs amount, payee, description(optional), bank(optional), company(optional).
+            - CREATE_BIJAK: Needs items(name, count), recipient, driver(optional), plate(optional), address(optional).
+            - REPORT: If user asks for report/status.
+            
+            Output JSON only: { "intent": "...", "args": { ... } }
+            `;
+            const response = await ai.models.generateContent({
+                model: "gemini-2.5-flash",
+                contents: [{ role: 'user', parts: [{ text: prompt }] }]
+            });
+            const jsonMatch = response.text.match(/\{[\s\S]*\}/);
+            if (jsonMatch) return JSON.parse(jsonMatch[0]);
+        } catch (e) {
+            console.log("AI Failed, switching to Regex parser.");
         }
     }
+
+    // 2. Advanced Regex Fallback (Offline Mode)
+    console.log(">>> Using Regex Parser for:", text);
+    
+    // --- PAYMENT PATTERN ---
+    // Format: دستور پرداخت 1000 به علی بابت خرید چوب از بانک ملی
+    const payMatch = text.match(/(?:دستور پرداخت|ثبت پرداخت|واریز)\s+(\d+(?:[.,]\d+)?)\s*(?:ریال|تومان)?\s*(?:به|برای|در وجه)\s+(.+?)\s+(?:بابت|شرح)\s+(.+?)(?:\s+(?:از|بانک)\s+(.+))?$/);
+    if (payMatch) {
+        return {
+            intent: 'CREATE_PAYMENT',
+            args: { 
+                amount: payMatch[1].replace(/[,.]/g, ''), 
+                payee: payMatch[2].trim(), 
+                description: payMatch[3].trim(),
+                bank: payMatch[4] ? payMatch[4].trim() : 'نامشخص'
+            }
+        };
+    }
+    
+    // Simple Payment (Legacy)
+    const simplePay = text.match(/(?:پرداخت|واریز)\s+(\d+)\s*(?:برای|به)\s+(.+)/);
+    if (simplePay && !payMatch) {
+        return {
+            intent: 'CREATE_PAYMENT',
+            args: { amount: simplePay[1], payee: simplePay[2].trim(), description: 'ثبت سریع واتساپ', bank: '' }
+        };
+    }
+
+    // --- BIJAK (EXIT) PATTERN ---
+    // Format: بیجک 50 کارتن کابل برای شرکت البرز راننده اکبری پلاک 12-345
+    const bijakMatch = text.match(/(?:بیجک|خروج|حواله)\s+(\d+)\s*(?:کارتن|عدد|شاخه)?\s+(.+?)\s+(?:برای|به)\s+(.+?)(?:\s+(?:راننده)\s+(.+?))?(?:\s+(?:پلاک)\s+(.+))?$/);
+    if (bijakMatch) {
+        return {
+            intent: 'CREATE_BIJAK',
+            args: {
+                count: bijakMatch[1],
+                itemName: bijakMatch[2].trim(),
+                recipient: bijakMatch[3].trim(),
+                driver: bijakMatch[4] ? bijakMatch[4].trim() : '',
+                plate: bijakMatch[5] ? bijakMatch[5].trim() : ''
+            }
+        };
+    }
+
+    // --- APPROVALS ---
+    const approveMatch = text.match(/(?:تایید|اوکی|ok)\s+(\d+)/i);
+    if (approveMatch) return { intent: 'APPROVE_ORDER', args: { trackingNumber: approveMatch[1] } };
+
+    const rejectMatch = text.match(/(?:رد|کنسل)\s+(\d+)/);
+    if (rejectMatch) return { intent: 'REJECT_ORDER', args: { trackingNumber: rejectMatch[1] } };
+
+    // --- REPORT ---
+    if (text.includes('گزارش') || text.includes('کارتابل') || text === '!گزارش') {
+        return { intent: 'REPORT' };
+    }
+
+    // --- HELP ---
+    if (text.includes('راهنما') || text.includes('کمک')) return { intent: 'HELP' };
+
     return null;
 };
 
@@ -138,7 +156,6 @@ export const initWhatsApp = (authDir) => {
 
         client.on('qr', (qr) => { 
             qrCode = qr; isReady = false; 
-            console.log(">>> WhatsApp QR Generated 📷"); 
             qrcode.generate(qr, { small: true }); 
         });
 
@@ -149,96 +166,34 @@ export const initWhatsApp = (authDir) => {
 
         client.on('message', async msg => {
             const body = msg.body.trim();
-            if (msg.from.includes('@g.us') && !body.startsWith('!')) return; // Only allow commands starting with ! in groups
+            if (msg.from.includes('@g.us') && !body.startsWith('!')) return;
 
             const db = getDb();
             if (!db) return;
 
-            // 1. HELP COMMAND
+            // 1. Help Command
             if (body === '!راهنما' || body === 'راهنما') {
-                msg.reply(`🤖 *دستیار هوشمند سیستم*\n\nدستورات صوتی یا متنی زیر پشتیبانی می‌شوند:\n\n` +
-                    `📦 *ثبت بیجک/حواله:*\n"یک بیجک بزن برای آقای رضایی، ۱۰۰ کارتن کابل از شرکت البرز به آدرس تهران..."\n\n` +
-                    `💰 *ثبت دستور پرداخت:*\n"دستور پرداخت ۵۰ میلیون برای علی اکبری بابت خرید مواد از بانک ملی"\n\n` +
-                    `✅ *تایید/رد:*\n"دستور ۱۰۲۴ رو تایید کن" یا "بیجک ۲۰۵ رو رد کن چون..."\n\n` +
-                    `📊 *گزارش:*\n"گزارش وضعیت بده"`);
+                msg.reply(`🤖 *دستیار هوشمند سیستم مالی*\n\n` +
+                    `💰 *ثبت دستور پرداخت کامل:*\n"دستور پرداخت [مبلغ] به [نام] بابت [توضیحات] از [بانک]"\nمثال: دستور پرداخت 5000000 به علی رضایی بابت خرید لوازم از بانک ملی\n\n` +
+                    `🚛 *ثبت بیجک خروج کالا:*\n"بیجک [تعداد] [کالا] برای [گیرنده] راننده [نام] پلاک [پلاک]"\nمثال: بیجک 50 کارتن لامپ برای فروشگاه نور راننده حسینی پلاک 66-345\n\n` +
+                    `📊 *گزارش کارتابل:*\nارسال کلمه "گزارش" یا "کارتابل"`);
                 return;
             }
 
-            // 2. AI PROCESSING
-            const processingMsg = body.length > 10 ? await msg.reply('⏳ در حال پردازش...') : null;
-            
-            const aiResult = await handleAIProcessing(body, db);
-            
-            if (processingMsg) processingMsg.delete(true); // Remove "Processing..."
+            // 2. Process Intent
+            const processingMsg = body.length > 20 ? await msg.reply('⏳ ...') : null;
+            const result = await handleAIProcessing(body, db);
+            if (processingMsg) processingMsg.delete(true);
 
-            // 3. FALLBACK & EXECUTION
-            if (!aiResult) {
-                // Fallback Logic if AI fails (e.g. 403 Forbidden or no Key)
-                if (body.includes('گزارش') || body.includes('وضعیت') || body === '!گزارش') {
-                     const pendingOrders = db.orders.filter(o => o.status !== 'تایید نهایی' && o.status !== 'رد شده').length;
-                     const pendingExits = db.exitPermits.filter(p => p.status !== 'خارج شده (بایگانی)' && p.status !== 'رد شده').length;
-                     msg.reply(`📊 *گزارش وضعیت (دسترسی محدود)*\n\n💰 کارتابل پرداخت: ${pendingOrders} سند باز\n🚛 کارتابل خروج: ${pendingExits} مجوز فعال\n\n⚠️ هوش مصنوعی پاسخ نداد (خطای اتصال).`);
-                } else if (body.includes('بیجک') || body.includes('پرداخت')) {
-                     msg.reply("⚠️ خطا در ارتباط با هوش مصنوعی. لطفا از پنل تحت وب استفاده کنید یا اتصال سرور (VPN) را بررسی کنید.");
-                }
+            if (!result) {
+                if (body.length > 5) msg.reply("⚠️ دستور نامفهوم. برای راهنما کلمه «راهنما» را ارسال کنید.");
                 return;
             }
 
-            // 4. EXECUTE AI INTENTS
-            const { intent, args, reply } = aiResult;
+            const { intent, args } = result;
 
-            if (intent === 'ASK_MORE') {
-                msg.reply(`❓ ${reply}`);
-                return;
-            }
-
-            if (intent === 'CREATE_BIJAK') {
-                // Args: company, recipient, address, driver, plate, items: [{name, count, weight}]
-                const company = args.company || db.settings.defaultCompany || (db.settings.companyNames?.[0]);
-                if (!company) { msg.reply("❌ نام شرکت مشخص نیست."); return; }
-
-                // Calculate Next Number
-                const currentSeq = db.settings.warehouseSequences?.[company] || 1000;
-                const nextSeq = currentSeq + 1;
-                db.settings.warehouseSequences[company] = nextSeq;
-
-                // Match Items to DB IDs
-                const txItems = (args.items || []).map(aiItem => {
-                    const dbItem = db.warehouseItems.find(i => i.name.includes(aiItem.name) || aiItem.name.includes(i.name));
-                    return {
-                        itemId: dbItem ? dbItem.id : generateUUID(),
-                        itemName: aiItem.name,
-                        quantity: Number(aiItem.count) || 0,
-                        weight: Number(aiItem.weight) || 0,
-                        unitPrice: 0
-                    };
-                });
-
-                const newTx = {
-                    id: generateUUID(),
-                    type: 'OUT',
-                    date: new Date().toISOString(),
-                    company: company,
-                    number: nextSeq,
-                    recipientName: args.recipient,
-                    destination: args.address || '',
-                    driverName: args.driver || '',
-                    plateNumber: args.plate || '',
-                    items: txItems,
-                    createdAt: Date.now(),
-                    createdBy: `WhatsApp (${msg.from.replace('@c.us', '')})`
-                };
-
-                db.warehouseTransactions.unshift(newTx);
-                saveDb(db);
-                
-                let confirmMsg = `✅ *بیجک خروج صادر شد*\n📄 شماره: ${nextSeq}\n🏭 شرکت: ${company}\n👤 گیرنده: ${args.recipient}\n📦 اقلام: ${txItems.length} مورد`;
-                if(args.address) confirmMsg += `\n📍 آدرس: ${args.address}`;
-                msg.reply(confirmMsg);
-            }
-
-            else if (intent === 'CREATE_PAYMENT') {
-                // Args: payee, amount, bank, description, company
+            // --- COMMAND: CREATE PAYMENT ---
+            if (intent === 'CREATE_PAYMENT') {
                 const trackingNum = (db.settings.currentTrackingNumber || 1000) + 1;
                 db.settings.currentTrackingNumber = trackingNum;
 
@@ -252,8 +207,8 @@ export const initWhatsApp = (authDir) => {
                     totalAmount: amount,
                     description: args.description || 'ثبت شده از طریق واتساپ',
                     status: 'در انتظار بررسی مالی',
-                    requester: `WhatsApp User`,
-                    payingCompany: args.company || db.settings.defaultCompany,
+                    requester: `WhatsApp User (${msg.from.replace('@c.us', '').slice(0,5)}...)`,
+                    payingCompany: args.company || db.settings.defaultCompany || db.settings.companyNames?.[0] || 'شرکت اصلی',
                     paymentDetails: [{
                         id: generateUUID(),
                         method: 'حواله بانکی',
@@ -266,41 +221,104 @@ export const initWhatsApp = (authDir) => {
 
                 db.orders.unshift(newOrder);
                 saveDb(db);
-                msg.reply(`✅ *دستور پرداخت ثبت شد*\n🔢 شماره: ${trackingNum}\n👤 ذینفع: ${args.payee}\n💰 مبلغ: ${amount.toLocaleString()} ریال`);
+                msg.reply(`✅ *دستور پرداخت با موفقیت ثبت شد*\n\n🔢 شماره: ${trackingNum}\n👤 ذینفع: ${args.payee}\n💰 مبلغ: ${formatCurrency(amount)}\n📝 بابت: ${newOrder.description}\n🏦 بانک: ${args.bank || 'تعیین نشده'}`);
             }
 
+            // --- COMMAND: CREATE BIJAK ---
+            else if (intent === 'CREATE_BIJAK') {
+                const company = db.settings.defaultCompany || (db.settings.companyNames?.[0]) || 'نامشخص';
+                const currentSeq = db.settings.warehouseSequences?.[company] || 1000;
+                const nextSeq = currentSeq + 1;
+                db.settings.warehouseSequences = { ...db.settings.warehouseSequences, [company]: nextSeq };
+
+                const newTx = {
+                    id: generateUUID(),
+                    type: 'OUT',
+                    date: new Date().toISOString(),
+                    company: company,
+                    number: nextSeq,
+                    recipientName: args.recipient,
+                    destination: args.address || '',
+                    driverName: args.driver || '',
+                    plateNumber: args.plate || '',
+                    items: [{
+                        itemId: generateUUID(),
+                        itemName: args.itemName || 'کالای عمومی',
+                        quantity: Number(args.count) || 1,
+                        weight: 0,
+                        unitPrice: 0
+                    }],
+                    createdAt: Date.now(),
+                    createdBy: `WhatsApp User`
+                };
+
+                db.warehouseTransactions.unshift(newTx);
+                saveDb(db);
+                msg.reply(`📦 *حواله خروج (بیجک) صادر شد*\n\n📄 شماره: ${nextSeq}\n👤 گیرنده: ${args.recipient}\n📦 کالا: ${args.itemName} (${args.count})\n🚛 راننده: ${args.driver || '-'}\n🔢 پلاک: ${args.plate || '-'}`);
+            }
+
+            // --- COMMAND: REPORT (DETAILED) ---
+            else if (intent === 'REPORT') {
+                // 1. Payments Report
+                const pendingOrders = db.orders.filter(o => o.status !== 'تایید نهایی' && o.status !== 'رد شده');
+                
+                let paymentMsg = `📊 *گزارش کارتابل دستور پرداخت‌ها*\nوضعیت: ${new Date().toLocaleDateString('fa-IR')}\n---------------------------`;
+                if (pendingOrders.length === 0) {
+                    paymentMsg += "\n✅ هیچ دستور پرداخت بازی وجود ندارد.";
+                } else {
+                    pendingOrders.forEach(o => {
+                        paymentMsg += `\n🔹 *شماره: ${o.trackingNumber}*`;
+                        paymentMsg += `\n👤 ذینفع: ${o.payee}`;
+                        paymentMsg += `\n💰 مبلغ: ${formatCurrency(o.totalAmount)}`;
+                        paymentMsg += `\n📝 بابت: ${o.description}`;
+                        paymentMsg += `\n👤 ثبت‌کننده: ${o.requester}`;
+                        paymentMsg += `\n⏳ وضعیت: ${o.status}`;
+                        paymentMsg += `\n---------------------------`;
+                    });
+                }
+                await msg.reply(paymentMsg);
+
+                // 2. Exits (Bijak) Report (Separate Message)
+                const pendingExits = db.exitPermits.filter(p => p.status !== 'خارج شده (بایگانی)' && p.status !== 'رد شده');
+                const recentBijaks = db.warehouseTransactions.filter(t => t.type === 'OUT').slice(0, 5); // Last 5 Bijaks
+
+                let exitMsg = `🚛 *گزارش حواله و خروج کالا*\n---------------------------`;
+                
+                if (pendingExits.length > 0) {
+                    exitMsg += `\n🔴 *مجوزهای خروج در انتظار:*`;
+                    pendingExits.forEach(p => {
+                        exitMsg += `\n🔸 مجوز #${p.permitNumber} | گیرنده: ${p.recipientName}`;
+                        exitMsg += `\n   وضعیت: ${p.status}`;
+                    });
+                    exitMsg += `\n---------------------------`;
+                }
+
+                exitMsg += `\n📦 *آخرین بیجک‌های صادر شده:*`;
+                recentBijaks.forEach(b => {
+                    const itemSummary = b.items.map(i => `${i.quantity} ${i.itemName}`).join('، ');
+                    exitMsg += `\n🔹 بیجک #${b.number} | ${itemSummary}`;
+                    exitMsg += `\n   گیرنده: ${b.recipientName}`;
+                    if(b.driverName) exitMsg += ` | راننده: ${b.driverName}`;
+                });
+
+                // Small delay to ensure order
+                setTimeout(() => msg.reply(exitMsg), 500);
+            }
+
+            // --- COMMAND: APPROVE ---
             else if (intent === 'APPROVE_ORDER') {
-                // Check Payment Orders
                 const order = db.orders.find(o => o.trackingNumber == args.trackingNumber);
                 if (order) {
+                    // Simple state machine for approval
                     if (order.status === 'در انتظار بررسی مالی') order.status = 'تایید مالی / در انتظار مدیریت';
                     else if (order.status === 'تایید مالی / در انتظار مدیریت') order.status = 'تایید مدیریت / در انتظار مدیرعامل';
                     else if (order.status === 'تایید مدیریت / در انتظار مدیرعامل') order.status = 'تایید نهایی';
-                    order.updatedAt = Date.now();
+                    
                     saveDb(db);
-                    msg.reply(`✅ دستور پرداخت ${args.trackingNumber} به مرحله بعدی (${order.status}) منتقل شد.`);
-                } 
-                // Check Exit Permits
-                else {
-                    const permit = db.exitPermits.find(p => p.permitNumber == args.trackingNumber);
-                    if (permit) {
-                        permit.status = 'تایید مدیرعامل / در انتظار خروج (کارخانه)';
-                        saveDb(db);
-                        msg.reply(`✅ مجوز خروج ${args.trackingNumber} تایید شد.`);
-                    } else {
-                        msg.reply(`❌ شماره سند ${args.trackingNumber} یافت نشد.`);
-                    }
+                    msg.reply(`✅ دستور پرداخت ${args.trackingNumber} به مرحله "${order.status}" منتقل شد.`);
+                } else {
+                    msg.reply("❌ شماره سند یافت نشد.");
                 }
-            }
-
-            else if (intent === 'REPORT') {
-                const pendingOrders = db.orders.filter(o => o.status !== 'تایید نهایی' && o.status !== 'رد شده').length;
-                const pendingExits = db.exitPermits.filter(p => p.status !== 'خارج شده (بایگانی)' && p.status !== 'رد شده').length;
-                msg.reply(`📊 *گزارش وضعیت*\n\n💰 کارتابل پرداخت: ${pendingOrders} سند باز\n🚛 کارتابل خروج: ${pendingExits} مجوز فعال`);
-            }
-
-            else if (intent === 'UNKNOWN') {
-                msg.reply("متوجه منظور شما نشدم. لطفا از کلمات کلیدی مثل 'بیجک'، 'پرداخت' یا 'تایید' استفاده کنید.");
             }
 
         });

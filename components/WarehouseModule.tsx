@@ -57,29 +57,55 @@ const WarehouseModule: React.FC<Props> = ({ currentUser, settings }) => {
         await saveWarehouseTransaction(tx);
         await loadData();
         
-        // Auto Send Logic
+        // Auto Send Logic with Detailed Caption and Dual Images
         if(type === 'OUT') {
             setCreatedTxForAutoSend(tx);
             setTimeout(async () => {
-                const element = document.getElementById(`print-bijak-${tx.id}`);
-                if (element && settings) {
+                const managerElement = document.getElementById(`print-bijak-${tx.id}-price`);
+                const warehouseElement = document.getElementById(`print-bijak-${tx.id}-noprice`);
+                
+                // Detailed Caption Construction
+                let caption = `📦 *حواله خروج کالا (بیجک)*\n`;
+                caption += `📄 شماره: ${tx.number}\n`;
+                caption += `📅 تاریخ: ${formatDate(tx.date)}\n`;
+                caption += `🏭 شرکت: ${tx.company}\n`;
+                caption += `👤 گیرنده: ${tx.recipientName}\n`;
+                if(tx.driverName) caption += `🚛 راننده: ${tx.driverName}\n`;
+                if(tx.plateNumber) caption += `🔢 پلاک: ${tx.plateNumber}\n`;
+                caption += `📦 تعداد اقلام: ${tx.items.length} مورد\n`;
+                if(tx.destination) caption += `📍 مقصد: ${tx.destination}`;
+
+                if (settings) {
                     try {
-                        // @ts-ignore
-                        const canvas = await window.html2canvas(element, { scale: 2, backgroundColor: '#ffffff' });
-                        const base64 = canvas.toDataURL('image/png').split(',')[1];
-                        
-                        // Send to Manager
-                        if (settings.defaultSalesManager) {
-                            await apiCall('/send-whatsapp', 'POST', { number: settings.defaultSalesManager, message: `📄 *خروج کالا (بیجک)*\nشماره: ${tx.number}\nشرکت: ${tx.company}`, mediaData: { data: base64, mimeType: 'image/png', filename: `Bijak_${tx.number}.png` } });
+                        // 1. Send to Sales Manager (With Prices)
+                        if (settings.defaultSalesManager && managerElement) {
+                            // @ts-ignore
+                            const canvas = await window.html2canvas(managerElement, { scale: 2, backgroundColor: '#ffffff' });
+                            const base64 = canvas.toDataURL('image/png').split(',')[1];
+                            
+                            await apiCall('/send-whatsapp', 'POST', { 
+                                number: settings.defaultSalesManager, 
+                                message: caption + "\n\n(نسخه مدیریتی - همراه با قیمت)", 
+                                mediaData: { data: base64, mimeType: 'image/png', filename: `Bijak_${tx.number}_Price.png` } 
+                            });
                         }
-                        // Send to Warehouse Group (Hide Price?) - for now just send same
-                        if (settings.defaultWarehouseGroup) {
-                            await apiCall('/send-whatsapp', 'POST', { number: settings.defaultWarehouseGroup, message: `📦 *حواله انبار*\nشماره: ${tx.number}`, mediaData: { data: base64, mimeType: 'image/png', filename: `Bijak_${tx.number}.png` } });
+
+                        // 2. Send to Warehouse Group (No Prices)
+                        if (settings.defaultWarehouseGroup && warehouseElement) {
+                            // @ts-ignore
+                            const canvas = await window.html2canvas(warehouseElement, { scale: 2, backgroundColor: '#ffffff' });
+                            const base64 = canvas.toDataURL('image/png').split(',')[1];
+                            
+                            await apiCall('/send-whatsapp', 'POST', { 
+                                number: settings.defaultWarehouseGroup, 
+                                message: caption + "\n\n(نسخه انبار - بدون قیمت)", 
+                                mediaData: { data: base64, mimeType: 'image/png', filename: `Bijak_${tx.number}.png` } 
+                            });
                         }
                     } catch(e) { console.error("Auto send error", e); }
                 }
                 setViewBijak(tx);
-            }, 1000);
+            }, 1500); // 1.5s delay to ensure both components rendered
             
             setRecipientName(''); setDriverName(''); setPlateNumber(''); setDestination('');
         } else {
@@ -104,7 +130,21 @@ const WarehouseModule: React.FC<Props> = ({ currentUser, settings }) => {
 
     return (
         <div className="bg-white rounded-2xl shadow-sm border h-[calc(100vh-100px)] flex flex-col overflow-hidden animate-fade-in relative">
-            {createdTxForAutoSend && <div style={{position:'absolute',top:'-9999px',left:'-9999px'}}><PrintBijak tx={createdTxForAutoSend} onClose={()=>{}} settings={settings} embed /></div>}
+            {/* Hidden Rendering Area for Dual Auto-Send */}
+            <div style={{position:'absolute', top:'-9999px', left:'-9999px'}}>
+                {createdTxForAutoSend && (
+                    <>
+                        {/* 1. With Price (For Manager) */}
+                        <div id={`print-bijak-${createdTxForAutoSend.id}-price`}>
+                            <PrintBijak tx={createdTxForAutoSend} onClose={()=>{}} settings={settings} forceHidePrices={false} embed />
+                        </div>
+                        {/* 2. Without Price (For Warehouse) */}
+                        <div id={`print-bijak-${createdTxForAutoSend.id}-noprice`}>
+                            <PrintBijak tx={createdTxForAutoSend} onClose={()=>{}} settings={settings} forceHidePrices={true} embed />
+                        </div>
+                    </>
+                )}
+            </div>
 
             <div className="bg-gray-100 p-2 flex gap-2 border-b overflow-x-auto">
                 <button onClick={() => setActiveTab('dashboard')} className={`px-4 py-2 rounded-lg text-sm font-bold whitespace-nowrap ${activeTab === 'dashboard' ? 'bg-white text-blue-600 shadow' : 'text-gray-600 hover:bg-gray-200'}`}>داشبورد</button>

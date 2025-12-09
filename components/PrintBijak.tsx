@@ -11,14 +11,22 @@ interface PrintBijakProps {
   onClose: () => void;
   settings?: SystemSettings;
   embed?: boolean; // New Prop
+  forceHidePrices?: boolean; // New Prop to override state
 }
 
-const PrintBijak: React.FC<PrintBijakProps> = ({ tx, onClose, settings, embed }) => {
+const PrintBijak: React.FC<PrintBijakProps> = ({ tx, onClose, settings, embed, forceHidePrices }) => {
   const [processing, setProcessing] = useState(false);
-  const [hidePrices, setHidePrices] = useState(false);
+  const [hidePrices, setHidePrices] = useState(forceHidePrices || false);
   const [showContactSelect, setShowContactSelect] = useState(false);
   const [allContacts, setAllContacts] = useState<Contact[]>([]);
   const [contactSearch, setContactSearch] = useState('');
+
+  // Sync prop changes
+  useEffect(() => {
+      if (typeof forceHidePrices === 'boolean') {
+          setHidePrices(forceHidePrices);
+      }
+  }, [forceHidePrices]);
 
   useEffect(() => { const loadContacts = async () => { /* ... existing ... */ }; loadContacts(); }, [settings]);
 
@@ -34,7 +42,7 @@ const PrintBijak: React.FC<PrintBijakProps> = ({ tx, onClose, settings, embed })
   const filteredContacts = allContacts.filter(c => c.name.toLowerCase().includes(contactSearch.toLowerCase()) || c.number.includes(contactSearch));
 
   const content = (
-      <div id={embed ? `print-bijak-${tx.id}` : "print-area-bijak"} className="bg-white w-[148mm] min-h-[210mm] mx-auto p-6 shadow-2xl rounded-sm relative text-gray-900 flex flex-col" style={{ direction: 'rtl' }}>
+      <div id={embed ? `print-bijak-${tx.id}${forceHidePrices ? '-noprice' : '-price'}` : "print-area-bijak"} className="bg-white w-[148mm] min-h-[210mm] mx-auto p-6 shadow-2xl rounded-sm relative text-gray-900 flex flex-col" style={{ direction: 'rtl' }}>
             <div className="border-b-2 border-black pb-4 mb-4 flex justify-between items-start">
                 <div className="flex items-center gap-3">{companyLogo && <img src={companyLogo} className="w-16 h-16 object-contain"/>}<div><h1 className="text-xl font-black">{tx.company}</h1><p className="text-sm font-bold text-gray-600">حواله خروج کالا (بیجک)</p></div></div>
                 <div className="text-left space-y-1"><div className="text-lg font-black border-2 border-black px-3 py-1 rounded">NO: {tx.number}</div><div className="text-sm font-bold">تاریخ: {formatDate(tx.date)}</div></div>
