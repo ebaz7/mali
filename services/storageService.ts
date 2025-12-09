@@ -145,29 +145,29 @@ export const getWarehouseTransactions = async (): Promise<WarehouseTransaction[]
     return await apiCall<WarehouseTransaction[]>('/warehouse/transactions');
 };
 
-// Automatically manages sequence numbers based on company
 export const saveWarehouseTransaction = async (tx: WarehouseTransaction): Promise<WarehouseTransaction[]> => {
-    // Note: The server-side /warehouse/transactions POST should handle the numbering check to be atomic,
-    // but for now we simulate it here or let the server mock handle it.
-    
-    if (tx.type === 'OUT') {
+    if (tx.type === 'OUT' && !tx.id.includes('updated')) { // Only increment seq for new Bijaks
         const settings = await getSettings();
         const currentSeq = settings.warehouseSequences?.[tx.company] || 1000;
         
-        // Optimistic update for client-side display, real update happens on server ideally
-        // In this Mock setup, we update settings manually
-        const newSeq = currentSeq + 1;
-        await saveSettings({
-            ...settings,
-            warehouseSequences: {
-                ...settings.warehouseSequences,
-                [tx.company]: newSeq
-            }
-        });
-        tx.number = newSeq;
+        // Check if number is manually set to something else, if not or 0, generate it
+        if (!tx.number || tx.number === 0) {
+             const newSeq = currentSeq + 1;
+             await saveSettings({
+                ...settings,
+                warehouseSequences: {
+                    ...settings.warehouseSequences,
+                    [tx.company]: newSeq
+                }
+            });
+            tx.number = newSeq;
+        }
     }
-    
     return await apiCall<WarehouseTransaction[]>('/warehouse/transactions', 'POST', tx);
+};
+
+export const updateWarehouseTransaction = async (tx: WarehouseTransaction): Promise<WarehouseTransaction[]> => {
+    return await apiCall<WarehouseTransaction[]>(`/warehouse/transactions/${tx.id}`, 'PUT', tx);
 };
 
 export const deleteWarehouseTransaction = async (id: string): Promise<WarehouseTransaction[]> => {
