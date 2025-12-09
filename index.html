@@ -36,28 +36,29 @@
         body {
           background: white;
           height: auto;
+          overflow: visible;
         }
 
-        /* Hide everything by changing visibility, keeping layout flow if needed, 
-           but absolute positioning of print area overrides flow */
+        /* Hide everything by default */
         body * {
           visibility: hidden;
         }
 
-        /* Force show the print area and its children */
+        /* Specifically show the print area */
         #print-area, #print-area * {
           visibility: visible !important;
         }
 
         #print-area {
-          position: absolute;
+          position: fixed; /* Fixed ensures it starts at top-left of page 1 */
           left: 0;
           top: 0;
           width: 100%;
           margin: 0;
           padding: 5mm;
-          z-index: 9999;
+          z-index: 99999;
           background: white;
+          display: block !important;
         }
 
         .no-print {
