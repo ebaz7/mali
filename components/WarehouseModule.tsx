@@ -141,7 +141,8 @@ const WarehouseModule: React.FC<Props> = ({ currentUser, settings }) => {
             loadData();
             alert('بیجک با موفقیت ویرایش شد.');
         } catch (e) {
-            alert('خطا در ویرایش بیجک');
+            console.error(e);
+            alert('خطا در ویرایش بیجک. لطفا مجددا تلاش کنید.');
         }
     };
 
@@ -153,7 +154,8 @@ const WarehouseModule: React.FC<Props> = ({ currentUser, settings }) => {
             loadData();
             alert('رسید با موفقیت ویرایش شد.');
         } catch (e) {
-            alert('خطا در ویرایش رسید');
+            console.error(e);
+            alert('خطا در ویرایش رسید. لطفا مجددا تلاش کنید.');
         }
     };
 
@@ -388,14 +390,15 @@ const WarehouseModule: React.FC<Props> = ({ currentUser, settings }) => {
                     </div>
                 )}
 
-                {/* STOCK REPORT TAB (Redesigned A4) */}
+                {/* STOCK REPORT TAB (Redesigned A4 Landscape) */}
                 {activeTab === 'stock_report' && (
                     <div className="flex flex-col h-full">
+                        <style>{`@media print { @page { size: landscape; margin: 0; } body { margin: 0; padding: 0; } .print-landscape-container { width: 100% !important; min-height: 210mm !important; } }`}</style>
                         <div className="flex justify-between items-center mb-4 no-print">
                             <h2 className="text-xl font-bold">گزارش موجودی کلی انبارها (تفکیکی)</h2>
-                            <button onClick={handlePrintStock} className="bg-blue-600 text-white px-4 py-2 rounded flex items-center gap-2 hover:bg-blue-700"><Printer size={18}/> چاپ A4</button>
+                            <button onClick={handlePrintStock} className="bg-blue-600 text-white px-4 py-2 rounded flex items-center gap-2 hover:bg-blue-700"><Printer size={18}/> چاپ (افقی)</button>
                         </div>
-                        <div className="bg-white p-4 shadow-lg mx-auto w-full md:w-[297mm] min-h-[210mm] print:shadow-none print:w-full print:p-0">
+                        <div className="bg-white p-4 shadow-lg mx-auto w-full md:w-[297mm] min-h-[210mm] print-landscape-container print:shadow-none print:w-full print:p-2">
                             {/* Header */}
                             <div className="text-center bg-yellow-300 border border-black py-2 mb-2 font-black text-xl">موجودی بنگاه ها</div>
                             
@@ -577,8 +580,23 @@ const EditBijakForm: React.FC<{ bijak: WarehouseTransaction, items: WarehouseIte
     const handleSave = () => {
         try {
             const isoDate = jalaliToGregorian(dateParts.year, dateParts.month, dateParts.day).toISOString();
-            onSave({ ...formData, date: isoDate });
-        } catch(e) { alert("تاریخ نامعتبر"); }
+            
+            // Validation & Number Conversion
+            const validatedItems = formData.items.map(item => ({
+                ...item,
+                quantity: Number(item.quantity) || 0,
+                weight: Number(item.weight) || 0,
+                unitPrice: Number(item.unitPrice) || 0
+            }));
+
+            if (!formData.company) { alert("لطفا شرکت را انتخاب کنید"); return; }
+
+            onSave({ 
+                ...formData, 
+                items: validatedItems,
+                date: isoDate 
+            });
+        } catch(e) { alert("خطا در ذخیره سازی: تاریخ نامعتبر است."); }
     };
 
     const updateItem = (idx: number, field: string, val: any) => {
@@ -605,10 +623,10 @@ const EditBijakForm: React.FC<{ bijak: WarehouseTransaction, items: WarehouseIte
             <div className="grid grid-cols-2 gap-4">
                 <div><label className="text-xs font-bold block mb-1">تاریخ</label><div className="flex gap-1"><select className="border rounded p-1 w-full" value={dateParts.day} onChange={e=>setDateParts({...dateParts, day: +e.target.value})}>{days.map(d=><option key={d} value={d}>{d}</option>)}</select><select className="border rounded p-1 w-full" value={dateParts.month} onChange={e=>setDateParts({...dateParts, month: +e.target.value})}>{months.map(m=><option key={m} value={m}>{m}</option>)}</select><select className="border rounded p-1 w-full" value={dateParts.year} onChange={e=>setDateParts({...dateParts, year: +e.target.value})}>{years.map(y=><option key={y} value={y}>{y}</option>)}</select></div></div>
                 <div><label className="text-xs font-bold block mb-1">شرکت فرستنده</label><select className="w-full border rounded p-2 bg-white" value={formData.company} onChange={e=>setFormData({...formData, company: e.target.value})}>{companyList.map(c=><option key={c} value={c}>{c}</option>)}</select></div>
-                <div><label className="text-xs font-bold block mb-1">گیرنده</label><input className="w-full border rounded p-2" value={formData.recipientName} onChange={e=>setFormData({...formData, recipientName: e.target.value})}/></div>
-                <div><label className="text-xs font-bold block mb-1">راننده</label><input className="w-full border rounded p-2" value={formData.driverName} onChange={e=>setFormData({...formData, driverName: e.target.value})}/></div>
-                <div><label className="text-xs font-bold block mb-1">پلاک</label><input className="w-full border rounded p-2 dir-ltr" value={formData.plateNumber} onChange={e=>setFormData({...formData, plateNumber: e.target.value})}/></div>
-                <div className="col-span-2"><label className="text-xs font-bold block mb-1">مقصد</label><input className="w-full border rounded p-2" value={formData.destination} onChange={e=>setFormData({...formData, destination: e.target.value})}/></div>
+                <div><label className="text-xs font-bold block mb-1">گیرنده</label><input className="w-full border rounded p-2" value={formData.recipientName || ''} onChange={e=>setFormData({...formData, recipientName: e.target.value})}/></div>
+                <div><label className="text-xs font-bold block mb-1">راننده</label><input className="w-full border rounded p-2" value={formData.driverName || ''} onChange={e=>setFormData({...formData, driverName: e.target.value})}/></div>
+                <div><label className="text-xs font-bold block mb-1">پلاک</label><input className="w-full border rounded p-2 dir-ltr" value={formData.plateNumber || ''} onChange={e=>setFormData({...formData, plateNumber: e.target.value})}/></div>
+                <div className="col-span-2"><label className="text-xs font-bold block mb-1">مقصد</label><input className="w-full border rounded p-2" value={formData.destination || ''} onChange={e=>setFormData({...formData, destination: e.target.value})}/></div>
             </div>
             
             <div className="bg-gray-50 p-4 rounded border">
@@ -616,9 +634,9 @@ const EditBijakForm: React.FC<{ bijak: WarehouseTransaction, items: WarehouseIte
                 {formData.items.map((item, idx) => (
                     <div key={idx} className="flex gap-2 mb-2 items-end">
                         <div className="flex-1"><select className="w-full border rounded p-1 text-sm" value={item.itemId} onChange={e=>updateItem(idx, 'itemId', e.target.value)}><option value="">انتخاب...</option>{items.map(i=><option key={i.id} value={i.id}>{i.name}</option>)}</select></div>
-                        <div className="w-20"><input type="number" className="w-full border rounded p-1 text-sm text-center" value={item.quantity} onChange={e=>updateItem(idx, 'quantity', +e.target.value)} placeholder="تعداد"/></div>
-                        <div className="w-24"><input type="number" className="w-full border rounded p-1 text-sm text-center" value={item.weight} onChange={e=>updateItem(idx, 'weight', +e.target.value)} placeholder="وزن"/></div>
-                        <div className="w-28"><input type="number" className="w-full border rounded p-1 text-sm text-center" value={item.unitPrice} onChange={e=>updateItem(idx, 'unitPrice', +e.target.value)} placeholder="قیمت"/></div>
+                        <div className="w-20"><input type="number" className="w-full border rounded p-1 text-sm text-center" value={item.quantity} onChange={e=>updateItem(idx, 'quantity', e.target.value)} placeholder="تعداد"/></div>
+                        <div className="w-24"><input type="number" className="w-full border rounded p-1 text-sm text-center" value={item.weight} onChange={e=>updateItem(idx, 'weight', e.target.value)} placeholder="وزن"/></div>
+                        <div className="w-28"><input type="number" className="w-full border rounded p-1 text-sm text-center" value={item.unitPrice} onChange={e=>updateItem(idx, 'unitPrice', e.target.value)} placeholder="قیمت"/></div>
                         <button onClick={()=>removeItem(idx)} className="text-red-500"><Trash2 size={16}/></button>
                     </div>
                 ))}
@@ -646,8 +664,22 @@ const EditReceiptForm: React.FC<{ receipt: WarehouseTransaction, items: Warehous
     const handleSave = () => {
         try {
             const isoDate = jalaliToGregorian(dateParts.year, dateParts.month, dateParts.day).toISOString();
-            onSave({ ...formData, date: isoDate });
-        } catch(e) { alert("تاریخ نامعتبر یا خطا در فرم"); }
+            
+            // Validation
+            const validatedItems = formData.items.map(item => ({
+                ...item,
+                quantity: Number(item.quantity) || 0,
+                weight: Number(item.weight) || 0
+            }));
+
+            if (!formData.company) { alert("لطفا شرکت را انتخاب کنید"); return; }
+
+            onSave({ 
+                ...formData, 
+                items: validatedItems,
+                date: isoDate 
+            });
+        } catch(e) { alert("خطا در ذخیره سازی: تاریخ نامعتبر است."); }
     };
 
     const updateItem = (idx: number, field: string, val: any) => {
@@ -674,7 +706,7 @@ const EditReceiptForm: React.FC<{ receipt: WarehouseTransaction, items: Warehous
             <div className="grid grid-cols-2 gap-4">
                 <div><label className="text-xs font-bold block mb-1">تاریخ ورود</label><div className="flex gap-1"><select className="border rounded p-1 w-full" value={dateParts.day} onChange={e=>setDateParts({...dateParts, day: +e.target.value})}>{days.map(d=><option key={d} value={d}>{d}</option>)}</select><select className="border rounded p-1 w-full" value={dateParts.month} onChange={e=>setDateParts({...dateParts, month: +e.target.value})}>{months.map(m=><option key={m} value={m}>{m}</option>)}</select><select className="border rounded p-1 w-full" value={dateParts.year} onChange={e=>setDateParts({...dateParts, year: +e.target.value})}>{years.map(y=><option key={y} value={y}>{y}</option>)}</select></div></div>
                 <div><label className="text-xs font-bold block mb-1">شرکت مالک</label><select className="w-full border rounded p-2 bg-white" value={formData.company} onChange={e=>setFormData({...formData, company: e.target.value})}>{companyList.map(c=><option key={c} value={c}>{c}</option>)}</select></div>
-                <div className="col-span-2"><label className="text-xs font-bold block mb-1">شماره پروفرما / سند</label><input className="w-full border rounded p-2" value={formData.proformaNumber} onChange={e=>setFormData({...formData, proformaNumber: e.target.value})}/></div>
+                <div className="col-span-2"><label className="text-xs font-bold block mb-1">شماره پروفرما / سند</label><input className="w-full border rounded p-2" value={formData.proformaNumber || ''} onChange={e=>setFormData({...formData, proformaNumber: e.target.value})}/></div>
             </div>
             
             <div className="bg-gray-50 p-4 rounded border">
@@ -682,8 +714,8 @@ const EditReceiptForm: React.FC<{ receipt: WarehouseTransaction, items: Warehous
                 {formData.items.map((item, idx) => (
                     <div key={idx} className="flex gap-2 mb-2 items-end">
                         <div className="flex-1"><select className="w-full border rounded p-1 text-sm" value={item.itemId} onChange={e=>updateItem(idx, 'itemId', e.target.value)}><option value="">انتخاب...</option>{items.map(i=><option key={i.id} value={i.id}>{i.name}</option>)}</select></div>
-                        <div className="w-24"><input type="number" className="w-full border rounded p-1 text-sm text-center" value={item.quantity} onChange={e=>updateItem(idx, 'quantity', +e.target.value)} placeholder="تعداد"/></div>
-                        <div className="w-24"><input type="number" className="w-full border rounded p-1 text-sm text-center" value={item.weight} onChange={e=>updateItem(idx, 'weight', +e.target.value)} placeholder="وزن"/></div>
+                        <div className="w-24"><input type="number" className="w-full border rounded p-1 text-sm text-center" value={item.quantity} onChange={e=>updateItem(idx, 'quantity', e.target.value)} placeholder="تعداد"/></div>
+                        <div className="w-24"><input type="number" className="w-full border rounded p-1 text-sm text-center" value={item.weight} onChange={e=>updateItem(idx, 'weight', e.target.value)} placeholder="وزن"/></div>
                         <button onClick={()=>removeItem(idx)} className="text-red-500"><Trash2 size={16}/></button>
                     </div>
                 ))}
